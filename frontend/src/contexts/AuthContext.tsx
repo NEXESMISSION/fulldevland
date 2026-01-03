@@ -88,8 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const fetchingRef = useRef(false)
   const initializedRef = useRef(false)
-  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const sessionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sessionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   // Session timeout: 24 hours
   const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1000
@@ -214,11 +214,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(key, JSON.stringify({ attempts }))
       
       // Also log to database if possible (for audit)
-      supabase.from('login_attempts').insert([{
+      // Fire and forget - don't await to avoid blocking
+      Promise.resolve(supabase.from('login_attempts').insert([{
         email: email.toLowerCase(),
         success: false,
         attempted_at: new Date().toISOString(),
-      }]).catch(() => {
+      }])).catch(() => {
         // Silent fail - table might not exist yet
       })
     } catch {
@@ -232,11 +233,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(key)
       
       // Log successful login
-      supabase.from('login_attempts').insert([{
+      // Fire and forget - don't await to avoid blocking
+      Promise.resolve(supabase.from('login_attempts').insert([{
         email: email.toLowerCase(),
         success: true,
         attempted_at: new Date().toISOString(),
-      }]).catch(() => {
+      }])).catch(() => {
         // Silent fail
       })
     } catch {

@@ -251,15 +251,15 @@ export function Users() {
           await new Promise(resolve => setTimeout(resolve, 1000 * (retries + 1)))
           
           const { error } = await supabase.from('users').insert([
-            {
-              id: authData.user.id,
-              name: sanitizeText(form.name),
+          {
+            id: authData.user.id,
+            name: sanitizeText(form.name),
               email: cleanEmail,
-              role: form.role,
-              status: form.status,
-            },
-          ])
-          
+            role: form.role,
+            status: form.status,
+          },
+        ])
+
           if (!error) {
             userError = null
             break
@@ -439,7 +439,7 @@ export function Users() {
             <p className="text-center text-muted-foreground py-8">No users found</p>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+            <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>

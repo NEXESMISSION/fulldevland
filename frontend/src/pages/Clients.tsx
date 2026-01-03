@@ -283,7 +283,7 @@ export function Clients() {
             <p className="text-center text-muted-foreground py-8">لا توجد عملاء</p>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+            <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>الاسم</TableHead>
@@ -481,7 +481,7 @@ export function Clients() {
                 <div>
                   <h4 className="font-semibold mb-2">Sales History</h4>
                   <div className="overflow-x-auto">
-                    <Table>
+                  <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date</TableHead>

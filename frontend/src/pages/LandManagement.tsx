@@ -684,7 +684,7 @@ export function LandManagement() {
           // Calculate totals - for flexible mode, calculate from pieces if not provided
           let totalSurface = parseFloat(batchForm.total_surface) || 0
           let totalCost = parseFloat(batchForm.total_cost) || 0
-          
+
           if (generationMode === 'custom_flexible') {
             // Calculate total surface from pieces if not provided
             if (!batchForm.total_surface || totalSurface === 0) {
