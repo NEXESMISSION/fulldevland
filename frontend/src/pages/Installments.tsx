@@ -1520,148 +1520,246 @@ export function Installments() {
         </CardContent>
       </Card>
 
-      {/* Main Table View - One Row Per Deal */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto -mx-4 sm:mx-0">
-            <Table className="min-w-full">
-              <TableHeader>
-                <TableRow className="bg-gray-50">
-                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">العميل</TableHead>
-                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap hidden sm:table-cell">الصفقة</TableHead>
-                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">القطع</TableHead>
-                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">الأقساط</TableHead>
-                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">المدفوع</TableHead>
-                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">المتبقي</TableHead>
-                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap hidden md:table-cell">المتأخر</TableHead>
-                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap hidden lg:table-cell">تاريخ الاستحقاق</TableHead>
-                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap hidden md:table-cell">الحالة</TableHead>
-                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">إجراء</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {dealsTableData.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                      لا توجد صفقات
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  dealsTableData.map((deal) => {
-                    // Status indicator
-                    let statusIndicator = '🟢'
-                    let statusText = 'على المسار'
-                    let statusColor = 'text-green-600'
-                    
-                    if (deal.isOverdue) {
-                      statusIndicator = '🔴'
-                      statusText = 'متأخر'
-                      statusColor = 'text-red-600'
-                    } else if (deal.daysUntilDue <= 7) {
-                      statusIndicator = '🟡'
-                      statusText = 'قريب الاستحقاق'
-                      statusColor = 'text-orange-600'
-                    }
-                    
-                    return (
-                      <TableRow 
-                        key={deal.saleId}
-                        className={`cursor-pointer hover:bg-blue-50/50 transition-colors ${
-                          deal.isOverdue ? 'bg-red-50/30' : deal.daysUntilDue <= 7 ? 'bg-orange-50/20' : ''
-                        }`}
-                        onClick={() => openSaleDetails(deal)}
-                      >
-                        <TableCell className="min-w-[120px]">
-                          <div>
-                            <div className="font-medium text-xs sm:text-sm">{deal.clientName}</div>
-                            {deal.clientCin && (
-                              <div className="text-xs text-muted-foreground">{deal.clientCin}</div>
-                            )}
-                            <div className="text-xs text-muted-foreground sm:hidden mt-1">
-                              {formatDate(deal.saleDate)}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden sm:table-cell">
-                          <div className="text-xs sm:text-sm">{formatDate(deal.saleDate)}</div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {deal.landPieces}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-xs sm:text-sm">
-                            {deal.paidInstallments}/{deal.totalInstallments}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-xs sm:text-sm font-medium text-green-600">
-                            {formatCurrency(deal.totalPaid)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-xs sm:text-sm font-medium">
-                            {formatCurrency(deal.totalUnpaid)}
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          {deal.isOverdue ? (
-                            <div className="text-xs sm:text-sm font-semibold text-red-600">
-                              {formatCurrency(deal.overdueAmount)}
-                            </div>
-                          ) : (
-                            <div className="text-xs sm:text-sm text-muted-foreground">-</div>
+      {/* Mobile Card View / Desktop Table View */}
+      {dealsTableData.length === 0 ? (
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-center text-muted-foreground text-sm">لا توجد صفقات</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Mobile Card View */}
+          <div className="space-y-3 md:hidden">
+            {dealsTableData.map((deal) => {
+              let statusIndicator = '🟢'
+              let statusText = 'على المسار'
+              let statusColor = 'text-green-600'
+              let statusBg = 'bg-green-50 border-green-200'
+              
+              if (deal.isOverdue) {
+                statusIndicator = '🔴'
+                statusText = 'متأخر'
+                statusColor = 'text-red-600'
+                statusBg = 'bg-red-50 border-red-200'
+              } else if (deal.daysUntilDue <= 7) {
+                statusIndicator = '🟡'
+                statusText = 'قريب الاستحقاق'
+                statusColor = 'text-orange-600'
+                statusBg = 'bg-orange-50 border-orange-200'
+              }
+              
+              return (
+                <Card 
+                  key={deal.saleId}
+                  className={`cursor-pointer hover:shadow-md transition-all ${statusBg} border-2`}
+                  onClick={() => openSaleDetails(deal)}
+                >
+                  <CardContent className="p-4">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm">{deal.clientName}</div>
+                          {deal.clientCin && (
+                            <div className="text-xs text-muted-foreground mt-0.5">{deal.clientCin}</div>
                           )}
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell">
-                          {deal.nextDueDate ? (
-                            <div className="text-xs sm:text-sm">
-                              {formatDate(deal.nextDueDate)}
-                              {deal.daysUntilDue >= 0 && (
-                                <div className="text-xs text-muted-foreground">
-                                  ({deal.daysUntilDue} يوم)
-                                </div>
+                          <div className="text-xs text-muted-foreground mt-1">{formatDate(deal.saleDate)}</div>
+                        </div>
+                        <div className="flex items-center gap-1 ml-2">
+                          <span className="text-base">{statusIndicator}</span>
+                          <span className={`text-xs font-medium ${statusColor}`}>{statusText}</span>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-muted-foreground">القطع:</span>
+                          <Badge variant="outline" className="text-xs ml-1">{deal.landPieces}</Badge>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">الأقساط:</span>
+                          <span className="font-medium ml-1">{deal.paidInstallments}/{deal.totalInstallments}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">المدفوع:</span>
+                          <span className="font-medium text-green-600 ml-1">{formatCurrency(deal.totalPaid)}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">المتبقي:</span>
+                          <span className="font-medium ml-1">{formatCurrency(deal.totalUnpaid)}</span>
+                        </div>
+                      </div>
+                      
+                      {deal.isOverdue && (
+                        <div className="bg-red-100 border border-red-200 rounded p-2">
+                          <div className="text-xs font-semibold text-red-700">
+                            متأخر: {formatCurrency(deal.overdueAmount)}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {deal.nextDueDate && (
+                        <div className="text-xs text-muted-foreground">
+                          تاريخ الاستحقاق: {formatDate(deal.nextDueDate)}
+                          {deal.daysUntilDue >= 0 && ` (${deal.daysUntilDue} يوم)`}
+                        </div>
+                      )}
+                      
+                      {hasPermission('record_payments') && deal.totalUnpaid > 0.01 && (
+                        <Button
+                          size="sm"
+                          variant={deal.isOverdue ? 'destructive' : 'default'}
+                          className="w-full text-xs h-8"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const nextInst = deal.installments.find(i => getRemainingAmount(i) > 0.01)
+                            if (nextInst) {
+                              openPaymentDialog(nextInst)
+                            }
+                          }}
+                        >
+                          دفع {formatCurrency(deal.totalUnpaid)}
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+
+          {/* Desktop Table View */}
+          <Card className="hidden md:block">
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table className="min-w-full">
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">العميل</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">الصفقة</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">القطع</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">الأقساط</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">المدفوع</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">المتبقي</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">المتأخر</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">تاريخ الاستحقاق</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">الحالة</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">إجراء</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {dealsTableData.map((deal) => {
+                      let statusIndicator = '🟢'
+                      let statusText = 'على المسار'
+                      let statusColor = 'text-green-600'
+                      
+                      if (deal.isOverdue) {
+                        statusIndicator = '🔴'
+                        statusText = 'متأخر'
+                        statusColor = 'text-red-600'
+                      } else if (deal.daysUntilDue <= 7) {
+                        statusIndicator = '🟡'
+                        statusText = 'قريب الاستحقاق'
+                        statusColor = 'text-orange-600'
+                      }
+                      
+                      return (
+                        <TableRow 
+                          key={deal.saleId}
+                          className={`cursor-pointer hover:bg-blue-50/50 transition-colors ${
+                            deal.isOverdue ? 'bg-red-50/30' : deal.daysUntilDue <= 7 ? 'bg-orange-50/20' : ''
+                          }`}
+                          onClick={() => openSaleDetails(deal)}
+                        >
+                          <TableCell>
+                            <div>
+                              <div className="font-medium text-xs sm:text-sm">{deal.clientName}</div>
+                              {deal.clientCin && (
+                                <div className="text-xs text-muted-foreground">{deal.clientCin}</div>
                               )}
                             </div>
-                          ) : (
-                            <div className="text-xs sm:text-sm text-muted-foreground">-</div>
-                          )}
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs">{statusIndicator}</span>
-                            <span className={`text-xs sm:text-sm font-medium ${statusColor}`}>
-                              {statusText}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          {hasPermission('record_payments') && deal.totalUnpaid > 0.01 && (
-                            <Button
-                              size="sm"
-                              variant={deal.isOverdue ? 'destructive' : 'default'}
-                              className="text-xs px-2 sm:px-4"
-                              onClick={() => {
-                                const nextInst = deal.installments.find(i => getRemainingAmount(i) > 0.01)
-                                if (nextInst) {
-                                  openPaymentDialog(nextInst)
-                                }
-                              }}
-                            >
-                              دفع
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs sm:text-sm">{formatDate(deal.saleDate)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs">
+                              {deal.landPieces}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs sm:text-sm">
+                              {deal.paidInstallments}/{deal.totalInstallments}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs sm:text-sm font-medium text-green-600">
+                              {formatCurrency(deal.totalPaid)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs sm:text-sm font-medium">
+                              {formatCurrency(deal.totalUnpaid)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {deal.isOverdue ? (
+                              <div className="text-xs sm:text-sm font-semibold text-red-600">
+                                {formatCurrency(deal.overdueAmount)}
+                              </div>
+                            ) : (
+                              <div className="text-xs sm:text-sm text-muted-foreground">-</div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {deal.nextDueDate ? (
+                              <div className="text-xs sm:text-sm">
+                                {formatDate(deal.nextDueDate)}
+                                {deal.daysUntilDue >= 0 && (
+                                  <div className="text-xs text-muted-foreground">
+                                    ({deal.daysUntilDue} يوم)
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-xs sm:text-sm text-muted-foreground">-</div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs">{statusIndicator}</span>
+                              <span className={`text-xs sm:text-sm font-medium ${statusColor}`}>
+                                {statusText}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            {hasPermission('record_payments') && deal.totalUnpaid > 0.01 && (
+                              <Button
+                                size="sm"
+                                variant={deal.isOverdue ? 'destructive' : 'default'}
+                                className="text-xs px-2 sm:px-4"
+                                onClick={() => {
+                                  const nextInst = deal.installments.find(i => getRemainingAmount(i) > 0.01)
+                                  if (nextInst) {
+                                    openPaymentDialog(nextInst)
+                                  }
+                                }}
+                              >
+                                دفع
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* Old views removed - using table view only */}
       {/* Commented out old card-based views to avoid errors */}

@@ -357,91 +357,164 @@ export function Clients() {
         </CardContent>
       </Card>
 
-      {/* Clients Table */}
-      <Card>
-        <CardContent className="p-0 sm:p-3 md:p-6 pt-3 sm:pt-4 md:pt-6">
-          {filteredClients.length === 0 ? (
-            <p className="text-center text-muted-foreground py-6 sm:py-8 text-sm sm:text-base">لا توجد عملاء</p>
-          ) : (
-            <div className="overflow-x-auto -mx-3 sm:-mx-3 md:mx-0 px-3 sm:px-3 md:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <Table className="min-w-full text-xs sm:text-sm md:text-base">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs sm:text-sm whitespace-nowrap">الاسم</TableHead>
-                  <TableHead className="text-xs sm:text-sm whitespace-nowrap hidden sm:table-cell">رقم الهوية</TableHead>
-                  <TableHead className="text-xs sm:text-sm whitespace-nowrap hidden md:table-cell">الهاتف</TableHead>
-                  <TableHead className="text-xs sm:text-sm whitespace-nowrap hidden lg:table-cell">النوع</TableHead>
-                  <TableHead className="text-xs sm:text-sm whitespace-nowrap hidden md:table-cell">المبيعات</TableHead>
-                  <TableHead className="text-xs sm:text-sm whitespace-nowrap">إجراءات</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredClients.map((client) => (
-                  <TableRow key={client.id} className="hover:bg-muted/50">
-                    <TableCell className="font-medium min-w-[120px]">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-1 sm:gap-2">
-                        <div className="flex items-center gap-1.5 sm:gap-2">
-                          <User className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground flex-shrink-0" />
-                          <span className="truncate max-w-[150px] sm:max-w-none">{client.name}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground sm:hidden">
-                          {client.cin} • {client.phone || '-'}
+      {/* Clients - Mobile Card View / Desktop Table View */}
+      {filteredClients.length === 0 ? (
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-center text-muted-foreground text-sm sm:text-base">لا توجد عملاء</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Mobile Card View */}
+          <div className="space-y-3 md:hidden">
+            {filteredClients.map((client) => (
+              <Card key={client.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="p-4">
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-sm truncate">{client.name}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {client.cin}
+                          </div>
                         </div>
                       </div>
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell text-xs sm:text-sm">{client.cin}</TableCell>
-                    <TableCell className="hidden md:table-cell text-xs sm:text-sm">{client.phone || '-'}</TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge variant="secondary" className="text-xs flex-shrink-0">
                         {client.client_type === 'Individual' ? 'فردي' : 'شركة'}
                       </Badge>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <div className="flex items-center gap-1">
-                        <ShoppingCart className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-                        <span className="text-xs sm:text-sm">{client.sales?.length || 0}</span>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-muted-foreground">الهاتف:</span>
+                        <span className="font-medium">{client.phone || '-'}</span>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-0.5 sm:gap-1">
+                      <div className="flex items-center gap-1.5">
+                        <ShoppingCart className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground">المبيعات:</span>
+                        <span className="font-medium">{client.sales?.length || 0}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 pt-2 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-xs h-8"
+                        onClick={() => viewDetails(client)}
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        التفاصيل
+                      </Button>
+                      {hasPermission('edit_clients') && (
                         <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 sm:h-8 sm:w-8"
-                          onClick={() => viewDetails(client)}
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-xs h-8"
+                          onClick={() => openDialog(client)}
                         >
-                          <Eye className="h-3 w-3 sm:h-4 sm:w-4" />
+                          <Edit className="h-3 w-3 mr-1" />
+                          تعديل
                         </Button>
-                        {hasPermission('edit_clients') && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 sm:h-8 sm:w-8"
-                            onClick={() => openDialog(client)}
-                          >
-                            <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
-                          </Button>
-                        )}
-                        {hasPermission('delete_clients') && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 sm:h-8 sm:w-8"
-                            onClick={() => deleteClient(client.id)}
-                          >
-                            <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                      )}
+                      {hasPermission('delete_clients') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-8"
+                          onClick={() => deleteClient(client.id)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Desktop Table View */}
+          <Card className="hidden md:block">
+            <CardContent className="p-0 sm:p-3 md:p-6 pt-3 sm:pt-4 md:pt-6">
+              <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <Table className="min-w-full text-xs sm:text-sm md:text-base">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs sm:text-sm whitespace-nowrap">الاسم</TableHead>
+                      <TableHead className="text-xs sm:text-sm whitespace-nowrap">رقم الهوية</TableHead>
+                      <TableHead className="text-xs sm:text-sm whitespace-nowrap">الهاتف</TableHead>
+                      <TableHead className="text-xs sm:text-sm whitespace-nowrap">النوع</TableHead>
+                      <TableHead className="text-xs sm:text-sm whitespace-nowrap">المبيعات</TableHead>
+                      <TableHead className="text-xs sm:text-sm whitespace-nowrap">إجراءات</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredClients.map((client) => (
+                      <TableRow key={client.id} className="hover:bg-muted/50">
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            {client.name}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs sm:text-sm">{client.cin}</TableCell>
+                        <TableCell className="text-xs sm:text-sm">{client.phone || '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="text-xs">
+                            {client.client_type === 'Individual' ? 'فردي' : 'شركة'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-xs sm:text-sm">{client.sales?.length || 0}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => viewDetails(client)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            {hasPermission('edit_clients') && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openDialog(client)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {hasPermission('delete_clients') && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => deleteClient(client.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
