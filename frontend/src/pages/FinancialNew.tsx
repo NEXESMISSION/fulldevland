@@ -759,14 +759,21 @@ export function Financial() {
           </Card>
 
           {/* العربون (مبلغ الحجز) - Reservation/Deposit Section */}
-          <Card 
-            className="border-orange-200 cursor-pointer hover:shadow-lg transition-shadow"
-            onClick={() => openPaymentDetails('SmallAdvance')}
-          >
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-lg text-orange-700">العربون (مبلغ الحجز)</h3>
-                <span className="text-xl font-bold text-orange-600">{formatCurrency(filteredData.smallAdvanceTotal)}</span>
+          <Card className="border-orange-200">
+            <CardContent className="pt-3 pb-3">
+              <div 
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => togglePaymentDetails('SmallAdvance')}
+              >
+                <h3 className="font-bold text-base text-orange-700">العربون (مبلغ الحجز)</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-bold text-orange-600">{formatCurrency(filteredData.smallAdvanceTotal)}</span>
+                  {expandedPaymentType === 'SmallAdvance' ? (
+                    <ChevronUp className="h-4 w-4 text-orange-600" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-orange-600" />
+                  )}
+                </div>
               </div>
               {expandedPaymentType === 'SmallAdvance' && (
                 <div className="mt-3 pt-3 border-t border-orange-200">
