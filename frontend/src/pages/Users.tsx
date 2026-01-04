@@ -802,109 +802,210 @@ export function Users() {
         </Card>
       </div>
 
-      {/* Users Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>جميع المستخدمين</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {users.length === 0 ? (
+      {/* Mobile Card View / Desktop Table View */}
+      {users.length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>جميع المستخدمين</CardTitle>
+          </CardHeader>
+          <CardContent>
             <p className="text-center text-muted-foreground py-8">لا يوجد مستخدمين</p>
-          ) : (
-            <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-              <Table className="min-w-full">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>الاسم</TableHead>
-                  <TableHead>البريد الإلكتروني</TableHead>
-                  <TableHead>الدور</TableHead>
-                  <TableHead>الحالة</TableHead>
-                  <TableHead>الإحصائيات</TableHead>
-                  <TableHead>الإجراءات</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">
-                      <div 
-                        className="flex items-center gap-2 cursor-pointer hover:text-primary transition-colors"
-                        onClick={() => openUserDetails(user)}
-                      >
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        <span className="hover:underline">{user.name}</span>
-                        {user.id === profile?.id && (
-                          <Badge variant="outline" className="ml-2">
-                            أنت
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>
-                      <Badge variant={roleColors[user.role]}>
-                        {user.role === 'Owner' ? 'مالك' : 
-                         user.role === 'Manager' ? 'مدير' : 
-                         'موظف ميداني'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={user.status === 'Active' ? 'success' : 'secondary'}
-                        className="cursor-pointer"
-                        onClick={() => toggleStatus(user)}
-                      >
-                        {user.status === 'Active' ? 'نشط' : 'غير نشط'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {(() => {
-                        const stats = userStats.get(user.id)
-                        return stats ? (
-                          <div className="flex flex-col gap-1 text-xs">
-                            <span className="text-muted-foreground">
-                              أنشأ: {stats.salesCreated} | أكد: {stats.salesConfirmed}
-                            </span>
-                            {stats.lastActivity && (
-                              <span className="text-muted-foreground">
-                                آخر نشاط: {formatDate(stats.lastActivity)}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">-</span>
-                        )
-                      })()}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openDialog(user)}
-                          title="تعديل"
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Mobile Card View */}
+          <div className="space-y-3 md:hidden">
+            {users.map((user) => {
+              const stats = userStats.get(user.id)
+              return (
+                <Card key={user.id} className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-4">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div 
+                          className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
+                          onClick={() => openUserDetails(user)}
                         >
-                          <Edit className="h-4 w-4" />
+                          <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-sm">{user.name}</div>
+                            <div className="text-xs text-muted-foreground truncate">{user.email}</div>
+                          </div>
+                          {user.id === profile?.id && (
+                            <Badge variant="outline" className="text-xs flex-shrink-0">
+                              أنت
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <Badge variant={roleColors[user.role]} className="text-xs">
+                          {user.role === 'Owner' ? 'مالك' : 
+                           user.role === 'Manager' ? 'مدير' : 
+                           'موظف ميداني'}
+                        </Badge>
+                        <Badge
+                          variant={user.status === 'Active' ? 'success' : 'secondary'}
+                          className="text-xs cursor-pointer"
+                          onClick={() => toggleStatus(user)}
+                        >
+                          {user.status === 'Active' ? 'نشط' : 'غير نشط'}
+                        </Badge>
+                      </div>
+                      
+                      {stats && (
+                        <div className="text-xs space-y-1 bg-muted/50 p-2 rounded">
+                          <div className="text-muted-foreground">
+                            أنشأ: <span className="font-medium">{stats.salesCreated}</span> | 
+                            أكد: <span className="font-medium">{stats.salesConfirmed}</span>
+                          </div>
+                          {stats.lastActivity && (
+                            <div className="text-muted-foreground">
+                              آخر نشاط: {formatDate(stats.lastActivity)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      <div className="flex items-center gap-2 pt-2 border-t">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-xs h-8"
+                          onClick={() => openUserDetails(user)}
+                        >
+                          <Eye className="h-3 w-3 mr-1" />
+                          التفاصيل
                         </Button>
                         <Button
-                          variant="ghost"
-                          size="icon"
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-xs h-8"
+                          onClick={() => openDialog(user)}
+                        >
+                          <Edit className="h-3 w-3 mr-1" />
+                          تعديل
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-8"
                           onClick={() => deleteUser(user.id)}
                           disabled={user.id === profile?.id}
-                          title="حذف"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+
+          {/* Desktop Table View */}
+          <Card className="hidden md:block">
+            <CardHeader>
+              <CardTitle>جميع المستخدمين</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <Table className="min-w-full">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>الاسم</TableHead>
+                      <TableHead>البريد الإلكتروني</TableHead>
+                      <TableHead>الدور</TableHead>
+                      <TableHead>الحالة</TableHead>
+                      <TableHead>الإحصائيات</TableHead>
+                      <TableHead>الإجراءات</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((user) => (
+                      <TableRow key={user.id}>
+                        <TableCell className="font-medium">
+                          <div 
+                            className="flex items-center gap-2 cursor-pointer hover:text-primary transition-colors"
+                            onClick={() => openUserDetails(user)}
+                          >
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            <span className="hover:underline">{user.name}</span>
+                            {user.id === profile?.id && (
+                              <Badge variant="outline" className="ml-2">
+                                أنت
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{user.email}</TableCell>
+                        <TableCell>
+                          <Badge variant={roleColors[user.role]}>
+                            {user.role === 'Owner' ? 'مالك' : 
+                             user.role === 'Manager' ? 'مدير' : 
+                             'موظف ميداني'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={user.status === 'Active' ? 'success' : 'secondary'}
+                            className="cursor-pointer"
+                            onClick={() => toggleStatus(user)}
+                          >
+                            {user.status === 'Active' ? 'نشط' : 'غير نشط'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {(() => {
+                            const stats = userStats.get(user.id)
+                            return stats ? (
+                              <div className="flex flex-col gap-1 text-xs">
+                                <span className="text-muted-foreground">
+                                  أنشأ: {stats.salesCreated} | أكد: {stats.salesConfirmed}
+                                </span>
+                                {stats.lastActivity && (
+                                  <span className="text-muted-foreground">
+                                    آخر نشاط: {formatDate(stats.lastActivity)}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )
+                          })()}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openDialog(user)}
+                              title="تعديل"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deleteUser(user.id)}
+                              disabled={user.id === profile?.id}
+                              title="حذف"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* User Dialog */}
       <Dialog open={dialogOpen} onOpenChange={(open) => {

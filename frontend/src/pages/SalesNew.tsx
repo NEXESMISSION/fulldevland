@@ -1500,7 +1500,7 @@ export function SalesNew() {
         )}
       </div>
 
-      {/* Compact Sales Table */}
+      {/* Mobile Card View / Desktop Table View */}
       {filteredAndSortedSales.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center">
@@ -1508,103 +1508,44 @@ export function SalesNew() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-              <Table className="min-w-full">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[150px]">العميل</TableHead>
-                    <TableHead className="w-[120px]">القطعة</TableHead>
-                    <TableHead className="w-[80px]">النوع</TableHead>
-                    <TableHead className="w-[100px] text-right">السعر</TableHead>
-                    <TableHead className="w-[100px] text-right">عربون</TableHead>
-                    <TableHead className="w-[120px] text-right">الدفعة الأولى</TableHead>
-                    <TableHead className="w-[100px] text-right">المتبقي</TableHead>
-                    <TableHead className="w-[100px]">الحالة</TableHead>
-                    {user?.role === 'Owner' && (
-                      <TableHead className="w-[120px]">المستخدم</TableHead>
-                    )}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAndSortedSales.map(sale => (
-                    <TableRow key={sale.id}>
-                      <TableCell className="font-medium">
-                        <button 
-                          onClick={() => {
-                            const client = clients.find(c => c.id === sale.clientId)
-                            if (client) openClientDetails(client)
-                          }}
-                          className="hover:underline text-primary font-medium"
-                        >
-                          {sale.clientName}
-                        </button>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          <div>{sale.batchName} - {sale.pieceName}</div>
-                          <div className="text-xs text-muted-foreground">{sale.surfaceArea} م²</div>
-                          {sale.deadlineDate && sale.status !== 'Completed' && !sale.bigAdvanceConfirmed && (() => {
-                            const deadline = new Date(sale.deadlineDate)
-                            const today = new Date()
-                            today.setHours(0, 0, 0, 0)
-                            deadline.setHours(0, 0, 0, 0)
-                            const daysUntil = Math.ceil((deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-                            const isExpired = daysUntil <= 0
-                            const isApproaching = daysUntil > 0 && daysUntil <= 3
-                            
-                            return (
-                              <div className={`text-xs mt-1 font-medium ${
-                                isExpired ? 'text-red-600' : 
-                                isApproaching ? 'text-orange-600' : 
-                                'text-blue-600'
-                              }`}>
-                                {isExpired ? `⚠ انتهى الموعد النهائي (${daysUntil === 0 ? 'اليوم' : Math.abs(daysUntil) + ' يوم مضى'})` :
-                                 isApproaching ? `⚠ الموعد النهائي قريب (${daysUntil} يوم)` :
-                                 `آخر أجل: ${formatDate(sale.deadlineDate)}`}
-                              </div>
-                            )
-                          })()}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={sale.paymentType === 'Full' ? 'success' : 'secondary'} className="text-xs">
-                          {sale.paymentType === 'Full' ? 'بالحاضر' : 'بالتقسيط'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatCurrency(sale.price)}
-                        {sale.companyFeeAmount && sale.companyFeeAmount > 0 && (
-                          <div className="text-xs text-blue-600 mt-1">
-                            + عمولة: {formatCurrency(sale.companyFeeAmount)}
+        <>
+          {/* Mobile Card View */}
+          <div className="space-y-3 md:hidden">
+            {filteredAndSortedSales.map(sale => {
+              const salePayments = payments.filter(p => p.sale_id === sale.saleId && p.payment_type === 'BigAdvance')
+              const bigAdvancePaid = sale.paymentType === 'Installment' 
+                ? salePayments.reduce((sum, p) => sum + (p.amount_paid || 0), 0) / (sales.find(s => s.id === sale.saleId)?.land_piece_ids.length || 1)
+                : 0
+              const saleData = sales.find(s => s.id === sale.saleId)
+              const createdByUser = saleData?.created_by ? users.find(u => u.id === saleData.created_by) : null
+              const confirmedByUser = (saleData as any)?.confirmed_by ? users.find(u => u.id === (saleData as any).confirmed_by) : null
+              
+              return (
+                <Card key={sale.id} className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-4">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <button 
+                            onClick={() => {
+                              const client = clients.find(c => c.id === sale.clientId)
+                              if (client) openClientDetails(client)
+                            }}
+                            className="font-semibold text-sm text-primary hover:underline"
+                          >
+                            {sale.clientName}
+                          </button>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {sale.batchName} - {sale.pieceName} • {sale.surfaceArea} م²
                           </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right text-green-600">{formatCurrency(sale.reservationAmount)}</TableCell>
-                      <TableCell className="text-right font-medium text-blue-600">
-                        {(() => {
-                          // Show actual big advance paid (from payments), not just the amount
-                          if (sale.paymentType === 'Installment') {
-                            // Get the actual big advance payment for this piece
-                            const salePayments = payments.filter(p => p.sale_id === sale.saleId && p.payment_type === 'BigAdvance')
-                            const bigAdvancePaid = salePayments.reduce((sum, p) => sum + (p.amount_paid || 0), 0) / (sales.find(s => s.id === sale.saleId)?.land_piece_ids.length || 1)
-                            return formatCurrency(bigAdvancePaid > 0 ? bigAdvancePaid : 0)
-                          }
-                          return formatCurrency(0)
-                        })()}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatCurrency((sale as any).remainingAmount ?? sale.price)}
-                      </TableCell>
-                      <TableCell>
+                        </div>
                         <Badge 
                           variant={
                             sale.status === 'Completed' ? 'success' :
                             sale.status === 'InstallmentsOngoing' ? 'secondary' :
                             sale.status === 'AwaitingPayment' ? 'warning' : 'destructive'
                           }
-                          className="text-xs"
+                          className="text-xs flex-shrink-0"
                         >
                           {sale.status === 'Completed' ? 'مباع' :
                            sale.status === 'InstallmentsOngoing' ? 'بالتقسيط' :
@@ -1612,37 +1553,211 @@ export function SalesNew() {
                            sale.status === 'AwaitingPayment' ? 'قيد الدفع' :
                            sale.status === 'Pending' ? 'معلق' : 'ملغي'}
                         </Badge>
-                      </TableCell>
-                      {user?.role === 'Owner' && (() => {
-                        const saleData = sales.find(s => s.id === sale.saleId)
-                        const createdByUser = saleData?.created_by ? users.find(u => u.id === saleData.created_by) : null
-                        const confirmedByUser = (saleData as any)?.confirmed_by ? users.find(u => u.id === (saleData as any).confirmed_by) : null
+                      </div>
+                      
+                      {sale.deadlineDate && sale.status !== 'Completed' && !sale.bigAdvanceConfirmed && (() => {
+                        const deadline = new Date(sale.deadlineDate)
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0)
+                        deadline.setHours(0, 0, 0, 0)
+                        const daysUntil = Math.ceil((deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+                        const isExpired = daysUntil <= 0
+                        const isApproaching = daysUntil > 0 && daysUntil <= 3
                         
                         return (
-                          <TableCell className="text-xs">
-                            {createdByUser && (
-                              <div className="text-muted-foreground mb-1">
-                                أنشأ: {createdByUser.name}
-                              </div>
-                            )}
-                            {confirmedByUser && (
-                              <div className="text-green-600 font-medium">
-                                أكد: {confirmedByUser.name}
-                              </div>
-                            )}
-                            {!createdByUser && !confirmedByUser && (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
+                          <div className={`text-xs p-2 rounded ${
+                            isExpired ? 'bg-red-50 text-red-700 border border-red-200' : 
+                            isApproaching ? 'bg-orange-50 text-orange-700 border border-orange-200' : 
+                            'bg-blue-50 text-blue-700 border border-blue-200'
+                          }`}>
+                            {isExpired ? `⚠ انتهى الموعد النهائي (${daysUntil === 0 ? 'اليوم' : Math.abs(daysUntil) + ' يوم مضى'})` :
+                             isApproaching ? `⚠ الموعد النهائي قريب (${daysUntil} يوم)` :
+                             `آخر أجل: ${formatDate(sale.deadlineDate)}`}
+                          </div>
                         )
                       })()}
+                      
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-muted-foreground">النوع:</span>
+                          <Badge variant={sale.paymentType === 'Full' ? 'success' : 'secondary'} className="text-xs ml-1">
+                            {sale.paymentType === 'Full' ? 'بالحاضر' : 'بالتقسيط'}
+                          </Badge>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">السعر:</span>
+                          <span className="font-medium ml-1">{formatCurrency(sale.price)}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">عربون:</span>
+                          <span className="font-medium text-green-600 ml-1">{formatCurrency(sale.reservationAmount)}</span>
+                        </div>
+                        {sale.paymentType === 'Installment' && (
+                          <div>
+                            <span className="text-muted-foreground">الدفعة الأولى:</span>
+                            <span className="font-medium text-blue-600 ml-1">{formatCurrency(bigAdvancePaid)}</span>
+                          </div>
+                        )}
+                        <div className="col-span-2">
+                          <span className="text-muted-foreground">المتبقي:</span>
+                          <span className="font-medium ml-1">{formatCurrency((sale as any).remainingAmount ?? sale.price)}</span>
+                        </div>
+                      </div>
+                      
+                      {sale.companyFeeAmount && sale.companyFeeAmount > 0 && (
+                        <div className="text-xs bg-blue-50 p-2 rounded border border-blue-200">
+                          <span className="text-blue-700">عمولة الشركة: {formatCurrency(sale.companyFeeAmount)}</span>
+                        </div>
+                      )}
+                      
+                      {user?.role === 'Owner' && (createdByUser || confirmedByUser) && (
+                        <div className="text-xs text-muted-foreground pt-2 border-t">
+                          {createdByUser && <div>أنشأ: {createdByUser.name}</div>}
+                          {confirmedByUser && <div className="text-green-600">أكد: {confirmedByUser.name}</div>}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+
+          {/* Desktop Table View */}
+          <Card className="hidden md:block">
+            <CardContent className="p-0">
+              <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <Table className="min-w-full">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[150px]">العميل</TableHead>
+                      <TableHead className="w-[120px]">القطعة</TableHead>
+                      <TableHead className="w-[80px]">النوع</TableHead>
+                      <TableHead className="w-[100px] text-right">السعر</TableHead>
+                      <TableHead className="w-[100px] text-right">عربون</TableHead>
+                      <TableHead className="w-[120px] text-right">الدفعة الأولى</TableHead>
+                      <TableHead className="w-[100px] text-right">المتبقي</TableHead>
+                      <TableHead className="w-[100px]">الحالة</TableHead>
+                      {user?.role === 'Owner' && (
+                        <TableHead className="w-[120px]">المستخدم</TableHead>
+                      )}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredAndSortedSales.map(sale => (
+                      <TableRow key={sale.id}>
+                        <TableCell className="font-medium">
+                          <button 
+                            onClick={() => {
+                              const client = clients.find(c => c.id === sale.clientId)
+                              if (client) openClientDetails(client)
+                            }}
+                            className="hover:underline text-primary font-medium"
+                          >
+                            {sale.clientName}
+                          </button>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div>{sale.batchName} - {sale.pieceName}</div>
+                            <div className="text-xs text-muted-foreground">{sale.surfaceArea} م²</div>
+                            {sale.deadlineDate && sale.status !== 'Completed' && !sale.bigAdvanceConfirmed && (() => {
+                              const deadline = new Date(sale.deadlineDate)
+                              const today = new Date()
+                              today.setHours(0, 0, 0, 0)
+                              deadline.setHours(0, 0, 0, 0)
+                              const daysUntil = Math.ceil((deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+                              const isExpired = daysUntil <= 0
+                              const isApproaching = daysUntil > 0 && daysUntil <= 3
+                              
+                              return (
+                                <div className={`text-xs mt-1 font-medium ${
+                                  isExpired ? 'text-red-600' : 
+                                  isApproaching ? 'text-orange-600' : 
+                                  'text-blue-600'
+                                }`}>
+                                  {isExpired ? `⚠ انتهى الموعد النهائي (${daysUntil === 0 ? 'اليوم' : Math.abs(daysUntil) + ' يوم مضى'})` :
+                                   isApproaching ? `⚠ الموعد النهائي قريب (${daysUntil} يوم)` :
+                                   `آخر أجل: ${formatDate(sale.deadlineDate)}`}
+                                </div>
+                              )
+                            })()}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={sale.paymentType === 'Full' ? 'success' : 'secondary'} className="text-xs">
+                            {sale.paymentType === 'Full' ? 'بالحاضر' : 'بالتقسيط'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(sale.price)}
+                          {sale.companyFeeAmount && sale.companyFeeAmount > 0 && (
+                            <div className="text-xs text-blue-600 mt-1">
+                              + عمولة: {formatCurrency(sale.companyFeeAmount)}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right text-green-600">{formatCurrency(sale.reservationAmount)}</TableCell>
+                        <TableCell className="text-right font-medium text-blue-600">
+                          {(() => {
+                            if (sale.paymentType === 'Installment') {
+                              const salePayments = payments.filter(p => p.sale_id === sale.saleId && p.payment_type === 'BigAdvance')
+                              const bigAdvancePaid = salePayments.reduce((sum, p) => sum + (p.amount_paid || 0), 0) / (sales.find(s => s.id === sale.saleId)?.land_piece_ids.length || 1)
+                              return formatCurrency(bigAdvancePaid > 0 ? bigAdvancePaid : 0)
+                            }
+                            return formatCurrency(0)
+                          })()}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency((sale as any).remainingAmount ?? sale.price)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={
+                              sale.status === 'Completed' ? 'success' :
+                              sale.status === 'InstallmentsOngoing' ? 'secondary' :
+                              sale.status === 'AwaitingPayment' ? 'warning' : 'destructive'
+                            }
+                            className="text-xs"
+                          >
+                            {sale.status === 'Completed' ? 'مباع' :
+                             sale.status === 'InstallmentsOngoing' ? 'بالتقسيط' :
+                             sale.status === 'Pending' && !sale.bigAdvanceConfirmed && !(sale as any).is_confirmed ? 'غير مؤكد' :
+                             sale.status === 'AwaitingPayment' ? 'قيد الدفع' :
+                             sale.status === 'Pending' ? 'معلق' : 'ملغي'}
+                          </Badge>
+                        </TableCell>
+                        {user?.role === 'Owner' && (() => {
+                          const saleData = sales.find(s => s.id === sale.saleId)
+                          const createdByUser = saleData?.created_by ? users.find(u => u.id === saleData.created_by) : null
+                          const confirmedByUser = (saleData as any)?.confirmed_by ? users.find(u => u.id === (saleData as any).confirmed_by) : null
+                          
+                          return (
+                            <TableCell className="text-xs">
+                              {createdByUser && (
+                                <div className="text-muted-foreground mb-1">
+                                  أنشأ: {createdByUser.name}
+                                </div>
+                              )}
+                              {confirmedByUser && (
+                                <div className="text-green-600 font-medium">
+                                  أكد: {confirmedByUser.name}
+                                </div>
+                              )}
+                              {!createdByUser && !confirmedByUser && (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                          )
+                        })()}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
       )}
 
       {/* New Sale Dialog */}

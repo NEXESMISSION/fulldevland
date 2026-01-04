@@ -499,114 +499,226 @@ export function Expenses() {
         </CardContent>
       </Card>
 
-      {/* Expenses Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>قائمة المصاريف ({filteredExpenses.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>التاريخ</TableHead>
-                  <TableHead>الفئة</TableHead>
-                  <TableHead>المبلغ</TableHead>
-                  <TableHead>الوصف</TableHead>
-                  <TableHead>طريقة الدفع</TableHead>
-                  <TableHead>الحالة</TableHead>
-                  <TableHead className="text-center">إجراءات</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredExpenses.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
-                      لا توجد مصاريف
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredExpenses.map(expense => {
-                    const category = categories.find(c => c.id === expense.category_id)
-                    return (
-                      <TableRow key={expense.id}>
-                        <TableCell>{formatDate(expense.expense_date)}</TableCell>
-                        <TableCell>{category?.name || 'غير معروف'}</TableCell>
-                        <TableCell className="font-medium">{formatCurrency(expense.amount)}</TableCell>
-                        <TableCell className="max-w-xs truncate">{expense.description || '-'}</TableCell>
-                        <TableCell>
-                          {expense.payment_method === 'Cash' ? 'نقد' :
-                           expense.payment_method === 'BankTransfer' ? 'تحويل بنكي' :
-                           expense.payment_method === 'Check' ? 'شيك' :
-                           expense.payment_method === 'CreditCard' ? 'بطاقة ائتمان' : 'أخرى'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge 
-                            variant={
-                              expense.status === 'Approved' ? 'success' :
-                              expense.status === 'Rejected' ? 'destructive' : 'warning'
-                            }
-                          >
-                            {expense.status === 'Approved' ? 'معتمد' :
-                             expense.status === 'Rejected' ? 'مرفوض' : 'في انتظار'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center justify-center gap-2">
-                            {expense.status === 'Pending' && hasPermission('manage_financial') && (
-                              <>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => approveExpense(expense.id)}
-                                  className="h-8 w-8 text-green-600"
-                                >
-                                  <CheckCircle className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    const reason = prompt('سبب الرفض:')
-                                    if (reason) rejectExpense(expense.id, reason)
-                                  }}
-                                  className="h-8 w-8 text-red-600"
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                </Button>
-                              </>
-                            )}
-                            {canEditExpenses && (
-                              <>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => openExpenseDialog(expense)}
-                                  className="h-8 w-8"
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => deleteExpense(expense.id)}
-                                  className="h-8 w-8 text-destructive"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </>
-                            )}
+      {/* Mobile Card View / Desktop Table View */}
+      {filteredExpenses.length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>قائمة المصاريف (0)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-center text-muted-foreground py-8">لا توجد مصاريف</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Mobile Card View */}
+          <div className="space-y-3 md:hidden">
+            {filteredExpenses.map(expense => {
+              const category = categories.find(c => c.id === expense.category_id)
+              return (
+                <Card key={expense.id} className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-4">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-base text-orange-600">
+                            {formatCurrency(expense.amount)}
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {formatDate(expense.expense_date)}
+                          </div>
+                        </div>
+                        <Badge 
+                          variant={
+                            expense.status === 'Approved' ? 'success' :
+                            expense.status === 'Rejected' ? 'destructive' : 'warning'
+                          }
+                          className="text-xs flex-shrink-0"
+                        >
+                          {expense.status === 'Approved' ? 'معتمد' :
+                           expense.status === 'Rejected' ? 'مرفوض' : 'في انتظار'}
+                        </Badge>
+                      </div>
+                      
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">الفئة:</span>
+                          <span className="font-medium">{category?.name || 'غير معروف'}</span>
+                        </div>
+                        {expense.description && (
+                          <div>
+                            <span className="text-muted-foreground">الوصف:</span>
+                            <div className="font-medium mt-0.5">{expense.description}</div>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">طريقة الدفع:</span>
+                          <span className="font-medium">
+                            {expense.payment_method === 'Cash' ? 'نقد' :
+                             expense.payment_method === 'BankTransfer' ? 'تحويل بنكي' :
+                             expense.payment_method === 'Check' ? 'شيك' :
+                             expense.payment_method === 'CreditCard' ? 'بطاقة ائتمان' : 'أخرى'}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 pt-2 border-t">
+                        {expense.status === 'Pending' && hasPermission('manage_financial') && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1 text-xs h-8 text-green-600"
+                              onClick={() => approveExpense(expense.id)}
+                            >
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              موافقة
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1 text-xs h-8 text-red-600"
+                              onClick={() => {
+                                const reason = prompt('سبب الرفض:')
+                                if (reason) rejectExpense(expense.id, reason)
+                              }}
+                            >
+                              <XCircle className="h-3 w-3 mr-1" />
+                              رفض
+                            </Button>
+                          </>
+                        )}
+                        {canEditExpenses && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1 text-xs h-8"
+                              onClick={() => openExpenseDialog(expense)}
+                            >
+                              <Edit className="h-3 w-3 mr-1" />
+                              تعديل
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-8"
+                              onClick={() => deleteExpense(expense.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Desktop Table View */}
+          <Card className="hidden md:block">
+            <CardHeader>
+              <CardTitle>قائمة المصاريف ({filteredExpenses.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>التاريخ</TableHead>
+                      <TableHead>الفئة</TableHead>
+                      <TableHead>المبلغ</TableHead>
+                      <TableHead>الوصف</TableHead>
+                      <TableHead>طريقة الدفع</TableHead>
+                      <TableHead>الحالة</TableHead>
+                      <TableHead className="text-center">إجراءات</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredExpenses.map(expense => {
+                      const category = categories.find(c => c.id === expense.category_id)
+                      return (
+                        <TableRow key={expense.id}>
+                          <TableCell>{formatDate(expense.expense_date)}</TableCell>
+                          <TableCell>{category?.name || 'غير معروف'}</TableCell>
+                          <TableCell className="font-medium">{formatCurrency(expense.amount)}</TableCell>
+                          <TableCell className="max-w-xs truncate">{expense.description || '-'}</TableCell>
+                          <TableCell>
+                            {expense.payment_method === 'Cash' ? 'نقد' :
+                             expense.payment_method === 'BankTransfer' ? 'تحويل بنكي' :
+                             expense.payment_method === 'Check' ? 'شيك' :
+                             expense.payment_method === 'CreditCard' ? 'بطاقة ائتمان' : 'أخرى'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={
+                                expense.status === 'Approved' ? 'success' :
+                                expense.status === 'Rejected' ? 'destructive' : 'warning'
+                              }
+                            >
+                              {expense.status === 'Approved' ? 'معتمد' :
+                               expense.status === 'Rejected' ? 'مرفوض' : 'في انتظار'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-2">
+                              {expense.status === 'Pending' && hasPermission('manage_financial') && (
+                                <>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => approveExpense(expense.id)}
+                                    className="h-8 w-8 text-green-600"
+                                  >
+                                    <CheckCircle className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      const reason = prompt('سبب الرفض:')
+                                      if (reason) rejectExpense(expense.id, reason)
+                                    }}
+                                    className="h-8 w-8 text-red-600"
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                              {canEditExpenses && (
+                                <>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => openExpenseDialog(expense)}
+                                    className="h-8 w-8"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => deleteExpense(expense.id)}
+                                    className="h-8 w-8 text-destructive"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* Expense Dialog */}
       <Dialog open={expenseDialogOpen} onOpenChange={setExpenseDialogOpen}>

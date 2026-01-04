@@ -510,89 +510,180 @@ export function RealEstateBuildings() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>اسم المشروع</TableHead>
-                    <TableHead>النوع</TableHead>
-                    <TableHead>الحالة</TableHead>
-                    <TableHead>الموقع</TableHead>
-                    <TableHead>الميزانية</TableHead>
-                    <TableHead>المصروفات</TableHead>
-                    <TableHead>المتبقي</TableHead>
-                    <TableHead className="text-left">الإجراءات</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {projects.map((project) => {
-                    const remaining = project.estimated_budget - project.total_expenses
-                    return (
-                      <TableRow key={project.id} className="hover:bg-muted/50">
-                        <TableCell className="font-medium">{project.name}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{projectTypeLabels[project.project_type]}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={statusColors[project.status]}>
-                            {projectStatusLabels[project.status]}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <MapPin className="h-3 w-3" />
-                            <span>{project.location || '-'}</span>
+            <>
+              {/* Mobile Card View */}
+              <div className="space-y-3 md:hidden">
+                {projects.map((project) => {
+                  const remaining = project.estimated_budget - project.total_expenses
+                  return (
+                    <Card key={project.id} className="hover:shadow-md transition-shadow">
+                      <CardContent className="p-4">
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-sm">{project.name}</div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Badge variant="outline" className="text-xs">
+                                  {projectTypeLabels[project.project_type]}
+                                </Badge>
+                                <Badge className={`text-xs ${statusColors[project.status]}`}>
+                                  {projectStatusLabels[project.status]}
+                                </Badge>
+                              </div>
+                            </div>
                           </div>
-                        </TableCell>
-                        <TableCell className="font-medium">{formatCurrency(project.estimated_budget)}</TableCell>
-                        <TableCell className="text-orange-600 font-medium">{formatCurrency(project.total_expenses)}</TableCell>
-                        <TableCell className={`font-medium ${remaining < 0 ? 'text-destructive' : 'text-primary'}`}>
-                          {formatCurrency(remaining)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
+                          
+                          {project.location && (
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <MapPin className="h-3 w-3" />
+                              <span>{project.location}</span>
+                            </div>
+                          )}
+                          
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="text-muted-foreground">الميزانية:</span>
+                              <div className="font-medium">{formatCurrency(project.estimated_budget)}</div>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">المصروفات:</span>
+                              <div className="font-medium text-orange-600">{formatCurrency(project.total_expenses)}</div>
+                            </div>
+                            <div className="col-span-2">
+                              <span className="text-muted-foreground">المتبقي:</span>
+                              <div className={`font-medium ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {formatCurrency(remaining)}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 pt-2 border-t">
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
+                              className="flex-1 text-xs h-8"
                               onClick={() => openDetailsDialog(project)}
-                              className="gap-1"
                             >
-                              <Eye className="h-4 w-4" />
-                              <span className="hidden sm:inline">عرض</span>
+                              <Eye className="h-3 w-3 mr-1" />
+                              عرض
                             </Button>
                             {isOwner && (
                               <>
                                 <Button
-                                  variant="ghost"
+                                  variant="outline"
                                   size="sm"
+                                  className="flex-1 text-xs h-8"
                                   onClick={() => openProjectDialog(project)}
-                                  className="gap-1"
                                 >
-                                  <Edit className="h-4 w-4" />
-                                  <span className="hidden sm:inline">تعديل</span>
+                                  <Edit className="h-3 w-3 mr-1" />
+                                  تعديل
                                 </Button>
                                 <Button
-                                  variant="ghost"
+                                  variant="outline"
                                   size="sm"
+                                  className="text-xs h-8"
                                   onClick={() => {
                                     setSelectedProject(project)
                                     setDeleteConfirmOpen(true)
                                   }}
-                                  className="gap-1 text-destructive hover:text-destructive"
                                 >
-                                  <Trash2 className="h-4 w-4" />
-                                  <span className="hidden sm:inline">حذف</span>
+                                  <Trash2 className="h-3 w-3" />
                                 </Button>
                               </>
                             )}
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>اسم المشروع</TableHead>
+                      <TableHead>النوع</TableHead>
+                      <TableHead>الحالة</TableHead>
+                      <TableHead>الموقع</TableHead>
+                      <TableHead>الميزانية</TableHead>
+                      <TableHead>المصروفات</TableHead>
+                      <TableHead>المتبقي</TableHead>
+                      <TableHead className="text-left">الإجراءات</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {projects.map((project) => {
+                      const remaining = project.estimated_budget - project.total_expenses
+                      return (
+                        <TableRow key={project.id} className="hover:bg-muted/50">
+                          <TableCell className="font-medium">{project.name}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{projectTypeLabels[project.project_type]}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={statusColors[project.status]}>
+                              {projectStatusLabels[project.status]}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <MapPin className="h-3 w-3" />
+                              <span>{project.location || '-'}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-medium">{formatCurrency(project.estimated_budget)}</TableCell>
+                          <TableCell className="text-orange-600 font-medium">{formatCurrency(project.total_expenses)}</TableCell>
+                          <TableCell className={`font-medium ${remaining < 0 ? 'text-destructive' : 'text-primary'}`}>
+                            {formatCurrency(remaining)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openDetailsDialog(project)}
+                                className="gap-1"
+                              >
+                                <Eye className="h-4 w-4" />
+                                <span className="hidden sm:inline">عرض</span>
+                              </Button>
+                              {isOwner && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => openProjectDialog(project)}
+                                    className="gap-1"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                    <span className="hidden sm:inline">تعديل</span>
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedProject(project)
+                                      setDeleteConfirmOpen(true)
+                                    }}
+                                    className="gap-1 text-destructive hover:text-destructive"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    <span className="hidden sm:inline">حذف</span>
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

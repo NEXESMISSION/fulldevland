@@ -949,8 +949,83 @@ export function SaleConfirmation() {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 pb-3">
-                  {/* Compact Table View for Pieces */}
-                  <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
+                  {/* Mobile Card View / Desktop Table View for Pieces */}
+                  <div className="md:hidden space-y-2">
+                    {pieces.map((piece: any) => {
+                      const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(sale, piece)
+                      
+                      return (
+                        <Card key={piece.id} className="bg-muted/30">
+                          <CardContent className="p-3">
+                            <div className="space-y-2">
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <div className="font-medium text-sm">
+                                    {piece.land_batch?.name || 'دفعة'} - #{piece.piece_number}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">{piece.surface_area} م²</div>
+                                </div>
+                              </div>
+                              
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <span className="text-muted-foreground">السعر:</span>
+                                  <div className="font-medium">{formatCurrency(pricePerPiece)}</div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">العمولة:</span>
+                                  <div className="font-medium text-blue-600">{formatCurrency(companyFeePerPiece)}</div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">الإجمالي:</span>
+                                  <div className="font-bold text-green-600">{formatCurrency(totalPayablePerPiece)}</div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">العربون:</span>
+                                  <div className="font-medium text-green-600">{formatCurrency(reservationPerPiece)}</div>
+                                </div>
+                              </div>
+                              
+                              <div className="flex flex-wrap gap-2 pt-2 border-t">
+                                <Button
+                                  onClick={() => handleCancelPiece(sale, piece)}
+                                  variant="destructive"
+                                  size="sm"
+                                  className="text-xs h-8 flex-1"
+                                >
+                                  <XCircle className="ml-1 h-3 w-3" />
+                                  إلغاء
+                                </Button>
+                                {sale.payment_type === 'Full' && (
+                                  <Button
+                                    onClick={() => openConfirmDialog(sale, piece, 'full')}
+                                    className="bg-green-600 hover:bg-green-700 text-xs h-8 flex-1"
+                                    size="sm"
+                                  >
+                                    <CheckCircle className="ml-1 h-3 w-3" />
+                                    كامل
+                                  </Button>
+                                )}
+                                {sale.payment_type === 'Installment' && (
+                                  <Button
+                                    onClick={() => openConfirmDialog(sale, piece, 'bigAdvance')}
+                                    className="bg-blue-600 hover:bg-blue-700 text-xs h-8 flex-1"
+                                    size="sm"
+                                  >
+                                    <DollarSign className="ml-1 h-3 w-3" />
+                                    دفعة
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                  
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
                     <Table className="min-w-full text-sm">
                       <TableHeader>
                         <TableRow>
