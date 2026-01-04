@@ -493,10 +493,10 @@ export function Financial() {
   const paymentsByLand = getPaymentsByLand(selectedPaymentType)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4 p-3 sm:p-4 md:p-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <h1 className="text-2xl sm:text-3xl font-bold">المالية</h1>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">المالية</h1>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           {(['today', 'week', 'month', 'all'] as DateFilter[]).map(filter => (
             <Button
@@ -504,7 +504,7 @@ export function Financial() {
               variant={dateFilter === filter ? 'default' : 'outline'}
               size="sm"
               onClick={() => setDateFilter(filter)}
-              className="flex-1 sm:flex-none"
+              className="flex-1 sm:flex-none text-xs sm:text-sm"
             >
               {filterLabels[filter]}
             </Button>
@@ -514,25 +514,25 @@ export function Financial() {
 
       {/* Grand Total - Most Important */}
       <Card className="bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg">
-        <CardContent className="pt-4 pb-4">
+        <CardContent className="pt-3 sm:pt-4 pb-3 sm:pb-4 px-3 sm:px-4 md:px-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-green-100 mb-1">المجموع الإجمالي</p>
-              <p className="text-3xl sm:text-4xl font-bold">{formatCurrency(filteredData.cashReceived + filteredData.companyFeesTotal)}</p>
+              <p className="text-xs sm:text-sm font-medium text-green-100 mb-1">المجموع الإجمالي</p>
+              <p className="text-2xl sm:text-3xl md:text-4xl font-bold">{formatCurrency(filteredData.cashReceived + filteredData.companyFeesTotal)}</p>
               <p className="text-xs text-green-100 mt-1">
                 المستلم ({formatCurrency(filteredData.cashReceived)}) + العمولة ({formatCurrency(filteredData.companyFeesTotal)})
               </p>
             </div>
-            <div className="text-right">
-              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
-                <TrendingUp className="h-8 w-8" />
+            <div className="text-right hidden sm:block">
+              <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white/20 rounded-full flex items-center justify-center">
+                <TrendingUp className="h-6 w-6 sm:h-8 sm:w-8" />
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
       {/* Cash Received Summary */}
         <Card className="bg-purple-50 border-purple-200">
           <CardContent className="pt-4">

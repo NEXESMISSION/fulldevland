@@ -150,17 +150,29 @@
     
     /* Improved table readability on mobile */
     table {
-      font-size: 0.875rem;
+      font-size: 0.75rem;
     }
     
     th, td {
-      padding: 0.5rem 0.375rem;
+      padding: 0.375rem 0.25rem;
     }
     
     /* Better button sizes on mobile */
     button {
-      padding: 0.5rem 0.75rem;
-      font-size: 0.875rem;
+      padding: 0.375rem 0.625rem;
+      font-size: 0.75rem;
+      min-height: 36px;
+    }
+    
+    /* Better input/select sizes on mobile */
+    input, select, textarea {
+      min-height: 40px;
+    }
+    
+    /* Better badge sizes on mobile */
+    [class*="Badge"] {
+      font-size: 0.625rem;
+      padding: 0.25rem 0.5rem;
     }
   }
 }

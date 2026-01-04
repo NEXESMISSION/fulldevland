@@ -364,64 +364,72 @@ export function Clients() {
             <p className="text-center text-muted-foreground py-6 sm:py-8 text-sm sm:text-base">لا توجد عملاء</p>
           ) : (
             <div className="overflow-x-auto -mx-3 sm:-mx-3 md:mx-0 px-3 sm:px-3 md:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <Table className="min-w-full text-sm sm:text-base">
+            <Table className="min-w-full text-xs sm:text-sm md:text-base">
               <TableHeader>
                 <TableRow>
-                  <TableHead>الاسم</TableHead>
-                  <TableHead>رقم الهوية</TableHead>
-                  <TableHead>الهاتف</TableHead>
-                  <TableHead>النوع</TableHead>
-                  <TableHead>المبيعات</TableHead>
-                  <TableHead>إجراءات</TableHead>
+                  <TableHead className="text-xs sm:text-sm whitespace-nowrap">الاسم</TableHead>
+                  <TableHead className="text-xs sm:text-sm whitespace-nowrap hidden sm:table-cell">رقم الهوية</TableHead>
+                  <TableHead className="text-xs sm:text-sm whitespace-nowrap hidden md:table-cell">الهاتف</TableHead>
+                  <TableHead className="text-xs sm:text-sm whitespace-nowrap hidden lg:table-cell">النوع</TableHead>
+                  <TableHead className="text-xs sm:text-sm whitespace-nowrap hidden md:table-cell">المبيعات</TableHead>
+                  <TableHead className="text-xs sm:text-sm whitespace-nowrap">إجراءات</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredClients.map((client) => (
-                  <TableRow key={client.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        {client.name}
+                  <TableRow key={client.id} className="hover:bg-muted/50">
+                    <TableCell className="font-medium min-w-[120px]">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-1 sm:gap-2">
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                          <User className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground flex-shrink-0" />
+                          <span className="truncate max-w-[150px] sm:max-w-none">{client.name}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground sm:hidden">
+                          {client.cin} • {client.phone || '-'}
+                        </div>
                       </div>
                     </TableCell>
-                    <TableCell>{client.cin}</TableCell>
-                    <TableCell>{client.phone || '-'}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">
+                    <TableCell className="hidden sm:table-cell text-xs sm:text-sm">{client.cin}</TableCell>
+                    <TableCell className="hidden md:table-cell text-xs sm:text-sm">{client.phone || '-'}</TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      <Badge variant="secondary" className="text-xs">
                         {client.client_type === 'Individual' ? 'فردي' : 'شركة'}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden md:table-cell">
                       <div className="flex items-center gap-1">
-                        <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-                        {client.sales?.length || 0}
+                        <ShoppingCart className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+                        <span className="text-xs sm:text-sm">{client.sales?.length || 0}</span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0.5 sm:gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="h-7 w-7 sm:h-8 sm:w-8"
                           onClick={() => viewDetails(client)}
                         >
-                          <Eye className="h-4 w-4" />
+                          <Eye className="h-3 w-3 sm:h-4 sm:w-4" />
                         </Button>
                         {hasPermission('edit_clients') && (
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="h-7 w-7 sm:h-8 sm:w-8"
                             onClick={() => openDialog(client)}
                           >
-                            <Edit className="h-4 w-4" />
+                            <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
                           </Button>
                         )}
                         {hasPermission('delete_clients') && (
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="h-7 w-7 sm:h-8 sm:w-8"
                             onClick={() => deleteClient(client.id)}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
                           </Button>
                         )}
                       </div>
