@@ -836,74 +836,115 @@ export function RealEstateBuildings() {
       <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
         <DialogContent className="w-[95vw] sm:w-full max-w-5xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-primary" />
               <span>تفاصيل المشروع</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setDetailsDialogOpen(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
             </DialogTitle>
           </DialogHeader>
-          {selectedProject && (
+          {selectedProject && (() => {
+            const remaining = selectedProject.estimated_budget - selectedProject.total_expenses
+            const budgetPercentage = selectedProject.estimated_budget > 0 
+              ? (selectedProject.total_expenses / selectedProject.estimated_budget) * 100 
+              : 0
+            return (
             <div className="space-y-4 sm:space-y-6">
-              {/* Project Info */}
-              <Card>
-                <CardHeader className="p-3 sm:p-6">
-                  <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-                    <Package className="h-4 w-4 sm:h-5 sm:w-5" />
-                    {selectedProject.name}
-                  </CardTitle>
-                  <CardDescription className="text-xs sm:text-sm">معلومات المشروع الأساسية</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 sm:space-y-4 p-3 sm:p-6">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-                    <div className="space-y-1">
-                      <p className="text-xs sm:text-sm text-muted-foreground">النوع</p>
-                      <p className="font-medium text-sm sm:text-base">{projectTypeLabels[selectedProject.project_type]}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs sm:text-sm text-muted-foreground">الحالة</p>
+              {/* Project Header with Key Info */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 p-4 sm:p-6 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-bold mb-2">{selectedProject.name}</h3>
+                    <div className="flex flex-wrap items-center gap-2">
                       <Badge className={`text-xs sm:text-sm ${statusColors[selectedProject.status]}`}>
                         {projectStatusLabels[selectedProject.status]}
                       </Badge>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs sm:text-sm text-muted-foreground">الميزانية</p>
-                      <p className="font-medium text-sm sm:text-base">{formatCurrency(selectedProject.estimated_budget)}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs sm:text-sm text-muted-foreground">المصروفات</p>
-                      <p className="font-medium text-sm sm:text-base text-orange-600">{formatCurrency(selectedProject.total_expenses)}</p>
+                      <Badge variant="outline" className="text-xs sm:text-sm">
+                        {projectTypeLabels[selectedProject.project_type]}
+                      </Badge>
                     </div>
                   </div>
                   {selectedProject.location && (
-                    <div className="space-y-1">
-                      <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1">
-                        <MapPin className="h-3 w-3" />
-                        الموقع
-                      </p>
-                      <p className="font-medium text-sm sm:text-base">{selectedProject.location}</p>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <MapPin className="h-4 w-4" />
+                      <span>{selectedProject.location}</span>
                     </div>
                   )}
+                </div>
+                
+                {/* Financial Summary */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-blue-200 dark:border-blue-800">
+                  <div className="bg-white dark:bg-gray-900 p-3 rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">الميزانية</p>
+                    <p className="text-lg sm:text-xl font-bold text-blue-600">{formatCurrency(selectedProject.estimated_budget)}</p>
+                  </div>
+                  <div className="bg-white dark:bg-gray-900 p-3 rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">المصروفات</p>
+                    <p className="text-lg sm:text-xl font-bold text-orange-600">{formatCurrency(selectedProject.total_expenses)}</p>
+                  </div>
+                  <div className={`bg-white dark:bg-gray-900 p-3 rounded-lg ${remaining < 0 ? 'border-2 border-red-300' : ''}`}>
+                    <p className="text-xs text-muted-foreground mb-1">المتبقي</p>
+                    <p className={`text-lg sm:text-xl font-bold ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {formatCurrency(remaining)}
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Budget Progress Bar */}
+                <div className="mt-4">
+                  <div className="flex items-center justify-between text-xs mb-2">
+                    <span className="text-muted-foreground">نسبة الاستهلاك</span>
+                    <span className="font-semibold">{Math.round(budgetPercentage)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                    <div 
+                      className={`h-2.5 rounded-full transition-all ${
+                        budgetPercentage > 100 ? 'bg-red-500' :
+                        budgetPercentage > 80 ? 'bg-orange-500' :
+                        'bg-green-500'
+                      }`}
+                      style={{ width: `${Math.min(budgetPercentage, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Project Details */}
+              <Card>
+                <CardHeader className="p-4 sm:p-6">
+                  <CardTitle className="text-base sm:text-lg">معلومات المشروع</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 p-4 sm:p-6 pt-0">
                   {selectedProject.description && (
-                    <div className="space-y-1">
-                      <p className="text-xs sm:text-sm text-muted-foreground">الوصف</p>
-                      <p className="text-xs sm:text-sm">{selectedProject.description}</p>
+                    <div className="space-y-2">
+                      <p className="text-xs sm:text-sm font-medium text-muted-foreground">الوصف</p>
+                      <p className="text-sm sm:text-base leading-relaxed">{selectedProject.description}</p>
                     </div>
                   )}
                   {selectedProject.start_date && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                      <div className="space-y-1">
-                        <p className="text-xs sm:text-sm text-muted-foreground">تاريخ البدء</p>
-                        <p className="font-medium text-sm sm:text-base">{formatDate(selectedProject.start_date)}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <p className="text-xs sm:text-sm font-medium text-muted-foreground">تاريخ البدء</p>
+                        <p className="text-sm sm:text-base font-medium">{formatDate(selectedProject.start_date)}</p>
                       </div>
                       {selectedProject.expected_completion_date && (
-                        <div className="space-y-1">
-                          <p className="text-xs sm:text-sm text-muted-foreground">تاريخ الانتهاء المتوقع</p>
-                          <p className="font-medium text-sm sm:text-base">{formatDate(selectedProject.expected_completion_date)}</p>
+                        <div className="space-y-2">
+                          <p className="text-xs sm:text-sm font-medium text-muted-foreground">تاريخ الانتهاء المتوقع</p>
+                          <p className="text-sm sm:text-base font-medium">{formatDate(selectedProject.expected_completion_date)}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {(selectedProject.units_count || selectedProject.total_area) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+                      {selectedProject.units_count && (
+                        <div className="space-y-2">
+                          <p className="text-xs sm:text-sm font-medium text-muted-foreground">عدد الوحدات</p>
+                          <p className="text-sm sm:text-base font-medium">{selectedProject.units_count}</p>
+                        </div>
+                      )}
+                      {selectedProject.total_area && (
+                        <div className="space-y-2">
+                          <p className="text-xs sm:text-sm font-medium text-muted-foreground">المساحة الإجمالية</p>
+                          <p className="text-sm sm:text-base font-medium">{selectedProject.total_area} م²</p>
                         </div>
                       )}
                     </div>
@@ -913,10 +954,15 @@ export function RealEstateBuildings() {
 
               {/* Expenses Section */}
               <Card>
-                <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 sm:p-6">
+                <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 sm:p-6">
                   <div>
-                    <CardTitle className="text-base sm:text-lg">المصروفات</CardTitle>
-                    <CardDescription className="text-xs sm:text-sm">إجمالي المصروفات: {formatCurrency(selectedProject.total_expenses)}</CardDescription>
+                    <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-orange-600" />
+                      المصروفات
+                    </CardTitle>
+                    <CardDescription className="text-xs sm:text-sm mt-1">
+                      إجمالي: {formatCurrency(selectedProject.total_expenses)} • {selectedProjectExpenses.length} مصروف
+                    </CardDescription>
                   </div>
                   {isOwner && (
                     <Button onClick={() => openExpenseDialog()} className="gap-2 w-full sm:w-auto text-xs sm:text-sm">
@@ -925,11 +971,11 @@ export function RealEstateBuildings() {
                     </Button>
                   )}
                 </CardHeader>
-                <CardContent>
+                <CardContent className="p-4 sm:p-6 pt-0">
                   {selectedProjectExpenses.length === 0 ? (
-                    <div className="text-center py-12">
-                      <TrendingUp className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                      <p className="text-muted-foreground mb-4">لا توجد مصروفات</p>
+                    <div className="text-center py-8 sm:py-12">
+                      <TrendingUp className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                      <p className="text-sm sm:text-base text-muted-foreground mb-4">لا توجد مصروفات</p>
                       {isOwner && (
                         <Button onClick={() => openExpenseDialog()} variant="outline" className="gap-2">
                           <Plus className="h-4 w-4" />
@@ -938,65 +984,133 @@ export function RealEstateBuildings() {
                       )}
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>التاريخ</TableHead>
-                            <TableHead>الفئة</TableHead>
-                            <TableHead>الوصف</TableHead>
-                            <TableHead>المبلغ</TableHead>
-                            <TableHead>المورد</TableHead>
-                            {isOwner && <TableHead className="text-left">الإجراءات</TableHead>}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {selectedProjectExpenses.map((expense) => (
-                            <TableRow key={expense.id} className="hover:bg-muted/50">
-                              <TableCell>{formatDate(expense.expense_date)}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline">{expenseCategoryLabels[expense.category]}</Badge>
-                              </TableCell>
-                              <TableCell className="max-w-xs truncate">{expense.description}</TableCell>
-                              <TableCell className="font-medium">{formatCurrency(expense.amount)}</TableCell>
-                              <TableCell>{expense.supplier_name || '-'}</TableCell>
-                              {isOwner && (
-                                <TableCell>
-                                  <div className="flex items-center gap-2">
+                    <>
+                      {/* Mobile Card View */}
+                      <div className="space-y-3 md:hidden">
+                        {selectedProjectExpenses.map((expense) => (
+                          <Card key={expense.id} className="hover:shadow-md transition-shadow">
+                            <CardContent className="p-3">
+                              <div className="space-y-2">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-semibold text-base text-orange-600">
+                                      {formatCurrency(expense.amount)}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mt-1">
+                                      {formatDate(expense.expense_date)}
+                                    </div>
+                                  </div>
+                                  <Badge variant="outline" className="text-xs flex-shrink-0">
+                                    {expenseCategoryLabels[expense.category]}
+                                  </Badge>
+                                </div>
+                                
+                                {expense.description && (
+                                  <div>
+                                    <p className="text-xs text-muted-foreground mb-0.5">الوصف:</p>
+                                    <p className="text-sm font-medium">{expense.description}</p>
+                                  </div>
+                                )}
+                                
+                                {expense.supplier_name && (
+                                  <div className="flex items-center gap-1.5 text-xs">
+                                    <span className="text-muted-foreground">المورد:</span>
+                                    <span className="font-medium">{expense.supplier_name}</span>
+                                  </div>
+                                )}
+                                
+                                {isOwner && (
+                                  <div className="flex items-center gap-2 pt-2 border-t">
                                     <Button
-                                      variant="ghost"
+                                      variant="outline"
                                       size="sm"
+                                      className="flex-1 text-xs h-8"
                                       onClick={() => openExpenseDialog(expense)}
-                                      className="gap-1"
                                     >
-                                      <Edit className="h-4 w-4" />
-                                      <span className="hidden sm:inline">تعديل</span>
+                                      <Edit className="h-3 w-3 mr-1" />
+                                      تعديل
                                     </Button>
                                     <Button
-                                      variant="ghost"
+                                      variant="outline"
                                       size="sm"
+                                      className="text-xs h-8"
                                       onClick={() => {
                                         setEditingExpense(expense)
                                         setDeleteExpenseConfirmOpen(true)
                                       }}
-                                      className="gap-1 text-destructive hover:text-destructive"
                                     >
-                                      <Trash2 className="h-4 w-4" />
-                                      <span className="hidden sm:inline">حذف</span>
+                                      <Trash2 className="h-3 w-3" />
                                     </Button>
                                   </div>
-                                </TableCell>
-                              )}
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+
+                      {/* Desktop Table View */}
+                      <div className="hidden md:block overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>التاريخ</TableHead>
+                              <TableHead>الفئة</TableHead>
+                              <TableHead>الوصف</TableHead>
+                              <TableHead>المبلغ</TableHead>
+                              <TableHead>المورد</TableHead>
+                              {isOwner && <TableHead className="text-left">الإجراءات</TableHead>}
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
+                          </TableHeader>
+                          <TableBody>
+                            {selectedProjectExpenses.map((expense) => (
+                              <TableRow key={expense.id} className="hover:bg-muted/50">
+                                <TableCell>{formatDate(expense.expense_date)}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline">{expenseCategoryLabels[expense.category]}</Badge>
+                                </TableCell>
+                                <TableCell className="max-w-xs truncate">{expense.description}</TableCell>
+                                <TableCell className="font-medium">{formatCurrency(expense.amount)}</TableCell>
+                                <TableCell>{expense.supplier_name || '-'}</TableCell>
+                                {isOwner && (
+                                  <TableCell>
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => openExpenseDialog(expense)}
+                                        className="gap-1"
+                                      >
+                                        <Edit className="h-4 w-4" />
+                                        <span className="hidden sm:inline">تعديل</span>
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                          setEditingExpense(expense)
+                                          setDeleteExpenseConfirmOpen(true)
+                                        }}
+                                        className="gap-1 text-destructive hover:text-destructive"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                        <span className="hidden sm:inline">حذف</span>
+                                      </Button>
+                                    </div>
+                                  </TableCell>
+                                )}
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </>
                   )}
                 </CardContent>
               </Card>
             </div>
-          )}
+            )
+          })()}
         </DialogContent>
       </Dialog>
 
