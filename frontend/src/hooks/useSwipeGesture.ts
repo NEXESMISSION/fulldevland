@@ -52,11 +52,8 @@ export function useSwipeGesture({
             onSwipeRight()
           }
         }
-        // Swipe left (start is more right than end) - swipe from right to left
-        // Only trigger if sidebar is open (don't interfere with browser back navigation when sidebar is closed)
-        else if (deltaX > 0 && onSwipeLeft) {
-          onSwipeLeft()
-        }
+        // Swipe left (start is more right than end) - DISABLED to prevent browser back navigation
+        // Only allow closing sidebar via overlay click or button
       }
 
       // Reset

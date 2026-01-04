@@ -15,8 +15,8 @@ export function MainLayout() {
     window.location.reload()
   }, [])
 
-  // Swipe gesture: swipe right from left edge to open sidebar, swipe left to close
-  // Only trigger when sidebar state matches to prevent browser back navigation interference
+  // Swipe gesture: swipe right from left edge to open sidebar only
+  // Disabled swipe left to prevent browser back navigation interference
   useSwipeGesture({
     onSwipeRight: () => {
       // Swipe right (from left edge toward right) to open sidebar on mobile
@@ -25,13 +25,7 @@ export function MainLayout() {
         setSidebarOpen(true)
       }
     },
-    onSwipeLeft: () => {
-      // Swipe left to close sidebar (only when it's open)
-      // Only when sidebar is open - prevents interference with browser back navigation
-      if (window.innerWidth < 768 && sidebarOpen) {
-        setSidebarOpen(false)
-      }
-    },
+    // Removed onSwipeLeft to prevent browser back navigation
     threshold: 100, // Start swipe detection within 100px of left edge
     minSwipeDistance: 80, // Minimum swipe distance to trigger (increased to reduce false triggers)
     disabled: false,
@@ -95,7 +89,7 @@ export function MainLayout() {
 
       <main className="flex-1 w-full md:ml-0 min-h-screen">
         <PullToRefresh onRefresh={handleRefresh} />
-        <div className="container mx-auto p-4 sm:p-6 pb-8">
+        <div className="container mx-auto p-3 sm:p-4 md:p-6 pb-6 sm:pb-8">
           <Outlet />
         </div>
       </main>

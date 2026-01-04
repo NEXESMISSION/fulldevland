@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { debounce } from '@/lib/throttle'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -66,6 +66,7 @@ export function Installments() {
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false) // Track refresh state separately
   const [refreshKey, setRefreshKey] = useState(0) // Force re-render trigger
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterOverdue, setFilterOverdue] = useState<boolean>(false)
   const [filterDueThisMonth, setFilterDueThisMonth] = useState<boolean>(false)
@@ -198,6 +199,14 @@ export function Installments() {
 
   useEffect(() => {
     fetchInstallments()
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
+    }
   }, [])
 
   // IMPROVED: Auto-refresh details drawer when installments change (after payment)
@@ -364,6 +373,20 @@ export function Installments() {
     const maxRetries = 3
     const retryDelay = 1000 // 1 second
     
+    // Clear any existing timeout
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current)
+      loadingTimeoutRef.current = null
+    }
+    
+    // Set loading timeout (30 seconds) to prevent stuck loading
+    loadingTimeoutRef.current = setTimeout(() => {
+      console.warn('[fetchInstallments] Loading timeout reached - forcing loading to stop')
+      setLoading(false)
+      setIsRefreshing(false)
+      loadingTimeoutRef.current = null
+    }, 30000)
+    
     try {
       console.log(`[fetchInstallments] Starting fetch (attempt ${retryCount + 1}/${maxRetries + 1})...`)
       
@@ -517,6 +540,11 @@ export function Installments() {
       setErrorMessage('خطأ في تحميل الأقساط. يرجى المحاولة مرة أخرى.')
       return false // Failure
     } finally {
+      // Clear loading timeout
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
       setLoading(false)
       setIsRefreshing(false)
     }
@@ -1160,7 +1188,18 @@ export function Installments() {
     
     clientGroups.forEach(group => {
       group.sales.forEach(sale => {
-        const unpaidInstallments = sale.installments.filter(i => getRemainingAmount(i) > 0.01)
+        // When filterStatus is 'Paid', only include installments with status 'Paid' that have remaining amounts
+        let saleInstallments = sale.installments
+        if (filterStatus === 'Paid') {
+          saleInstallments = sale.installments.filter(i => {
+            const remaining = getRemainingAmount(i)
+            return i.status === 'Paid' && remaining > 0.01
+          })
+          // If no paid installments with remaining, skip this sale
+          if (saleInstallments.length === 0) return
+        }
+        
+        const unpaidInstallments = saleInstallments.filter(i => getRemainingAmount(i) > 0.01)
         const nextInst = unpaidInstallments[0]
         
         if (!nextInst) return // Skip fully paid deals
@@ -1197,13 +1236,34 @@ export function Installments() {
           daysUntilDue,
           isOverdue,
           overdueAmount,
-          installments: sale.installments
+          installments: saleInstallments
         })
       })
     })
     
     // Apply filters
     let filtered = deals
+    
+    // Status filter - ensure only deals with matching status installments are shown
+    if (filterStatus !== 'all') {
+      if (filterStatus === 'Paid') {
+        // Only show deals that have at least one installment with status 'Paid' and remaining > 0.01
+        filtered = filtered.filter(deal => {
+          return deal.installments.some(inst => {
+            const remaining = getRemainingAmount(inst)
+            return inst.status === 'Paid' && remaining > 0.01
+          })
+        })
+      } else if (filterStatus === 'Late') {
+        // Only show deals that have overdue installments
+        filtered = filtered.filter(deal => deal.isOverdue)
+      } else {
+        // For other statuses, filter by installment status
+        filtered = filtered.filter(deal => {
+          return deal.installments.some(inst => inst.status === filterStatus)
+        })
+      }
+    }
     
     // Search filter
     if (debouncedSearchTerm.trim()) {
@@ -1269,7 +1329,7 @@ export function Installments() {
     })
     
     return filtered
-  }, [clientGroups, debouncedSearchTerm, filterOverdue, filterDueThisMonth, filterMinRemaining, filterProgress, refreshKey])
+  }, [clientGroups, debouncedSearchTerm, filterOverdue, filterDueThisMonth, filterMinRemaining, filterProgress, filterStatus, refreshKey, getRemainingAmount])
   
   const openSaleDetails = (deal: typeof dealsTableData[0]) => {
     setSelectedSaleForDetails({
@@ -1463,20 +1523,20 @@ export function Installments() {
       {/* Main Table View - One Row Per Deal */}
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <Table className="min-w-full">
               <TableHeader>
                 <TableRow className="bg-gray-50">
-                  <TableHead className="font-semibold">العميل</TableHead>
-                  <TableHead className="font-semibold">الصفقة</TableHead>
-                  <TableHead className="font-semibold">القطع</TableHead>
-                  <TableHead className="font-semibold">الأقساط</TableHead>
-                  <TableHead className="font-semibold">المدفوع</TableHead>
-                  <TableHead className="font-semibold">المتبقي</TableHead>
-                  <TableHead className="font-semibold">المتأخر</TableHead>
-                  <TableHead className="font-semibold">تاريخ الاستحقاق</TableHead>
-                  <TableHead className="font-semibold">الحالة</TableHead>
-                  <TableHead className="font-semibold">إجراء</TableHead>
+                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">العميل</TableHead>
+                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap hidden sm:table-cell">الصفقة</TableHead>
+                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">القطع</TableHead>
+                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">الأقساط</TableHead>
+                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">المدفوع</TableHead>
+                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">المتبقي</TableHead>
+                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap hidden md:table-cell">المتأخر</TableHead>
+                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap hidden lg:table-cell">تاريخ الاستحقاق</TableHead>
+                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap hidden md:table-cell">الحالة</TableHead>
+                  <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">إجراء</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1511,16 +1571,19 @@ export function Installments() {
                         }`}
                         onClick={() => openSaleDetails(deal)}
                       >
-                        <TableCell>
+                        <TableCell className="min-w-[120px]">
                           <div>
-                            <div className="font-medium">{deal.clientName}</div>
+                            <div className="font-medium text-xs sm:text-sm">{deal.clientName}</div>
                             {deal.clientCin && (
                               <div className="text-xs text-muted-foreground">{deal.clientCin}</div>
                             )}
+                            <div className="text-xs text-muted-foreground sm:hidden mt-1">
+                              {formatDate(deal.saleDate)}
+                            </div>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <div className="text-sm">{formatDate(deal.saleDate)}</div>
+                        <TableCell className="hidden sm:table-cell">
+                          <div className="text-xs sm:text-sm">{formatDate(deal.saleDate)}</div>
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-xs">
@@ -1528,32 +1591,32 @@ export function Installments() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="text-sm">
+                          <div className="text-xs sm:text-sm">
                             {deal.paidInstallments}/{deal.totalInstallments}
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="text-sm font-medium text-green-600">
+                          <div className="text-xs sm:text-sm font-medium text-green-600">
                             {formatCurrency(deal.totalPaid)}
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="text-sm font-medium">
+                          <div className="text-xs sm:text-sm font-medium">
                             {formatCurrency(deal.totalUnpaid)}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden md:table-cell">
                           {deal.isOverdue ? (
-                            <div className="text-sm font-semibold text-red-600">
+                            <div className="text-xs sm:text-sm font-semibold text-red-600">
                               {formatCurrency(deal.overdueAmount)}
                             </div>
                           ) : (
-                            <div className="text-sm text-muted-foreground">-</div>
+                            <div className="text-xs sm:text-sm text-muted-foreground">-</div>
                           )}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden lg:table-cell">
                           {deal.nextDueDate ? (
-                            <div className="text-sm">
+                            <div className="text-xs sm:text-sm">
                               {formatDate(deal.nextDueDate)}
                               {deal.daysUntilDue >= 0 && (
                                 <div className="text-xs text-muted-foreground">
@@ -1562,13 +1625,13 @@ export function Installments() {
                               )}
                             </div>
                           ) : (
-                            <div className="text-sm text-muted-foreground">-</div>
+                            <div className="text-xs sm:text-sm text-muted-foreground">-</div>
                           )}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden md:table-cell">
                           <div className="flex items-center gap-1">
-                            <span>{statusIndicator}</span>
-                            <span className={`text-sm font-medium ${statusColor}`}>
+                            <span className="text-xs">{statusIndicator}</span>
+                            <span className={`text-xs sm:text-sm font-medium ${statusColor}`}>
                               {statusText}
                             </span>
                           </div>
@@ -1578,6 +1641,7 @@ export function Installments() {
                             <Button
                               size="sm"
                               variant={deal.isOverdue ? 'destructive' : 'default'}
+                              className="text-xs px-2 sm:px-4"
                               onClick={() => {
                                 const nextInst = deal.installments.find(i => getRemainingAmount(i) > 0.01)
                                 if (nextInst) {
