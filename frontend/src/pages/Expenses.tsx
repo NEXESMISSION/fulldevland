@@ -29,7 +29,16 @@ import { Plus, Edit, Trash2, CheckCircle, XCircle, Filter, Download, TrendingUp,
 import type { Expense, ExpenseCategory, LandBatch, Sale, PaymentMethod } from '@/types/database'
 
 export function Expenses() {
-  const { hasPermission, user } = useAuth()
+  const { hasPermission, hasPageAccess, profile, user } = useAuth()
+  
+  // Check if user has explicit page access configured
+  const allowedPages = (profile as any)?.allowed_pages as string[] | null | undefined
+  const hasExplicitPageAccess = profile?.role !== 'Owner' && 
+    Array.isArray(allowedPages) && 
+    allowedPages.length > 0
+  const canEditExpenses = hasExplicitPageAccess 
+    ? hasPageAccess('expenses') // If explicit page access, use page access
+    : hasPermission('edit_expenses') // Otherwise use role permission
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [batches, setBatches] = useState<{ id: string; name: string }[]>([])
@@ -136,7 +145,7 @@ export function Expenses() {
   }
 
   const saveExpense = async () => {
-    if (!hasPermission('edit_financial')) {
+    if (!canEditExpenses) {
       setError('ليس لديك صلاحية لإضافة المصاريف')
       return
     }
@@ -154,7 +163,7 @@ export function Expenses() {
         tags: expenseForm.tags ? expenseForm.tags.split(',').map(t => t.trim()).filter(t => t) : null,
         notes: expenseForm.notes || null,
         submitted_by: user?.id,
-        status: hasPermission('manage_financial') ? 'Approved' : 'Pending',
+        status: hasPermission('manage_financial') || profile?.role === 'Owner' ? 'Approved' : 'Pending',
       }
 
       if (editingExpense) {
@@ -224,7 +233,7 @@ export function Expenses() {
   }
 
   const deleteExpense = async (expenseId: string) => {
-    if (!hasPermission('edit_financial')) {
+    if (!canEditExpenses) {
       setError('ليس لديك صلاحية لحذف المصاريف')
       return
     }
@@ -340,7 +349,7 @@ export function Expenses() {
           <h1 className="text-2xl sm:text-3xl font-bold">المصاريف</h1>
           <p className="text-muted-foreground text-sm sm:text-base">إدارة وتتبع مصاريف الشركة</p>
         </div>
-        {hasPermission('edit_financial') && (
+        {canEditExpenses && (
           <Button onClick={() => openExpenseDialog()} size="lg">
             <Plus className="ml-2 h-4 w-4" />
             إضافة مصروف جديد
@@ -567,7 +576,7 @@ export function Expenses() {
                                 </Button>
                               </>
                             )}
-                            {hasPermission('edit_financial') && (
+                            {canEditExpenses && (
                               <>
                                 <Button
                                   size="icon"

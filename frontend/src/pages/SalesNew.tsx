@@ -94,7 +94,7 @@ export function SalesNew() {
   const [clientSearch, setClientSearch] = useState('') // Search for clients by ID, phone, name
   const [selectedPieces, setSelectedPieces] = useState<string[]>([])
   const [pieceSearch, setPieceSearch] = useState('') // Search for land pieces by number
-  const [pieceBatchFilter, setPieceBatchFilter] = useState<string>('all') // Filter by batch in new sale dialog
+  const [pieceBatchFilter, setPieceBatchFilter] = useState<string>('') // Filter by batch in new sale dialog - empty means no batch selected
   const [paymentType, setPaymentType] = useState<'Full' | 'Installment'>('Full')
   const [numberOfInstallments, setNumberOfInstallments] = useState('12')
   const [reservationAmount, setReservationAmount] = useState('')
@@ -255,7 +255,10 @@ export function SalesNew() {
           status = 'Cancelled'
         } else if (isInstallment) {
           // Installment sale: check big advance and installments
-          if (!isConfirmed && !bigAdvancePaidPerPiece) {
+          // PRIORITY: If database says 'Completed', use that - payments may have been recorded
+          if (sale.status === 'Completed') {
+            status = 'Completed' // مباع - fully paid
+          } else if (!isConfirmed && !bigAdvancePaidPerPiece) {
             status = 'Pending' // معلق - not confirmed yet
           } else if (!isConfirmed) {
             status = 'AwaitingPayment' // قيد الدفع - waiting for big advance confirmation
@@ -611,6 +614,7 @@ export function SalesNew() {
           amount_paid: reservation,
           payment_type: 'SmallAdvance',
           payment_date: new Date().toISOString().split('T')[0],
+          recorded_by: user?.id || null, // Track who recorded this payment
         }] as any)
       }
 
@@ -780,14 +784,17 @@ export function SalesNew() {
 
   // Filter pieces by land number and batch
   const filteredAvailablePieces = useMemo(() => {
+    // Don't show any pieces until a batch is selected
+    if (!pieceBatchFilter || pieceBatchFilter === '') {
+      return []
+    }
+    
     let filtered = availablePieces
     
-    // Filter by batch
-    if (pieceBatchFilter !== 'all') {
-      filtered = filtered.filter((piece: any) => 
-        piece.land_batch?.name === pieceBatchFilter
-      )
-    }
+    // Filter by batch (required)
+    filtered = filtered.filter((piece: any) => 
+      piece.land_batch?.name === pieceBatchFilter
+    )
     
     // Filter by piece number search
     if (debouncedPieceSearch) {
@@ -893,6 +900,7 @@ export function SalesNew() {
           amount_paid: pricePerPiece,
           payment_type: 'Full',
           payment_date: new Date().toISOString().split('T')[0],
+          recorded_by: user?.id || null,
         }] as any)
 
         // Update the original sale - remove this piece and recalculate
@@ -963,6 +971,7 @@ export function SalesNew() {
           amount_paid: selectedSale.price,
           payment_type: 'Full',
           payment_date: new Date().toISOString().split('T')[0],
+          recorded_by: user?.id || null,
         }] as any)
       }
 
@@ -1056,6 +1065,7 @@ export function SalesNew() {
           amount_paid: totalAdvance, // Include reservation in big advance payment
           payment_type: 'BigAdvance',
           payment_date: new Date().toISOString().split('T')[0],
+          recorded_by: user?.id || null,
         }] as any)
 
         // Create installments for this piece
@@ -1145,6 +1155,7 @@ export function SalesNew() {
           amount_paid: totalAdvance, // Include reservation in big advance payment
           payment_type: 'BigAdvance',
           payment_date: new Date().toISOString().split('T')[0],
+          recorded_by: user?.id || null,
         }] as any)
 
         const installmentsToCreate = []
@@ -1294,6 +1305,7 @@ export function SalesNew() {
             amount_paid: refund,
             payment_type: 'Refund',
             payment_date: new Date().toISOString().split('T')[0],
+            recorded_by: user?.id || null,
           }] as any)
         }
 
@@ -1345,6 +1357,7 @@ export function SalesNew() {
             amount_paid: refund,
             payment_type: 'Refund',
             payment_date: new Date().toISOString().split('T')[0],
+            recorded_by: user?.id || null,
           }] as any)
         }
 
@@ -1698,59 +1711,72 @@ export function SalesNew() {
 
             <div className="space-y-2">
               <Label>قطع الأرض ({selectedPieces.length} محددة)</Label>
-              <div className="flex flex-col sm:flex-row gap-2 mb-2">
+              <div className="space-y-2">
                 <Select 
                   value={pieceBatchFilter} 
-                  onChange={e => setPieceBatchFilter(e.target.value)} 
-                  className="w-full sm:w-48"
+                  onChange={e => {
+                    setPieceBatchFilter(e.target.value)
+                    setSelectedPieces([]) // Clear selected pieces when changing batch
+                    setPieceSearch('') // Clear search when changing batch
+                  }} 
+                  className="w-full"
                 >
-                  <option value="all">كل الدفعات</option>
+                  <option value="">اختر موقع الأرض / الدفعة</option>
                   {availableBatchNames.map(batch => (
                     <option key={batch} value={batch}>{batch}</option>
                   ))}
                 </Select>
-              <Input
-                type="text"
-                placeholder="بحث عن قطعة برقم القطعة..."
-                value={pieceSearch}
-                maxLength={50}
-                onChange={e => {
-                  setPieceSearch(e.target.value)
-                  debouncedPieceSearchFn(e.target.value)
-                }}
-                  className="flex-1"
-              />
-              </div>
-              <div className="max-h-40 overflow-y-auto border rounded-md p-2 space-y-1">
-                {filteredAvailablePieces.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">لا توجد قطع متاحة</p>
-                ) : (
-                  filteredAvailablePieces.map((piece: any) => (
-                    <label key={piece.id} className="flex items-center gap-2 p-1 hover:bg-gray-50 rounded cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedPieces.includes(piece.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedPieces([...selectedPieces, piece.id])
-                          } else {
-                            setSelectedPieces(selectedPieces.filter(id => id !== piece.id))
-                          }
-                        }}
-                        className="rounded"
-                      />
-                      <span className="text-sm">
-                        {piece.land_batch?.name} - #{piece.piece_number} ({piece.surface_area} م²)
-                      </span>
-                    </label>
-                  ))
+                {pieceBatchFilter && (
+                  <>
+                    <Input
+                      type="text"
+                      placeholder="بحث عن قطعة برقم القطعة..."
+                      value={pieceSearch}
+                      maxLength={50}
+                      onChange={e => {
+                        setPieceSearch(e.target.value)
+                        debouncedPieceSearchFn(e.target.value)
+                      }}
+                      className="w-full"
+                    />
+                    <div className="max-h-40 overflow-y-auto border rounded-md p-2 space-y-1">
+                      {filteredAvailablePieces.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">لا توجد قطع متاحة</p>
+                      ) : (
+                        filteredAvailablePieces.map((piece: any) => (
+                          <label key={piece.id} className="flex items-center gap-2 p-1 hover:bg-gray-50 rounded cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selectedPieces.includes(piece.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedPieces([...selectedPieces, piece.id])
+                                } else {
+                                  setSelectedPieces(selectedPieces.filter(id => id !== piece.id))
+                                }
+                              }}
+                              className="rounded"
+                            />
+                            <span className="text-sm">
+                              #{piece.piece_number} ({piece.surface_area} م²)
+                            </span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                    {selectedPieces.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        إجمالي المساحة: {pieces.filter(p => selectedPieces.includes(p.id)).reduce((sum, p: any) => sum + p.surface_area, 0)} م²
+                      </p>
+                    )}
+                  </>
+                )}
+                {!pieceBatchFilter && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    يرجى اختيار موقع الأرض / الدفعة أولاً
+                  </p>
                 )}
               </div>
-              {selectedPieces.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  إجمالي المساحة: {pieces.filter(p => selectedPieces.includes(p.id)).reduce((sum, p: any) => sum + p.surface_area, 0)} م²
-                </p>
-              )}
             </div>
 
             <div className="space-y-2">

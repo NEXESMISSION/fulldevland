@@ -512,6 +512,26 @@ export function Financial() {
         </div>
       </div>
 
+      {/* Grand Total - Most Important */}
+      <Card className="bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg">
+        <CardContent className="pt-4 pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-green-100 mb-1">المجموع الإجمالي</p>
+              <p className="text-3xl sm:text-4xl font-bold">{formatCurrency(filteredData.cashReceived + filteredData.companyFeesTotal)}</p>
+              <p className="text-xs text-green-100 mt-1">
+                المستلم ({formatCurrency(filteredData.cashReceived)}) + العمولة ({formatCurrency(filteredData.companyFeesTotal)})
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
+                <TrendingUp className="h-8 w-8" />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {/* Cash Received Summary */}
         <Card className="bg-purple-50 border-purple-200">

@@ -22,7 +22,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText } from 'lucide-react'
+import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText, CreditCard, Home, Building, Wallet, DollarSign, Lock, Eye, EyeOff } from 'lucide-react'
 import type { User as UserType, UserRole, UserStatus, Sale } from '@/types/database'
 import { sanitizeText, sanitizeEmail } from '@/lib/sanitize'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -33,6 +33,23 @@ const roleColors: Record<UserRole, 'default' | 'secondary' | 'destructive'> = {
   Manager: 'secondary',
   FieldStaff: 'destructive',
 }
+
+// All available pages in the system - IDs must match Sidebar.tsx pageId values
+const ALL_PAGES = [
+  { id: 'home', name: 'الرئيسية', icon: Home, description: 'الصفحة الرئيسية' },
+  { id: 'land', name: 'إدارة الأراضي', icon: MapIcon, description: 'إدارة قطع الأراضي' },
+  { id: 'availability', name: 'توفر الأراضي', icon: MapIcon, description: 'عرض توفر الأراضي' },
+  { id: 'clients', name: 'العملاء', icon: UsersIcon, description: 'إدارة العملاء' },
+  { id: 'sales', name: 'المبيعات', icon: ShoppingCart, description: 'إدارة المبيعات' },
+  { id: 'confirm-sales', name: 'تأكيد المبيعات', icon: CheckCircle2, description: 'تأكيد عمليات البيع' },
+  { id: 'installments', name: 'الأقساط', icon: Calendar, description: 'إدارة الأقساط' },
+  { id: 'finance', name: 'المالية', icon: TrendingUp, description: 'التقارير المالية' },
+  { id: 'expenses', name: 'المصاريف', icon: Wallet, description: 'إدارة المصاريف' },
+  { id: 'debts', name: 'الديون', icon: CreditCard, description: 'إدارة الديون' },
+  { id: 'users', name: 'المستخدمين', icon: User, description: 'إدارة المستخدمين' },
+  { id: 'security', name: 'الأمان', icon: Shield, description: 'سجلات الأمان' },
+  { id: 'real-estate', name: 'التطوير والبناء', icon: Building, description: 'المشاريع العقارية' },
+]
 
 interface UserStats {
   userId: string
@@ -66,6 +83,7 @@ export function Users() {
   const [userReservations, setUserReservations] = useState<any[]>([])
   const [activityFilter, setActivityFilter] = useState<'all' | 'sales' | 'payments' | 'clients' | 'land' | 'audit'>('all')
   const [activityDateFilter, setActivityDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
+  const [detailsTab, setDetailsTab] = useState<'overview' | 'sales' | 'payments' | 'clients' | 'activity'>('overview')
 
   // User dialog
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -76,6 +94,7 @@ export function Users() {
     password: '',
     role: 'FieldStaff' as UserRole,
     status: 'Active' as UserStatus,
+    allowedPages: [] as string[],
   })
 
   useEffect(() => {
@@ -87,7 +106,7 @@ export function Users() {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, name, email, role, status, created_at, updated_at')
+        .select('id, name, email, role, status, created_at, updated_at, allowed_pages')
         .order('name', { ascending: true })
 
       if (error) {
@@ -279,18 +298,44 @@ export function Users() {
         password: '',
         role: user.role,
         status: user.status,
+        allowedPages: (user as any).allowed_pages || [],
       })
     } else {
       setEditingUser(null)
+      // Default pages for new FieldStaff
+      const defaultPages = ['home', 'land', 'clients', 'sales', 'installments']
       setForm({
         name: '',
         email: '',
         password: '',
         role: 'FieldStaff',
         status: 'Active',
+        allowedPages: defaultPages,
       })
     }
     setDialogOpen(true)
+  }
+
+  // Toggle page access
+  const togglePageAccess = (pageId: string) => {
+    setForm(prev => {
+      const current = prev.allowedPages || []
+      if (current.includes(pageId)) {
+        return { ...prev, allowedPages: current.filter(p => p !== pageId) }
+      } else {
+        return { ...prev, allowedPages: [...current, pageId] }
+      }
+    })
+  }
+
+  // Select all pages
+  const selectAllPages = () => {
+    setForm(prev => ({ ...prev, allowedPages: ALL_PAGES.map(p => p.id) }))
+  }
+
+  // Deselect all pages
+  const deselectAllPages = () => {
+    setForm(prev => ({ ...prev, allowedPages: [] }))
   }
 
   const saveUser = async () => {
@@ -325,6 +370,7 @@ export function Users() {
             name: sanitizeText(form.name),
             role: form.role,
             status: form.status,
+            allowed_pages: form.role === 'Owner' ? null : form.allowedPages,
           })
           .eq('id', editingUser.id)
 
@@ -341,7 +387,7 @@ export function Users() {
         }
 
         setDialogOpen(false)
-        setForm({ name: '', email: '', password: '', role: 'FieldStaff', status: 'Active' })
+        setForm({ name: '', email: '', password: '', role: 'FieldStaff', status: 'Active', allowedPages: [] })
         await fetchUsers()
       } else {
         // Create new user with Supabase Auth
@@ -525,6 +571,7 @@ export function Users() {
               email: cleanEmail,
             role: form.role,
             status: form.status,
+            allowed_pages: form.role === 'Owner' ? null : form.allowedPages,
           },
         ])
 
@@ -580,7 +627,7 @@ export function Users() {
 
         // Success
         setDialogOpen(false)
-        setForm({ name: '', email: '', password: '', role: 'FieldStaff', status: 'Active' })
+        setForm({ name: '', email: '', password: '', role: 'FieldStaff', status: 'Active', allowedPages: [] })
         setError(null)
         await fetchUsers()
       }
@@ -864,7 +911,7 @@ export function Users() {
         setDialogOpen(open)
         if (!open) {
           setError(null)
-          setForm({ name: '', email: '', password: '', role: 'FieldStaff', status: 'Active' })
+          setForm({ name: '', email: '', password: '', role: 'FieldStaff', status: 'Active', allowedPages: [] })
           setEditingUser(null)
         }
       }}>
@@ -950,6 +997,86 @@ export function Users() {
                 <option value="Inactive">غير نشط</option>
               </Select>
             </div>
+
+            {/* Page Permissions Section - Only show for non-Owner roles */}
+            {form.role !== 'Owner' && (
+              <div className="space-y-3 border-t pt-4 mt-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold flex items-center gap-2">
+                    <Lock className="h-4 w-4" />
+                    الصفحات المتاحة
+                  </Label>
+                  <div className="flex gap-2">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={selectAllPages}
+                      disabled={saving}
+                    >
+                      <Eye className="h-3 w-3 mr-1" />
+                      تحديد الكل
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={deselectAllPages}
+                      disabled={saving}
+                    >
+                      <EyeOff className="h-3 w-3 mr-1" />
+                      إلغاء الكل
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  اختر الصفحات التي يمكن للمستخدم الوصول إليها
+                </p>
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 bg-gray-50 rounded-lg">
+                  {ALL_PAGES.map(page => {
+                    const PageIcon = page.icon
+                    const isSelected = form.allowedPages?.includes(page.id) || false
+                    return (
+                      <div
+                        key={page.id}
+                        className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all ${
+                          isSelected 
+                            ? 'bg-primary/10 border-2 border-primary' 
+                            : 'bg-white border-2 border-gray-200 hover:border-gray-300'
+                        }`}
+                        onClick={() => !saving && togglePageAccess(page.id)}
+                      >
+                        <div className={`p-1.5 rounded ${isSelected ? 'bg-primary text-white' : 'bg-gray-100'}`}>
+                          <PageIcon className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-medium truncate ${isSelected ? 'text-primary' : ''}`}>
+                            {page.name}
+                          </p>
+                        </div>
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          isSelected ? 'border-primary bg-primary' : 'border-gray-300'
+                        }`}>
+                          {isSelected && <CheckCircle2 className="h-3 w-3 text-white" />}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground text-center">
+                  {form.allowedPages?.length || 0} من {ALL_PAGES.length} صفحة محددة
+                </p>
+              </div>
+            )}
+
+            {form.role === 'Owner' && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-4">
+                <p className="text-sm text-green-800 flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  المالك لديه صلاحية الوصول الكامل لجميع الصفحات
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button 
@@ -969,7 +1096,7 @@ export function Users() {
         </DialogContent>
       </Dialog>
 
-      {/* User Details Dialog */}
+      {/* User Details Dialog - Redesigned */}
       <Dialog open={userDetailsOpen} onOpenChange={(open) => {
         setUserDetailsOpen(open)
         if (!open) {
@@ -983,659 +1110,424 @@ export function Users() {
           setUserActivityLogs([])
           setActivityFilter('all')
           setActivityDateFilter('all')
+          setDetailsTab('overview')
         }
       }}>
-        <DialogContent className="w-[95vw] sm:w-full max-w-6xl max-h-[95vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-center justify-between">
-              <DialogTitle>تفاصيل المستخدم: {selectedUserForDetails?.name}</DialogTitle>
-              <div className="flex gap-2">
-                <Select 
-                  value={activityDateFilter} 
-                  onChange={(e) => setActivityDateFilter(e.target.value as any)}
-                  className="w-32"
-                >
-                  <option value="today">اليوم</option>
-                  <option value="week">هذا الأسبوع</option>
-                  <option value="month">هذا الشهر</option>
-                  <option value="all">الكل</option>
-                </Select>
-    </div>
-            </div>
-          </DialogHeader>
+        <DialogContent className="w-[95vw] sm:w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
           {selectedUserForDetails && (
-            <div className="space-y-6">
-              {/* User Info */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>معلومات المستخدم</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">الاسم</p>
-                      <p className="font-medium">{selectedUserForDetails.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">البريد الإلكتروني</p>
-                      <p className="font-medium">{selectedUserForDetails.email}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">الدور</p>
-                      <Badge variant={roleColors[selectedUserForDetails.role]}>
-                        {selectedUserForDetails.role === 'Owner' ? 'مالك' : 
-                         selectedUserForDetails.role === 'Manager' ? 'مدير' : 
-                         'موظف ميداني'}
-                      </Badge>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">الحالة</p>
-                      <Badge variant={selectedUserForDetails.status === 'Active' ? 'success' : 'secondary'}>
-                        {selectedUserForDetails.status === 'Active' ? 'نشط' : 'غير نشط'}
-                      </Badge>
-                    </div>
+            <>
+              {/* Header with User Info */}
+              <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+                  {selectedUserForDetails.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-xl font-bold text-gray-900">{selectedUserForDetails.name}</h2>
+                  <p className="text-sm text-gray-600">{selectedUserForDetails.email}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant={roleColors[selectedUserForDetails.role]} className="text-xs">
+                      {selectedUserForDetails.role === 'Owner' ? 'مالك' : 
+                       selectedUserForDetails.role === 'Manager' ? 'مدير' : 'موظف ميداني'}
+                    </Badge>
+                    <Badge variant={selectedUserForDetails.status === 'Active' ? 'success' : 'secondary'} className="text-xs">
+                      {selectedUserForDetails.status === 'Active' ? 'نشط' : 'غير نشط'}
+                    </Badge>
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* Comprehensive Statistics */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <ShoppingCart className="h-4 w-4 text-blue-600" />
-                      المبيعات المنشأة
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{userCreatedSales.length}</div>
-                    <p className="text-xs text-muted-foreground">
-                      {formatCurrency(userCreatedSales.reduce((sum, s) => sum + (s.total_selling_price || 0), 0))}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                      المبيعات المؤكدة
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{userConfirmedSales.length}</div>
-                    <p className="text-xs text-muted-foreground">
-                      {formatCurrency(userConfirmedSales.reduce((sum, s) => sum + (s.total_selling_price || 0), 0))}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <TrendingUp className="h-4 w-4 text-purple-600" />
-                      المدفوعات
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{userPayments.length}</div>
-                    <p className="text-xs text-muted-foreground">
-                      {formatCurrency(userPayments.reduce((sum, p) => sum + (p.amount_paid || 0), 0))}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <UsersIcon className="h-4 w-4 text-indigo-600" />
-                      العملاء المضافون
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{userClients.length}</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <MapIcon className="h-4 w-4 text-teal-600" />
-                      دفعات الأراضي
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{userLandBatches.length}</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-orange-600" />
-                      الحجوزات
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{userReservations.length}</div>
-                  </CardContent>
-                </Card>
+                </div>
+                <div className="text-left">
+                  <p className="text-xs text-gray-500">تاريخ الانضمام</p>
+                  <p className="text-sm font-medium">{formatDate(selectedUserForDetails.created_at)}</p>
+                </div>
               </div>
 
-              {/* Created Sales */}
-              {loadingDetails ? (
-                <p className="text-center text-muted-foreground py-8">جاري التحميل...</p>
-              ) : (
-                <>
-                  {userCreatedSales.length > 0 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>المبيعات المنشأة ({userCreatedSales.length})</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>التاريخ</TableHead>
-                                <TableHead>العميل</TableHead>
-                                <TableHead>النوع</TableHead>
-                                <TableHead className="text-right">المبلغ</TableHead>
-                                <TableHead>الحالة</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {userCreatedSales.map((sale: any) => (
-                                <TableRow key={sale.id}>
-                                  <TableCell>{formatDate(sale.sale_date)}</TableCell>
-                                  <TableCell>
-                                    {sale.client?.name || 'غير معروف'}
-                                    {sale.client?.phone && (
-                                      <span className="text-xs text-muted-foreground block">
-                                        ({sale.client.phone})
-                                      </span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge variant={sale.payment_type === 'Full' ? 'success' : 'secondary'}>
-                                      {sale.payment_type === 'Full' ? 'بالحاضر' : 'بالتقسيط'}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-right font-medium">
-                                    {formatCurrency(sale.total_selling_price)}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge
-                                      variant={
-                                        sale.status === 'Completed' ? 'success' :
-                                        sale.status === 'Cancelled' ? 'destructive' : 'warning'
-                                      }
-                                    >
-                                      {sale.status === 'Completed' ? 'مباع' :
-                                       sale.status === 'Cancelled' ? 'ملغي' : 'قيد الدفع'}
-                                    </Badge>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
+              {/* Stats Summary - Quick Glance */}
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 py-3">
+                <div className="text-center p-2 bg-blue-50 rounded-lg">
+                  <ShoppingCart className="h-4 w-4 text-blue-600 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-blue-900">{userCreatedSales.length}</p>
+                  <p className="text-[10px] text-blue-700">مبيعات</p>
+                </div>
+                <div className="text-center p-2 bg-green-50 rounded-lg">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-green-900">{userConfirmedSales.length}</p>
+                  <p className="text-[10px] text-green-700">مؤكدة</p>
+                </div>
+                <div className="text-center p-2 bg-purple-50 rounded-lg">
+                  <CreditCard className="h-4 w-4 text-purple-600 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-purple-900">{userPayments.length}</p>
+                  <p className="text-[10px] text-purple-700">دفعات</p>
+                </div>
+                <div className="text-center p-2 bg-indigo-50 rounded-lg">
+                  <UsersIcon className="h-4 w-4 text-indigo-600 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-indigo-900">{userClients.length}</p>
+                  <p className="text-[10px] text-indigo-700">عملاء</p>
+                </div>
+                <div className="text-center p-2 bg-teal-50 rounded-lg">
+                  <MapIcon className="h-4 w-4 text-teal-600 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-teal-900">{userLandBatches.length}</p>
+                  <p className="text-[10px] text-teal-700">أراضي</p>
+                </div>
+                <div className="text-center p-2 bg-orange-50 rounded-lg">
+                  <Calendar className="h-4 w-4 text-orange-600 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-orange-900">{userReservations.length}</p>
+                  <p className="text-[10px] text-orange-700">حجوزات</p>
+                </div>
+              </div>
 
-                  {/* Confirmed Sales */}
-                  {userConfirmedSales.length > 0 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>المبيعات المؤكدة ({userConfirmedSales.length})</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>التاريخ</TableHead>
-                                <TableHead>العميل</TableHead>
-                                <TableHead>النوع</TableHead>
-                                <TableHead className="text-right">المبلغ</TableHead>
-                                <TableHead>الحالة</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {userConfirmedSales.map((sale: any) => (
-                                <TableRow key={sale.id}>
-                                  <TableCell>{formatDate(sale.sale_date)}</TableCell>
-                                  <TableCell>
-                                    {sale.client?.name || 'غير معروف'}
-                                    {sale.client?.phone && (
-                                      <span className="text-xs text-muted-foreground block">
-                                        ({sale.client.phone})
-                                      </span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge variant={sale.payment_type === 'Full' ? 'success' : 'secondary'}>
-                                      {sale.payment_type === 'Full' ? 'بالحاضر' : 'بالتقسيط'}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-right font-medium">
-                                    {formatCurrency(sale.total_selling_price)}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge
-                                      variant={
-                                        sale.status === 'Completed' ? 'success' :
-                                        sale.status === 'Cancelled' ? 'destructive' : 'warning'
-                                      }
-                                    >
-                                      {sale.status === 'Completed' ? 'مباع' :
-                                       sale.status === 'Cancelled' ? 'ملغي' : 'قيد الدفع'}
-                                    </Badge>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
+              {/* Tab Navigation */}
+              <div className="flex gap-1 border-b overflow-x-auto pb-0">
+                {[
+                  { id: 'overview', label: 'نظرة عامة', icon: Activity },
+                  { id: 'sales', label: 'المبيعات', icon: ShoppingCart, count: userCreatedSales.length + userConfirmedSales.length },
+                  { id: 'payments', label: 'المدفوعات', icon: CreditCard, count: userPayments.length },
+                  { id: 'clients', label: 'العملاء', icon: UsersIcon, count: userClients.length },
+                  { id: 'activity', label: 'السجل', icon: FileText },
+                ].map(tab => {
+                  const TabIcon = tab.icon
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setDetailsTab(tab.id as any)}
+                      className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
+                        detailsTab === tab.id
+                          ? 'bg-primary text-white'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <TabIcon className="h-3.5 w-3.5" />
+                      {tab.label}
+                      {tab.count !== undefined && tab.count > 0 && (
+                        <span className={`text-[10px] px-1.5 rounded-full ${
+                          detailsTab === tab.id ? 'bg-white/20' : 'bg-gray-200'
+                        }`}>
+                          {tab.count}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
 
-                  {/* Payments Recorded */}
-                  {userPayments.length > 0 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>المدفوعات المسجلة ({userPayments.length})</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>التاريخ</TableHead>
-                                <TableHead>العميل</TableHead>
-                                <TableHead>نوع الدفع</TableHead>
-                                <TableHead className="text-right">المبلغ</TableHead>
-                                <TableHead>ملاحظات</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {userPayments.map((payment: any) => (
-                                <TableRow key={payment.id}>
-                                  <TableCell>{formatDate(payment.payment_date)}</TableCell>
-                                  <TableCell>
-                                    {payment.client?.name || 'غير معروف'}
-                                    {payment.client?.phone && (
-                                      <span className="text-xs text-muted-foreground block">
-                                        ({payment.client.phone})
-                                      </span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge variant="secondary" className="text-xs">
-                                      {payment.payment_type === 'Full' ? 'دفع كامل' :
-                                       payment.payment_type === 'Installment' ? 'قسط' :
-                                       payment.payment_type === 'BigAdvance' ? 'دفعة كبيرة' :
-                                       payment.payment_type === 'SmallAdvance' ? 'عربون' :
-                                       payment.payment_type || '-'}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-right font-medium">
-                                    {formatCurrency(payment.amount_paid)}
-                                  </TableCell>
-                                  <TableCell className="text-sm text-muted-foreground">
-                                    {payment.notes || '-'}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Clients Added */}
-                  {userClients.length > 0 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>العملاء المضافون ({userClients.length})</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>التاريخ</TableHead>
-                                <TableHead>الاسم</TableHead>
-                                <TableHead>رقم الهوية</TableHead>
-                                <TableHead>الهاتف</TableHead>
-                                <TableHead>النوع</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {userClients.map((client: any) => (
-                                <TableRow key={client.id}>
-                                  <TableCell>{formatDate(client.created_at)}</TableCell>
-                                  <TableCell className="font-medium">{client.name}</TableCell>
-                                  <TableCell>{client.cin}</TableCell>
-                                  <TableCell>{client.phone || '-'}</TableCell>
-                                  <TableCell>
-                                    <Badge variant="secondary">{client.client_type || 'فرد'}</Badge>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Land Batches Created */}
-                  {userLandBatches.length > 0 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>دفعات الأراضي المنشأة ({userLandBatches.length})</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>التاريخ</TableHead>
-                                <TableHead>اسم الدفعة</TableHead>
-                                <TableHead className="text-right">المساحة (م²)</TableHead>
-                                <TableHead className="text-right">التكلفة</TableHead>
-                                <TableHead>ملاحظات</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {userLandBatches.map((batch: any) => (
-                                <TableRow key={batch.id}>
-                                  <TableCell>{formatDate(batch.date_acquired)}</TableCell>
-                                  <TableCell className="font-medium">{batch.name}</TableCell>
-                                  <TableCell className="text-right">{batch.total_surface}</TableCell>
-                                  <TableCell className="text-right font-medium">{formatCurrency(batch.total_cost)}</TableCell>
-                                  <TableCell className="text-sm text-muted-foreground">{batch.notes || '-'}</TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Reservations Created */}
-                  {userReservations.length > 0 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>الحجوزات المنشأة ({userReservations.length})</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>التاريخ</TableHead>
-                                <TableHead>العميل</TableHead>
-                                <TableHead className="text-right">العربون</TableHead>
-                                <TableHead>تاريخ الانتهاء</TableHead>
-                                <TableHead>الحالة</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {userReservations.map((reservation: any) => (
-                                <TableRow key={reservation.id}>
-                                  <TableCell>{formatDate(reservation.reservation_date)}</TableCell>
-                                  <TableCell>
-                                    {reservation.client?.name || 'غير معروف'}
-                                    {reservation.client?.phone && (
-                                      <span className="text-xs text-muted-foreground block">
-                                        ({reservation.client.phone})
-                                      </span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-right font-medium">
-                                    {formatCurrency(reservation.small_advance_amount)}
-                                  </TableCell>
-                                  <TableCell>{formatDate(reservation.reserved_until)}</TableCell>
-                                  <TableCell>
-                                    <Badge
-                                      variant={
-                                        reservation.status === 'Confirmed' ? 'success' :
-                                        reservation.status === 'Cancelled' ? 'destructive' :
-                                        reservation.status === 'Expired' ? 'secondary' : 'warning'
-                                      }
-                                    >
-                                      {reservation.status === 'Confirmed' ? 'مؤكد' :
-                                       reservation.status === 'Cancelled' ? 'ملغي' :
-                                       reservation.status === 'Expired' ? 'منتهي' : 'قيد الانتظار'}
-                                    </Badge>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Activity Timeline */}
-                  <Card>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <CardTitle>سجل النشاط</CardTitle>
-                        <Select 
-                          value={activityFilter} 
-                          onChange={(e) => setActivityFilter(e.target.value as any)}
-                          className="w-48"
-                        >
-                          <option value="all">الكل</option>
-                          <option value="sales">المبيعات</option>
-                          <option value="payments">المدفوعات</option>
-                          <option value="clients">العملاء</option>
-                          <option value="land">الأراضي</option>
-                          <option value="audit">سجلات النظام</option>
-                        </Select>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
+              {/* Tab Content */}
+              <div className="flex-1 overflow-y-auto p-1">
+                {loadingDetails ? (
+                  <div className="flex items-center justify-center h-40">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Overview Tab */}
+                    {detailsTab === 'overview' && (
                       <div className="space-y-4">
-                        {(() => {
-                          const allActivities: any[] = []
-                          
-                          // Add sales created
-                          userCreatedSales.forEach(sale => {
-                            allActivities.push({
-                              type: 'sale_created',
-                              date: sale.sale_date,
-                              timestamp: sale.created_at,
-                              title: 'إنشاء بيع جديد',
-                              description: `عميل: ${sale.client?.name || 'غير معروف'} - ${formatCurrency(sale.total_selling_price)}`,
-                              icon: ShoppingCart,
-                              color: 'blue',
-                              data: sale
-                            })
-                          })
-                          
-                          // Add sales confirmed
-                          userConfirmedSales.forEach(sale => {
-                            allActivities.push({
-                              type: 'sale_confirmed',
-                              date: sale.sale_date,
-                              timestamp: sale.updated_at || sale.created_at,
-                              title: 'تأكيد بيع',
-                              description: `عميل: ${sale.client?.name || 'غير معروف'} - ${formatCurrency(sale.total_selling_price)}`,
-                              icon: CheckCircle2,
-                              color: 'green',
-                              data: sale
-                            })
-                          })
-                          
-                          // Add payments
-                          userPayments.forEach(payment => {
-                            allActivities.push({
-                              type: 'payment',
-                              date: payment.payment_date,
-                              timestamp: payment.created_at,
-                              title: 'تسجيل دفعة',
-                              description: `عميل: ${payment.client?.name || 'غير معروف'} - ${formatCurrency(payment.amount_paid)}`,
-                              icon: TrendingUp,
-                              color: 'purple',
-                              data: payment
-                            })
-                          })
-                          
-                          // Add clients created
-                          userClients.forEach(client => {
-                            allActivities.push({
-                              type: 'client_created',
-                              date: client.created_at?.split('T')[0],
-                              timestamp: client.created_at,
-                              title: 'إضافة عميل جديد',
-                              description: `${client.name} - ${client.cin || ''} ${client.phone ? `(${client.phone})` : ''}`,
-                              icon: UsersIcon,
-                              color: 'indigo',
-                              data: client
-                            })
-                          })
-                          
-                          // Add land batches created
-                          userLandBatches.forEach(batch => {
-                            allActivities.push({
-                              type: 'land_batch_created',
-                              date: batch.date_acquired,
-                              timestamp: batch.created_at,
-                              title: 'إضافة دفعة أراضي',
-                              description: `${batch.name} - ${formatCurrency(batch.total_cost)} - ${batch.total_surface} م²`,
-                              icon: MapIcon,
-                              color: 'teal',
-                              data: batch
-                            })
-                          })
-                          
-                          // Add reservations created
-                          userReservations.forEach(reservation => {
-                            allActivities.push({
-                              type: 'reservation_created',
-                              date: reservation.reservation_date,
-                              timestamp: reservation.created_at,
-                              title: 'إنشاء حجز',
-                              description: `عميل: ${reservation.client?.name || 'غير معروف'} - ${formatCurrency(reservation.small_advance_amount)}`,
-                              icon: Calendar,
-                              color: 'orange',
-                              data: reservation
-                            })
-                          })
-                          
-                          // Add audit logs - only meaningful actions
-                          const auditLogsByTable = new Map<string, any[]>()
-                          userActivityLogs.forEach(log => {
-                            const key = `${log.table_name}-${log.action}`
-                            if (!auditLogsByTable.has(key)) {
-                              auditLogsByTable.set(key, [])
-                            }
-                            auditLogsByTable.get(key)!.push(log)
-                          })
-                          
-                          // Process audit logs - group UPDATEs and show only significant ones
-                          auditLogsByTable.forEach((logs, key) => {
-                            const [tableName, action] = key.split('-')
-                            
-                            // Skip repetitive UPDATE operations on sales table (too noisy)
-                            if (action === 'UPDATE' && tableName === 'sales' && logs.length > 5) {
-                              // Group them into one entry
-                              const latestLog = logs[0] // Most recent
-                              allActivities.push({
-                                type: 'audit',
-                                date: latestLog.created_at.split('T')[0],
-                                timestamp: latestLog.created_at,
-                                title: `تحديثات متعددة - ${tableName}`,
-                                description: `${logs.length} تحديث في جدول ${tableName}`,
-                                icon: Activity,
-                                color: 'yellow',
-                                data: latestLog
-                              })
-                            } else if (action === 'INSERT' || action === 'DELETE') {
-                              // Show all INSERTs and DELETEs
-                              logs.forEach(log => {
-                                allActivities.push({
-                                  type: 'audit',
-                                  date: log.created_at.split('T')[0],
-                                  timestamp: log.created_at,
-                                  title: action === 'INSERT' ? `إضافة جديدة - ${tableName}` : `حذف - ${tableName}`,
-                                  description: action === 'INSERT' ? `إضافة سجل جديد في ${tableName}` : `حذف سجل من ${tableName}`,
-                                  icon: Activity,
-                                  color: action === 'INSERT' ? 'green' : 'red',
-                                  data: log
-                                })
-                              })
-                            } else if (logs.length <= 3) {
-                              // Show UPDATEs if there are only a few
-                              logs.forEach(log => {
-                                allActivities.push({
-                                  type: 'audit',
-                                  date: log.created_at.split('T')[0],
-                                  timestamp: log.created_at,
-                                  title: `تحديث - ${tableName}`,
-                                  description: `تحديث سجل في ${tableName}`,
-                                  icon: Activity,
-                                  color: 'yellow',
-                                  data: log
-                                })
-                              })
-                            }
-                          })
-                          
-                          // Sort by timestamp (newest first)
-                          allActivities.sort((a, b) => 
-                            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-                          )
-                          
-                          // Filter by activity type
-                          const filtered = activityFilter === 'all' ? allActivities :
-                            activityFilter === 'sales' ? allActivities.filter(a => a.type.startsWith('sale')) :
-                            activityFilter === 'payments' ? allActivities.filter(a => a.type === 'payment') :
-                            activityFilter === 'clients' ? allActivities.filter(a => a.type === 'client_created') :
-                            activityFilter === 'land' ? allActivities.filter(a => a.type === 'land_batch_created' || a.type === 'reservation_created') :
-                            allActivities.filter(a => a.type === 'audit')
-                          
-                          return filtered.length === 0 ? (
-                            <p className="text-center text-muted-foreground py-8">لا يوجد نشاط</p>
-                          ) : (
-                            <div className="space-y-3">
-                              {filtered.slice(0, 50).map((activity, idx) => {
-                                const Icon = activity.icon
-                                const colorClasses: Record<string, string> = {
-                                  blue: 'bg-blue-100 text-blue-600',
-                                  green: 'bg-green-100 text-green-600',
-                                  purple: 'bg-purple-100 text-purple-600',
-                                  yellow: 'bg-yellow-100 text-yellow-600',
-                                  red: 'bg-red-100 text-red-600',
-                                }
+                        {/* Financial Summary */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 rounded-xl">
+                            <p className="text-sm opacity-80">إجمالي المبيعات</p>
+                            <p className="text-2xl font-bold">
+                              {formatCurrency(userCreatedSales.reduce((sum, s) => sum + (s.total_selling_price || 0), 0))}
+                            </p>
+                            <p className="text-xs opacity-70 mt-1">{userCreatedSales.length} عملية بيع</p>
+                          </div>
+                          <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-4 rounded-xl">
+                            <p className="text-sm opacity-80">إجمالي المدفوعات</p>
+                            <p className="text-2xl font-bold">
+                              {formatCurrency(userPayments.reduce((sum, p) => sum + (p.amount_paid || 0), 0))}
+                            </p>
+                            <p className="text-xs opacity-70 mt-1">{userPayments.length} دفعة</p>
+                          </div>
+                        </div>
+
+                        {/* Recent Activity */}
+                        <div>
+                          <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                            <Activity className="h-4 w-4" />
+                            آخر النشاطات
+                          </h4>
+                          <div className="space-y-2 max-h-60 overflow-y-auto">
+                            {[...userCreatedSales.slice(0, 3), ...userPayments.slice(0, 3), ...userClients.slice(0, 2)]
+                              .sort((a, b) => new Date(b.created_at || b.sale_date).getTime() - new Date(a.created_at || a.sale_date).getTime())
+                              .slice(0, 5)
+                              .map((item: any, idx) => (
+                                <div key={idx} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg text-sm">
+                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                    item.sale_date ? 'bg-blue-100 text-blue-600' :
+                                    item.amount_paid ? 'bg-purple-100 text-purple-600' :
+                                    'bg-indigo-100 text-indigo-600'
+                                  }`}>
+                                    {item.sale_date ? <ShoppingCart className="h-4 w-4" /> :
+                                     item.amount_paid ? <CreditCard className="h-4 w-4" /> :
+                                     <UsersIcon className="h-4 w-4" />}
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className="font-medium text-xs">
+                                      {item.sale_date ? `بيع - ${item.client?.name || 'عميل'}` :
+                                       item.amount_paid ? `دفعة - ${formatCurrency(item.amount_paid)}` :
+                                       `عميل جديد - ${item.name}`}
+                                    </p>
+                                    <p className="text-[10px] text-gray-500">
+                                      {formatDate(item.created_at || item.sale_date)}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            {userCreatedSales.length === 0 && userPayments.length === 0 && userClients.length === 0 && (
+                              <p className="text-center text-gray-500 text-sm py-4">لا يوجد نشاط بعد</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Allowed Pages */}
+                        {selectedUserForDetails.role !== 'Owner' && (
+                          <div>
+                            <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                              <Lock className="h-4 w-4" />
+                              الصفحات المتاحة
+                            </h4>
+                            <div className="flex flex-wrap gap-1">
+                              {((selectedUserForDetails as any).allowed_pages || []).map((pageId: string) => {
+                                const page = ALL_PAGES.find(p => p.id === pageId)
+                                if (!page) return null
+                                const PageIcon = page.icon
                                 return (
-                                  <div key={idx} className="flex items-start gap-3 p-3 border rounded-lg hover:bg-accent/50 transition-colors">
-                                    <div className={`p-2 rounded-full ${colorClasses[activity.color] || 'bg-gray-100 text-gray-600'}`}>
-                                      <Icon className="h-4 w-4" />
-                                    </div>
-                                    <div className="flex-1">
-                                      <div className="flex items-center justify-between">
-                                        <p className="font-medium text-sm">{activity.title}</p>
-                                        <span className="text-xs text-muted-foreground">{formatDate(activity.timestamp)}</span>
-                                      </div>
-                                      <p className="text-xs text-muted-foreground mt-1">{activity.description}</p>
-                                    </div>
+                                  <div key={pageId} className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded-full text-xs">
+                                    <PageIcon className="h-3 w-3" />
+                                    {page.name}
                                   </div>
                                 )
                               })}
+                              {(!(selectedUserForDetails as any).allowed_pages || (selectedUserForDetails as any).allowed_pages?.length === 0) && (
+                                <p className="text-xs text-gray-500">لم يتم تحديد صفحات</p>
+                              )}
                             </div>
-                          )
-                        })()}
+                          </div>
+                        )}
+                        {selectedUserForDetails.role === 'Owner' && (
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                            <p className="text-sm text-green-800 flex items-center gap-2">
+                              <Shield className="h-4 w-4" />
+                              المالك لديه صلاحية الوصول الكامل لجميع الصفحات
+                            </p>
+                          </div>
+                        )}
                       </div>
-                    </CardContent>
-                  </Card>
-                </>
-              )}
-            </div>
+                    )}
+
+                    {/* Sales Tab */}
+                    {detailsTab === 'sales' && (
+                      <div className="space-y-3">
+                        {userCreatedSales.length === 0 && userConfirmedSales.length === 0 ? (
+                          <p className="text-center text-gray-500 py-8">لا توجد مبيعات</p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-gray-50">
+                                  <TableHead className="text-xs">التاريخ</TableHead>
+                                  <TableHead className="text-xs">العميل</TableHead>
+                                  <TableHead className="text-xs">النوع</TableHead>
+                                  <TableHead className="text-xs text-right">المبلغ</TableHead>
+                                  <TableHead className="text-xs">الحالة</TableHead>
+                                  <TableHead className="text-xs">الإجراء</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {[...userCreatedSales, ...userConfirmedSales.filter(cs => !userCreatedSales.find(s => s.id === cs.id))]
+                                  .sort((a, b) => new Date(b.sale_date).getTime() - new Date(a.sale_date).getTime())
+                                  .map((sale: any) => (
+                                    <TableRow key={sale.id} className="text-xs">
+                                      <TableCell className="py-2">{formatDate(sale.sale_date)}</TableCell>
+                                      <TableCell className="py-2">{sale.client?.name || '-'}</TableCell>
+                                      <TableCell className="py-2">
+                                        <Badge variant={sale.payment_type === 'Full' ? 'success' : 'secondary'} className="text-[10px]">
+                                          {sale.payment_type === 'Full' ? 'حاضر' : 'تقسيط'}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="py-2 text-right font-medium">{formatCurrency(sale.total_selling_price)}</TableCell>
+                                      <TableCell className="py-2">
+                                        <Badge variant={sale.status === 'Completed' ? 'success' : sale.status === 'Cancelled' ? 'destructive' : 'warning'} className="text-[10px]">
+                                          {sale.status === 'Completed' ? 'مكتمل' : sale.status === 'Cancelled' ? 'ملغي' : 'قيد الدفع'}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="py-2">
+                                        {userCreatedSales.find(s => s.id === sale.id) && (
+                                          <Badge variant="outline" className="text-[10px]">أنشأ</Badge>
+                                        )}
+                                        {userConfirmedSales.find(s => s.id === sale.id) && (
+                                          <Badge variant="outline" className="text-[10px] mr-1">أكد</Badge>
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Payments Tab */}
+                    {detailsTab === 'payments' && (
+                      <div className="space-y-3">
+                        {userPayments.length === 0 ? (
+                          <p className="text-center text-gray-500 py-8">لا توجد مدفوعات</p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-gray-50">
+                                  <TableHead className="text-xs">التاريخ</TableHead>
+                                  <TableHead className="text-xs">العميل</TableHead>
+                                  <TableHead className="text-xs">النوع</TableHead>
+                                  <TableHead className="text-xs text-right">المبلغ</TableHead>
+                                  <TableHead className="text-xs">ملاحظات</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {userPayments.map((payment: any) => (
+                                  <TableRow key={payment.id} className="text-xs">
+                                    <TableCell className="py-2">{formatDate(payment.payment_date)}</TableCell>
+                                    <TableCell className="py-2">{payment.client?.name || '-'}</TableCell>
+                                    <TableCell className="py-2">
+                                      <Badge variant="secondary" className="text-[10px]">
+                                        {payment.payment_type === 'Full' ? 'كامل' :
+                                         payment.payment_type === 'Installment' ? 'قسط' :
+                                         payment.payment_type === 'BigAdvance' ? 'دفعة' : 'عربون'}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="py-2 text-right font-medium text-green-600">
+                                      +{formatCurrency(payment.amount_paid)}
+                                    </TableCell>
+                                    <TableCell className="py-2 text-gray-500">{payment.notes || '-'}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Clients Tab */}
+                    {detailsTab === 'clients' && (
+                      <div className="space-y-3">
+                        {userClients.length === 0 ? (
+                          <p className="text-center text-gray-500 py-8">لا يوجد عملاء</p>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {userClients.map((client: any) => (
+                              <div key={client.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                                <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold">
+                                  {client.name.charAt(0)}
+                                </div>
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{client.name}</p>
+                                  <p className="text-xs text-gray-500">{client.cin} • {client.phone || 'لا يوجد هاتف'}</p>
+                                </div>
+                                <p className="text-xs text-gray-400">{formatDate(client.created_at)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Activity Tab */}
+                    {detailsTab === 'activity' && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between mb-3">
+                          <Select 
+                            value={activityFilter} 
+                            onChange={(e) => setActivityFilter(e.target.value as any)}
+                            className="w-40 text-xs"
+                          >
+                            <option value="all">كل النشاطات</option>
+                            <option value="sales">المبيعات</option>
+                            <option value="payments">المدفوعات</option>
+                            <option value="clients">العملاء</option>
+                            <option value="land">الأراضي</option>
+                          </Select>
+                        </div>
+                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                          {(() => {
+                            const allActivities: any[] = []
+                            
+                            userCreatedSales.forEach(sale => {
+                              allActivities.push({
+                                type: 'sale', date: sale.created_at, icon: ShoppingCart, color: 'blue',
+                                title: 'بيع جديد', desc: `${sale.client?.name || 'عميل'} - ${formatCurrency(sale.total_selling_price)}`
+                              })
+                            })
+                            userConfirmedSales.forEach(sale => {
+                              allActivities.push({
+                                type: 'sale', date: sale.updated_at || sale.created_at, icon: CheckCircle2, color: 'green',
+                                title: 'تأكيد بيع', desc: `${sale.client?.name || 'عميل'} - ${formatCurrency(sale.total_selling_price)}`
+                              })
+                            })
+                            userPayments.forEach(p => {
+                              allActivities.push({
+                                type: 'payment', date: p.created_at, icon: CreditCard, color: 'purple',
+                                title: 'دفعة', desc: `${p.client?.name || 'عميل'} - ${formatCurrency(p.amount_paid)}`
+                              })
+                            })
+                            userClients.forEach(c => {
+                              allActivities.push({
+                                type: 'client', date: c.created_at, icon: UsersIcon, color: 'indigo',
+                                title: 'عميل جديد', desc: `${c.name} - ${c.cin}`
+                              })
+                            })
+                            userLandBatches.forEach(b => {
+                              allActivities.push({
+                                type: 'land', date: b.created_at, icon: MapIcon, color: 'teal',
+                                title: 'دفعة أراضي', desc: `${b.name} - ${formatCurrency(b.total_cost)}`
+                              })
+                            })
+                            userReservations.forEach(r => {
+                              allActivities.push({
+                                type: 'land', date: r.created_at, icon: Calendar, color: 'orange',
+                                title: 'حجز', desc: `${r.client?.name || 'عميل'} - ${formatCurrency(r.small_advance_amount)}`
+                              })
+                            })
+                            
+                            const filtered = activityFilter === 'all' ? allActivities :
+                              activityFilter === 'sales' ? allActivities.filter(a => a.type === 'sale') :
+                              activityFilter === 'payments' ? allActivities.filter(a => a.type === 'payment') :
+                              activityFilter === 'clients' ? allActivities.filter(a => a.type === 'client') :
+                              allActivities.filter(a => a.type === 'land')
+                            
+                            return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 50).map((act, idx) => {
+                              const Icon = act.icon
+                              const colors: Record<string, string> = {
+                                blue: 'bg-blue-100 text-blue-600',
+                                green: 'bg-green-100 text-green-600',
+                                purple: 'bg-purple-100 text-purple-600',
+                                indigo: 'bg-indigo-100 text-indigo-600',
+                                teal: 'bg-teal-100 text-teal-600',
+                                orange: 'bg-orange-100 text-orange-600',
+                              }
+                              return (
+                                <div key={idx} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors">
+                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${colors[act.color]}`}>
+                                    <Icon className="h-4 w-4" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium">{act.title}</p>
+                                    <p className="text-xs text-gray-500 truncate">{act.desc}</p>
+                                  </div>
+                                  <p className="text-xs text-gray-400 whitespace-nowrap">{formatDate(act.date)}</p>
+                                </div>
+                              )
+                            })
+                          })()}
+                          {userCreatedSales.length === 0 && userPayments.length === 0 && userClients.length === 0 && (
+                            <p className="text-center text-gray-500 py-8">لا يوجد نشاط</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>

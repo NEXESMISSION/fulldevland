@@ -9,9 +9,12 @@ interface AuthContextType {
   profile: User | null
   session: Session | null
   loading: boolean
+  profileLoading: boolean  // True while profile is being fetched
+  isReady: boolean         // True when auth AND profile are fully loaded
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
   hasPermission: (permission: string) => boolean
+  hasPageAccess: (pageId: string) => boolean
   getPermissionDeniedMessage: (permission: string) => string
 }
 
@@ -88,9 +91,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [profileLoading, setProfileLoading] = useState(false)
   const [userPermissions, setUserPermissions] = useState<Record<string, boolean>>({})
   const fetchingRef = useRef(false)
   const initializedRef = useRef(false)
+  
+  // isReady is true when auth loading is done AND (no user OR profile is loaded)
+  const isReady = !loading && (!user || (!!user && !!profile && !profileLoading))
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
@@ -157,35 +164,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Prevent multiple simultaneous fetches
     if (fetchingRef.current) return
     fetchingRef.current = true
+    setProfileLoading(true)
     
     try {
       // Use retry mechanism for profile fetch
       const data = await retryWithBackoff(
         async () => {
-          // Try to fetch from auth.users metadata first, then fallback to users table
-          try {
-            const { data: authUser } = await supabase.auth.getUser()
-            
-            if (authUser?.user?.user_metadata?.role) {
-              // User metadata exists, use it
-              return {
-                id: authUser.user.id,
-                name: authUser.user.user_metadata.name || authUser.user.email?.split('@')[0] || 'User',
-                email: authUser.user.email || '',
-                role: authUser.user.user_metadata.role,
-                status: authUser.user.user_metadata.status || 'Active',
-                created_at: authUser.user.created_at,
-                updated_at: authUser.user.updated_at || authUser.user.created_at,
-              }
-            }
-          } catch (e) {
-            // Continue to users table fallback
-          }
-          
-          // Fallback to users table - use limit(1) instead of maybeSingle() to avoid 406 errors
+          // ALWAYS try to fetch from users table first to get allowed_pages
+          // This is critical for page access control
           const { data, error } = await supabase
             .from('users')
-            .select('id, name, email, role, status, created_at, updated_at')
+            .select('id, name, email, role, status, created_at, updated_at, allowed_pages')
             .eq('id', userId)
             .limit(1)
       
@@ -209,11 +198,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (isPermissionError) {
               console.warn('Users table query failed (RLS blocking), falling back to auth metadata:', error)
               // Try to get user from auth metadata as last resort
+              // WARNING: This fallback does NOT include allowed_pages, so page restrictions won't work
               const { data: authUser } = await supabase.auth.getUser()
               if (authUser?.user) {
-                // Return minimal user data from auth
-                // IMPORTANT: If user_metadata.role exists, use it. Otherwise default to Owner
-                // for users who are known to be owners but missing from users table
                 const metaRole = authUser.user.user_metadata?.role
                 const email = authUser.user.email || ''
                 
@@ -223,7 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 
                 const role = metaRole || (isKnownOwner ? 'Owner' : 'FieldStaff')
                 
-                console.log('Using auth metadata for profile:', { email, role, hasMetaRole: !!metaRole, isKnownOwner })
+                console.warn('Using auth metadata for profile (allowed_pages NOT available):', { email, role })
                 
                 return {
                   id: authUser.user.id,
@@ -233,13 +220,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   status: (authUser.user.user_metadata?.status || 'Active') as 'Active' | 'Inactive',
                   created_at: authUser.user.created_at,
                   updated_at: authUser.user.updated_at || authUser.user.created_at,
+                  // No allowed_pages available from auth metadata - will use role permissions
+                  allowed_pages: null,
                 }
               }
               throw new Error('User not found and cannot access users table')
             }
             throw error
           }
-          if (!data || data.length === 0) throw new Error('User not found')
+          
+          if (!data || data.length === 0) {
+            // User not in users table, try auth metadata
+            console.warn('User not found in users table, trying auth metadata')
+            const { data: authUser } = await supabase.auth.getUser()
+            if (authUser?.user) {
+              const metaRole = authUser.user.user_metadata?.role
+              const email = authUser.user.email || ''
+              const knownOwnerEmails = ['saifelleuchi127@gmail.com', 'lassad.mazed@gmail.com']
+              const isKnownOwner = knownOwnerEmails.includes(email.toLowerCase())
+              const role = metaRole || (isKnownOwner ? 'Owner' : 'FieldStaff')
+              
+              return {
+                id: authUser.user.id,
+                name: authUser.user.user_metadata?.name || authUser.user.email?.split('@')[0] || 'User',
+                email: email,
+                role: role as UserRole,
+                status: (authUser.user.user_metadata?.status || 'Active') as 'Active' | 'Inactive',
+                created_at: authUser.user.created_at,
+                updated_at: authUser.user.updated_at || authUser.user.created_at,
+                allowed_pages: null,
+              }
+            }
+            throw new Error('User not found')
+          }
+          
           return data[0]
         },
         {
@@ -270,6 +284,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUserPermissions({})
     } finally {
       fetchingRef.current = false
+      setProfileLoading(false)
       setLoading(false)
     }
   }
@@ -576,7 +591,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Throttle hasPermission warnings to avoid console spam
   const lastWarningTimeRef = useRef<number>(0)
-  
+
   const hasPermission = (permission: string): boolean => {
     if (!profile) {
       // Only log warning once per second to avoid console spam
@@ -645,6 +660,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return `ليس لديك صلاحية للوصول إلى "${permissionName}". يرجى التواصل مع المدير للحصول على الصلاحيات المطلوبة.`
   }
 
+  // Check if user has access to a specific page (optimized - no debug logging)
+  const hasPageAccess = (pageId: string): boolean => {
+    if (!profile) return false
+    
+    // Owner always has access to all pages
+    if (profile.role === 'Owner') return true
+    
+    // Get allowed_pages from profile
+    const allowedPages = (profile as any).allowed_pages as string[] | null
+    
+    // If allowed_pages is null or undefined, allow all (backwards compatible)
+    if (!allowedPages) return true
+    
+    // If allowed_pages is empty array, deny all except home
+    if (allowedPages.length === 0) return pageId === 'home'
+    
+    // Check if pageId is in allowed_pages
+    return allowedPages.includes(pageId)
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -652,9 +687,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile,
         session,
         loading,
+        profileLoading,
+        isReady,
         signIn,
         signOut,
         hasPermission,
+        hasPageAccess,
         getPermissionDeniedMessage,
       }}
     >

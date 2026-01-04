@@ -736,12 +736,67 @@ export function LandManagement() {
       batchData.price_per_m2_full = pricePerM2Full !== null && !isNaN(pricePerM2Full) ? pricePerM2Full : null
       batchData.price_per_m2_installment = pricePerM2Installment !== null && !isNaN(pricePerM2Installment) ? pricePerM2Installment : null
 
+      // Add created_by for new batches (track who created this batch)
+      if (!editingBatch) {
+        batchData.created_by = user?.id || null
+      }
+
       if (editingBatch) {
+        // Check if pricing changed - if so, update all available land pieces
+        const oldPricePerM2Full = (editingBatch as any).price_per_m2_full
+        const oldPricePerM2Installment = (editingBatch as any).price_per_m2_installment
+        
+        // Compare old and new prices (handle null/undefined and numeric comparison)
+        const oldFullNum = oldPricePerM2Full !== null && oldPricePerM2Full !== undefined ? parseFloat(String(oldPricePerM2Full)) : null
+        const oldInstallmentNum = oldPricePerM2Installment !== null && oldPricePerM2Installment !== undefined ? parseFloat(String(oldPricePerM2Installment)) : null
+        
+        const pricingChanged = (pricePerM2Full !== null && !isNaN(pricePerM2Full) && (oldFullNum === null || Math.abs(oldFullNum - pricePerM2Full) > 0.01)) ||
+                              (pricePerM2Installment !== null && !isNaN(pricePerM2Installment) && (oldInstallmentNum === null || Math.abs(oldInstallmentNum - pricePerM2Installment) > 0.01))
+        
         const { error } = await supabase
           .from('land_batches')
           .update(batchData)
           .eq('id', editingBatch.id)
         if (error) throw error
+
+        // If pricing changed and both prices are valid, update all available land pieces in this batch
+        if (pricingChanged && pricePerM2Full !== null && !isNaN(pricePerM2Full) && pricePerM2Full > 0 && 
+            pricePerM2Installment !== null && !isNaN(pricePerM2Installment) && pricePerM2Installment > 0) {
+          // Fetch all available pieces for this batch
+          const { data: availablePieces, error: piecesError } = await supabase
+            .from('land_pieces')
+            .select('id, surface_area')
+            .eq('land_batch_id', editingBatch.id)
+            .eq('status', 'Available')
+          
+          if (piecesError) {
+            console.error('Error fetching available pieces:', piecesError)
+            // Don't throw - batch update was successful, piece update is optional
+          } else if (availablePieces && availablePieces.length > 0) {
+            // Update prices for all available pieces
+            const updates = availablePieces.map((piece: any) => ({
+              id: piece.id,
+              selling_price_full: Math.round((piece.surface_area || 0) * pricePerM2Full * 100) / 100,
+              selling_price_installment: Math.round((piece.surface_area || 0) * pricePerM2Installment * 100) / 100,
+            }))
+
+            // Update pieces one by one (Supabase doesn't support bulk updates with different values)
+            for (const update of updates) {
+              const { error: updateError } = await supabase
+                .from('land_pieces')
+                .update({
+                  selling_price_full: update.selling_price_full,
+                  selling_price_installment: update.selling_price_installment,
+                })
+                .eq('id', update.id)
+              
+              if (updateError) {
+                console.error(`Error updating piece ${update.id}:`, updateError)
+                // Continue with other pieces even if one fails
+              }
+            }
+          }
+        }
       } else {
         // Create batch
         const { data: newBatch, error: batchError } = await supabase

@@ -7,5 +7,28 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables. Check your .env file.')
 }
 
-// Using untyped client to avoid strict type issues with Supabase
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Optimized Supabase client configuration
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    // Persist session in localStorage for faster reloads
+    persistSession: true,
+    // Auto refresh token before expiry
+    autoRefreshToken: true,
+    // Detect session from URL (for OAuth)
+    detectSessionInUrl: true,
+    // Storage key for session
+    storageKey: 'land-system-auth',
+  },
+  global: {
+    headers: {
+      // Prefer minimal response for faster transfers
+      'Prefer': 'return=minimal',
+    },
+  },
+  // Enable realtime subscriptions if needed
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+  },
+})

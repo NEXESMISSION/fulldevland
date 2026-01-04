@@ -16,23 +16,40 @@ import { Home } from '@/pages/Home'
 import { Debts } from '@/pages/Debts'
 import { Expenses } from '@/pages/Expenses'
 import { RealEstateBuildings } from '@/pages/RealEstateBuildings'
+import { AccountDisabled } from '@/pages/AccountDisabled'
 import { LoadingProgress } from '@/components/ui/loading-progress'
 import { NotificationContainer } from '@/components/ui/notification'
 
 function AppRoutes() {
-  const { user, loading, hasPermission } = useAuth()
+  const { user, profile, loading, profileLoading, isReady, hasPermission, hasPageAccess } = useAuth()
 
   function ProtectedRoute({ children }: { children: React.ReactNode }) {
-    if (loading) {
+    // Wait for BOTH auth and profile to be ready before rendering anything
+    // This prevents the "flash of unauthorized content" security issue
+    if (loading || profileLoading || !isReady) {
       return (
-        <div className="flex h-screen items-center justify-center">
-          <LoadingProgress message="جاري التحميل..." />
+        <div className="flex h-screen items-center justify-center bg-background">
+          <LoadingProgress message="جاري تحميل بيانات المستخدم..." />
         </div>
       )
     }
 
     if (!user) {
       return <Navigate to="/login" replace />
+    }
+
+    // User exists but profile not loaded - show loading
+    if (!profile) {
+      return (
+        <div className="flex h-screen items-center justify-center bg-background">
+          <LoadingProgress message="جاري تحميل الصلاحيات..." />
+        </div>
+      )
+    }
+
+    // Check if user account is inactive/disabled
+    if (profile.status === 'Inactive') {
+      return <Navigate to="/account-disabled" replace />
     }
 
     return <>{children}</>
@@ -54,12 +71,16 @@ function AppRoutes() {
     return <>{children}</>
   }
 
+  // Combined route protection: checks page access OR permission
+  // If user has explicit allowed_pages, that takes priority over role permissions
   function PermissionProtectedRoute({ 
     children, 
-    permission 
+    permission,
+    pageId
   }: { 
     children: React.ReactNode
     permission: string | null 
+    pageId?: string
   }) {
     if (loading) {
       return (
@@ -69,21 +90,39 @@ function AppRoutes() {
       )
     }
 
-    // If no permission required, allow access
-    if (!permission) {
-      return <>{children}</>
-    }
+    // Get allowed_pages from profile
+    const allowedPages = (profile as any)?.allowed_pages as string[] | null | undefined
+    
+    // Check if user has explicit allowed_pages configured (non-Owner with pages set)
+    const hasExplicitPageAccess = profile?.role !== 'Owner' && 
+      Array.isArray(allowedPages) && 
+      allowedPages.length > 0
 
-    // Check permission
-    if (!hasPermission(permission)) {
-      return (
-        <div className="flex h-screen items-center justify-center">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold mb-2">غير مصرح</h2>
-            <p className="text-muted-foreground">ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
+    if (hasExplicitPageAccess) {
+      // User has explicit page access configured - use that as primary control
+      if (pageId && !hasPageAccess(pageId)) {
+        return (
+          <div className="flex h-screen items-center justify-center">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold mb-2">غير مصرح</h2>
+              <p className="text-muted-foreground">ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
+              <p className="text-sm text-muted-foreground mt-2">يرجى التواصل مع المسؤول لإضافة هذه الصفحة إلى صلاحياتك</p>
+            </div>
           </div>
-        </div>
-      )
+        )
+      }
+    } else {
+      // No explicit page access - use role permissions
+      if (permission && !hasPermission(permission)) {
+        return (
+          <div className="flex h-screen items-center justify-center">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold mb-2">غير مصرح</h2>
+              <p className="text-muted-foreground">ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
+            </div>
+          </div>
+        )
+      }
     }
 
     return <>{children}</>
@@ -99,6 +138,19 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/account-disabled"
+        element={
+          // Only show to logged-in inactive users
+          user && profile?.status === 'Inactive' ? (
+            <AccountDisabled />
+          ) : user ? (
+            <Navigate to="/" replace />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
         path="/"
         element={
           <ProtectedRoute>
@@ -110,7 +162,7 @@ function AppRoutes() {
         <Route 
           path="land" 
           element={
-            <PermissionProtectedRoute permission="view_land">
+            <PermissionProtectedRoute permission="view_land" pageId="land">
               <LandManagement />
             </PermissionProtectedRoute>
           } 
@@ -118,7 +170,7 @@ function AppRoutes() {
         <Route 
           path="availability" 
           element={
-            <PermissionProtectedRoute permission="view_land">
+            <PermissionProtectedRoute permission="view_land" pageId="availability">
               <LandAvailability />
             </PermissionProtectedRoute>
           } 
@@ -126,7 +178,7 @@ function AppRoutes() {
         <Route 
           path="clients" 
           element={
-            <PermissionProtectedRoute permission="view_clients">
+            <PermissionProtectedRoute permission="view_clients" pageId="clients">
               <Clients />
             </PermissionProtectedRoute>
           } 
@@ -134,7 +186,7 @@ function AppRoutes() {
         <Route 
           path="sales" 
           element={
-            <PermissionProtectedRoute permission="view_sales">
+            <PermissionProtectedRoute permission="view_sales" pageId="sales">
               <Sales />
             </PermissionProtectedRoute>
           } 
@@ -142,7 +194,7 @@ function AppRoutes() {
         <Route 
           path="sale-confirmation" 
           element={
-            <PermissionProtectedRoute permission="edit_sales">
+            <PermissionProtectedRoute permission="edit_sales" pageId="confirm-sales">
               <SaleConfirmation />
             </PermissionProtectedRoute>
           } 
@@ -150,7 +202,7 @@ function AppRoutes() {
         <Route 
           path="installments" 
           element={
-            <PermissionProtectedRoute permission="view_installments">
+            <PermissionProtectedRoute permission="view_installments" pageId="installments">
               <Installments />
             </PermissionProtectedRoute>
           } 
@@ -158,7 +210,7 @@ function AppRoutes() {
         <Route 
           path="financial" 
           element={
-            <PermissionProtectedRoute permission="view_financial">
+            <PermissionProtectedRoute permission="view_financial" pageId="finance">
               <Financial />
             </PermissionProtectedRoute>
           } 
@@ -166,7 +218,7 @@ function AppRoutes() {
         <Route 
           path="expenses" 
           element={
-            <PermissionProtectedRoute permission="view_financial">
+            <PermissionProtectedRoute permission="view_financial" pageId="expenses">
               <Expenses />
             </PermissionProtectedRoute>
           } 
@@ -174,7 +226,7 @@ function AppRoutes() {
         <Route 
           path="users" 
           element={
-            <PermissionProtectedRoute permission="manage_users">
+            <PermissionProtectedRoute permission="manage_users" pageId="users">
               <Users />
             </PermissionProtectedRoute>
           } 
@@ -182,7 +234,7 @@ function AppRoutes() {
         <Route 
           path="permissions" 
           element={
-            <PermissionProtectedRoute permission="manage_users">
+            <PermissionProtectedRoute permission="manage_users" pageId="users">
               <UserPermissions />
             </PermissionProtectedRoute>
           } 
@@ -190,13 +242,27 @@ function AppRoutes() {
         <Route 
           path="security" 
           element={
-            <PermissionProtectedRoute permission="view_audit_logs">
+            <PermissionProtectedRoute permission="view_audit_logs" pageId="security">
               <Security />
             </PermissionProtectedRoute>
           } 
         />
-        <Route path="debts" element={<Debts />} />
-        <Route path="real-estate-buildings" element={<RealEstateBuildings />} />
+        <Route 
+          path="debts" 
+          element={
+            <PermissionProtectedRoute permission={null} pageId="debts">
+              <Debts />
+            </PermissionProtectedRoute>
+          } 
+        />
+        <Route 
+          path="real-estate-buildings" 
+          element={
+            <PermissionProtectedRoute permission={null} pageId="real-estate">
+              <RealEstateBuildings />
+            </PermissionProtectedRoute>
+          } 
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

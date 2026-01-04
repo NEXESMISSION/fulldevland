@@ -35,7 +35,7 @@ interface ClientWithRelations extends Client {
 }
 
 export function Clients() {
-  const { hasPermission } = useAuth()
+  const { hasPermission, user } = useAuth()
   const [clients, setClients] = useState<ClientWithRelations[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -177,7 +177,7 @@ export function Clients() {
         }
       }
 
-      const clientData = {
+      const clientData: any = {
         name: sanitizeText(form.name),
         cin: sanitizedCIN,
         phone: sanitizedPhone, // Now required, so always set
@@ -185,6 +185,11 @@ export function Clients() {
         address: form.address ? sanitizeText(form.address) : null,
         client_type: form.client_type,
         notes: form.notes ? sanitizeNotes(form.notes) : null,
+      }
+
+      // Only add created_by for new clients
+      if (!editingClient) {
+        clientData.created_by = user?.id || null
       }
 
       if (editingClient) {

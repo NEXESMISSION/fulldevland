@@ -250,6 +250,25 @@ export function Debts() {
     return amount / daysRemaining
   }
 
+  // Calculate what's still required today for a specific debt (accounting for today's payments)
+  const getTodayRequiredForDebt = (debt: Debt): number => {
+    const today = new Date().toISOString().split('T')[0]
+    
+    // Calculate remaining amount BEFORE today's payments
+    const paymentsBeforeToday = payments.filter(p => p.debt_id === debt.id && p.payment_date !== today)
+    const totalPaidBeforeToday = paymentsBeforeToday.reduce((sum, p) => sum + p.amount_paid, 0)
+    const remainingBeforeToday = Math.max(0, debt.amount_owed - totalPaidBeforeToday)
+    
+    // Calculate what's required today for this debt
+    const dailyRequired = calculateDailyPayment(debt, remainingBeforeToday)
+    
+    // Subtract today's payments to this specific debt
+    const todayPayments = payments.filter(p => p.debt_id === debt.id && p.payment_date === today)
+    const todayPaid = todayPayments.reduce((sum, p) => sum + p.amount_paid, 0)
+    
+    return Math.max(0, dailyRequired - todayPaid)
+  }
+
   // Calculate payments made today (grouped by debt to avoid duplicates)
   const getTodayPayments = (): number => {
     const today = new Date().toISOString().split('T')[0]
@@ -406,13 +425,16 @@ export function Debts() {
           </CardContent>
         </Card>
 
-        <Card className="bg-red-50 border-red-200">
-          <CardContent className="pt-3 pb-3">
-            <p className="text-xs font-medium text-red-700 mb-1">متأخر</p>
-            <p className="text-xl font-bold text-red-800">{formatCurrency(debtStats.overdueAmount)}</p>
-            <p className="text-xs text-red-600 mt-0.5">{debtStats.overdue} دين متأخر</p>
-          </CardContent>
-        </Card>
+        {/* Only show overdue card if there are overdue debts */}
+        {debtStats.overdue > 0 && (
+          <Card className="bg-red-50 border-red-200">
+            <CardContent className="pt-3 pb-3">
+              <p className="text-xs font-medium text-red-700 mb-1">متأخر</p>
+              <p className="text-xl font-bold text-red-800">{formatCurrency(debtStats.overdueAmount)}</p>
+              <p className="text-xs text-red-600 mt-0.5">{debtStats.overdue} دين متأخر</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Debts List - Compact */}
@@ -465,11 +487,16 @@ export function Debts() {
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">المبلغ المستحق</p>
                   <p className="text-2xl font-bold text-primary">{formatCurrency(getRemainingAmount(debt))}</p>
-                  {getRemainingAmount(debt) < debt.amount_owed && (
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      من أصل {formatCurrency(debt.amount_owed)}
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    من أصل {formatCurrency(debt.amount_owed)}
+                  </p>
+                  {/* المطلوب اليوم - Today's Required Amount */}
+                  <div className="mt-2 pt-2 border-t">
+                    <p className="text-xs text-muted-foreground mb-0.5">المطلوب اليوم</p>
+                    <p className="text-lg font-semibold text-blue-600">
+                      {formatCurrency(getTodayRequiredForDebt(debt))}
                     </p>
-                  )}
+                  </div>
                 </div>
 
                 {/* Due Date and Daily Payment - Compact */}

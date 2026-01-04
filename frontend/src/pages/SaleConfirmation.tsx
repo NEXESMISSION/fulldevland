@@ -244,7 +244,8 @@ export function SaleConfirmation() {
               .from('sales')
               .update({ 
                 status: 'Completed',
-                is_confirmed: true
+                is_confirmed: true,
+                confirmed_by: user?.id || null
               } as any)
               .eq('id', sale.id)
               .then(({ error }) => {
@@ -395,6 +396,7 @@ export function SaleConfirmation() {
             payment_type: 'Refund',
             payment_date: new Date().toISOString().split('T')[0],
             notes: `استرداد لإلغاء البيع #${sale.id.slice(0, 8)}`,
+            recorded_by: user?.id || null,
           }] as any)
         }
         
@@ -442,6 +444,7 @@ export function SaleConfirmation() {
             payment_type: 'Refund',
             payment_date: new Date().toISOString().split('T')[0],
             notes: `استرداد لإلغاء القطعة #${piece.piece_number}`,
+            recorded_by: user?.id || null,
           }] as any)
         }
         
@@ -600,6 +603,7 @@ export function SaleConfirmation() {
             payment_type: paymentType,
             payment_date: new Date().toISOString().split('T')[0],
             notes: confirmationNotes || null,
+            recorded_by: user?.id || null,
           }] as any)
           if (paymentError) throw paymentError
         }
@@ -692,6 +696,7 @@ export function SaleConfirmation() {
             payment_type: paymentType,
             payment_date: new Date().toISOString().split('T')[0],
             notes: confirmationNotes || null,
+            recorded_by: user?.id || null,
           }] as any)
           
           if (paymentError) throw paymentError

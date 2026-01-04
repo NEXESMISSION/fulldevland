@@ -26,7 +26,7 @@ import {
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { sanitizeNotes } from '@/lib/sanitize'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { User, ChevronDown, ChevronUp } from 'lucide-react'
+import { User, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import type { Installment, Sale, Client, InstallmentStatus } from '@/types/database'
 
 interface InstallmentWithRelations extends Installment {
@@ -61,9 +61,11 @@ const statusColors: Record<InstallmentStatus, 'success' | 'warning' | 'destructi
 }
 
 export function Installments() {
-  const { hasPermission } = useAuth()
+  const { hasPermission, user } = useAuth()
   const [installments, setInstallments] = useState<InstallmentWithRelations[]>([])
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false) // Track refresh state separately
+  const [refreshKey, setRefreshKey] = useState(0) // Force re-render trigger
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterOverdue, setFilterOverdue] = useState<boolean>(false)
   const [filterDueThisMonth, setFilterDueThisMonth] = useState<boolean>(false)
@@ -98,6 +100,7 @@ export function Installments() {
   const [paymentAmount, setPaymentAmount] = useState('')
   const [monthsToPayCount, setMonthsToPayCount] = useState(1)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [paymentConfirmOpen, setPaymentConfirmOpen] = useState(false)
   
   // Client details dialog
@@ -196,6 +199,63 @@ export function Installments() {
   useEffect(() => {
     fetchInstallments()
   }, [])
+
+  // IMPROVED: Auto-refresh details drawer when installments change (after payment)
+  // Uses refreshKey to ensure updates are detected
+  useEffect(() => {
+    if (detailsDrawerOpen && selectedSaleForDetails) {
+      console.log('[useEffect:autoRefresh] Checking for updates, refreshKey:', refreshKey)
+      
+      // Find fresh installments for this sale from the updated installments state
+      const freshInstallments = installments.filter(inst => inst.sale_id === selectedSaleForDetails.saleId)
+      
+      if (freshInstallments.length > 0) {
+        const firstInst = freshInstallments[0]
+        
+        // Get land pieces from the sale data (should already be attached)
+        const landPieces = (firstInst.sale as any)?._landPieces || []
+        const pieceNumbers = landPieces.map((p: any) => p?.piece_number).filter(Boolean).join('، ')
+        
+        // Calculate totals from fresh installments
+        const totalDue = freshInstallments.reduce((sum, inst) => sum + inst.amount_due, 0)
+        const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0)
+        const totalUnpaid = freshInstallments.reduce((sum, inst) => {
+          const remaining = inst.amount_due + (inst.stacked_amount || 0) - (inst.amount_paid || 0)
+          return sum + Math.max(0, remaining)
+        }, 0)
+        
+        // Check if any installment data changed
+        const currentPaid = selectedSaleForDetails.installments.reduce((sum, i) => sum + (i.amount_paid || 0), 0)
+        const hasChanges = Math.abs(totalPaid - currentPaid) > 0.01
+        
+        // Also check installment count in case new payments affected status
+        const currentCount = selectedSaleForDetails.installments.filter(i => i.status === 'Paid').length
+        const newCount = freshInstallments.filter(i => i.status === 'Paid').length
+        const statusChanged = currentCount !== newCount
+        
+        if (hasChanges || statusChanged) {
+          console.log('[useEffect:autoRefresh] Updating details drawer:', {
+            previousPaid: currentPaid,
+            newPaid: totalPaid,
+            previousPaidCount: currentCount,
+            newPaidCount: newCount
+          })
+          
+          setSelectedSaleForDetails({
+            saleId: selectedSaleForDetails.saleId,
+            clientName: selectedSaleForDetails.clientName,
+            clientCin: selectedSaleForDetails.clientCin,
+            saleDate: selectedSaleForDetails.saleDate,
+            installments: [...freshInstallments].sort((a, b) => a.installment_number - b.installment_number),
+            totalDue,
+            totalPaid,
+            totalUnpaid,
+            landPieces: pieceNumbers || selectedSaleForDetails.landPieces
+          })
+        }
+      }
+    }
+  }, [installments, refreshKey, detailsDrawerOpen, selectedSaleForDetails?.saleId])
 
   // Stack unpaid overdue installments onto the first unpaid installment
   useEffect(() => {
@@ -299,8 +359,14 @@ export function Installments() {
     }
   }, [installments])
 
-  const fetchInstallments = async () => {
+  // IMPROVED: Fetch installments with retry logic and proper error handling
+  const fetchInstallments = async (retryCount = 0): Promise<boolean> => {
+    const maxRetries = 3
+    const retryDelay = 1000 // 1 second
+    
     try {
+      console.log(`[fetchInstallments] Starting fetch (attempt ${retryCount + 1}/${maxRetries + 1})...`)
+      
       const { data, error } = await supabase
         .from('installments')
         .select(`
@@ -315,8 +381,13 @@ export function Installments() {
         `)
         .order('due_date', { ascending: true })
 
-      if (error) throw error
+      if (error) {
+        console.error('[fetchInstallments] Supabase error:', error)
+        throw error
+      }
+      
       const installmentData = (data as InstallmentWithRelations[]) || []
+      console.log(`[fetchInstallments] Fetched ${installmentData.length} installments`)
 
       // Fetch land pieces for all sales to get piece numbers
       if (installmentData && installmentData.length > 0) {
@@ -335,7 +406,7 @@ export function Installments() {
               .in('id', Array.from(allPieceIds))
             
             if (piecesError) {
-              console.error('Error fetching land pieces:', piecesError)
+              console.error('[fetchInstallments] Error fetching land pieces:', piecesError)
             } else if (piecesData) {
               // Fetch batch names separately if needed
               const batchIds = new Set(piecesData.map((p: any) => p.land_batch_id).filter(Boolean))
@@ -370,14 +441,30 @@ export function Installments() {
               })
             }
           } catch (err) {
-            console.error('Error processing land pieces:', err)
+            console.error('[fetchInstallments] Error processing land pieces:', err)
             // Continue without land pieces data
           }
         }
       }
       
+      // CRITICAL: Create new array to force React to detect state change
+      const newInstallmentsArray = [...installmentData]
+      
       // Set installments after attaching land pieces
-      setInstallments(installmentData)
+      setInstallments(newInstallmentsArray)
+      
+      // Force re-render by incrementing refresh key
+      setRefreshKey(prev => prev + 1)
+      
+      console.log('[fetchInstallments] State updated:', {
+        count: newInstallmentsArray.length,
+        sampleInstallment: newInstallmentsArray[0] ? {
+          id: newInstallmentsArray[0].id,
+          amount_paid: newInstallmentsArray[0].amount_paid,
+          status: newInstallmentsArray[0].status
+        } : null,
+        timestamp: new Date().toISOString()
+      })
 
       // Calculate stats
       const totalDue = installmentData.reduce((sum, i) => sum + i.amount_due, 0)
@@ -409,10 +496,29 @@ export function Installments() {
         clientsWithOverdue: clientsWithOverdue.size,
         totalClients: uniqueClients.size,
       })
-    } catch (error) {
-      setErrorMessage('خطأ في تحميل الأقساط')
+      
+      console.log('[fetchInstallments] Stats updated:', { totalDue, totalPaid, totalOverdue })
+      return true // Success
+      
+    } catch (error: any) {
+      console.error('[fetchInstallments] Error:', error)
+      
+      // Check if it's a network error and we should retry
+      const isNetworkError = error?.message?.includes('ERR_CONNECTION') || 
+                            error?.message?.includes('Failed to fetch') ||
+                            error?.code === 'NETWORK_ERROR'
+      
+      if (isNetworkError && retryCount < maxRetries) {
+        console.log(`[fetchInstallments] Network error, retrying in ${retryDelay}ms...`)
+        await new Promise(resolve => setTimeout(resolve, retryDelay))
+        return fetchInstallments(retryCount + 1)
+      }
+      
+      setErrorMessage('خطأ في تحميل الأقساط. يرجى المحاولة مرة أخرى.')
+      return false // Failure
     } finally {
       setLoading(false)
+      setIsRefreshing(false)
     }
   }
 
@@ -463,10 +569,31 @@ export function Installments() {
   }
 
   const openPaymentDialog = (installment: InstallmentWithRelations) => {
+    // VALIDATION: Check if installment is already paid
+    const remainingAmount = getRemainingAmount(installment)
+    if (remainingAmount <= 0.01 || installment.status === 'Paid') {
+      // Alert user that this installment is already paid
+      setErrorMessage(`⚠️ هذا القسط #${installment.installment_number} مدفوع بالكامل بالفعل!`)
+      console.log('[openPaymentDialog] Attempted to pay already paid installment:', {
+        installmentId: installment.id,
+        installmentNumber: installment.installment_number,
+        status: installment.status,
+        remaining: remainingAmount
+      })
+      return // Don't open dialog
+    }
+    
+    setErrorMessage(null)
     setSelectedInstallment(installment)
     
     // Auto-calculate payment amount for ALL unpaid installments (including stacked amounts)
     const unpaid = getUnpaidInstallmentsForSale(installment.sale_id)
+    
+    // Double-check there are unpaid installments
+    if (unpaid.length === 0) {
+      setErrorMessage('⚠️ جميع أقساط هذه الصفقة مدفوعة بالكامل!')
+      return
+    }
     
     // Check if this is an installment sale or full payment sale
     const isInstallmentSale = installment.sale?.payment_type !== 'Full'
@@ -519,19 +646,68 @@ export function Installments() {
       return
     }
 
+    // Check network connection
+    if (!navigator.onLine) {
+      setErrorMessage('لا يوجد اتصال بالإنترنت. يرجى التحقق من الاتصال والمحاولة مرة أخرى.')
+      return
+    }
+
     setErrorMessage(null)
+    setIsRefreshing(true) // Show loading state during payment
+    
+    console.log('[recordPayment] Starting payment recording...')
+    
     try {
+      // CRITICAL: Re-check from database that installment is not already paid
+      // This prevents double payment if UI data is stale
+      const { data: freshInstallment, error: checkError } = await supabase
+        .from('installments')
+        .select('id, amount_paid, amount_due, stacked_amount, status')
+        .eq('id', selectedInstallment.id)
+        .single()
+      
+      if (checkError) {
+        console.error('[recordPayment] Error checking installment status:', checkError)
+        setErrorMessage('خطأ في التحقق من حالة القسط')
+        setIsRefreshing(false)
+        return
+      }
+      
+      if (freshInstallment) {
+        const freshRemaining = freshInstallment.amount_due + (freshInstallment.stacked_amount || 0) - freshInstallment.amount_paid
+        if (freshRemaining <= 0.01 || freshInstallment.status === 'Paid') {
+          // Installment was paid in another session/tab
+          setErrorMessage(`⚠️ هذا القسط مدفوع بالكامل بالفعل! يرجى تحديث الصفحة.`)
+          console.log('[recordPayment] Installment already paid (detected from database):', freshInstallment)
+          setIsRefreshing(false)
+          setPaymentDialogOpen(false)
+          // Force refresh to get latest data
+          await fetchInstallments()
+          return
+        }
+      }
+      
       // CRITICAL: Only get installments for THIS specific sale (per-client isolation)
       // This ensures overpayments only affect the same client's installments
       const clientId = selectedInstallment.sale?.client_id
       if (!clientId) {
         setErrorMessage('خطأ: لا يمكن تحديد العميل')
+        setIsRefreshing(false)
         return
       }
 
       // Get installments to pay (for multi-month payment) - ONLY for this sale
       const unpaidInstallments = getUnpaidInstallmentsForSale(selectedInstallment.sale_id)
       const installmentsToPay = unpaidInstallments.slice(0, monthsToPayCount)
+      
+      // Validate that there are installments to pay
+      if (installmentsToPay.length === 0) {
+        setErrorMessage('⚠️ لا توجد أقساط غير مدفوعة لهذه الصفقة!')
+        setIsRefreshing(false)
+        setPaymentDialogOpen(false)
+        await fetchInstallments()
+        return
+      }
       
       let remainingPayment = amount
       const today = new Date().toISOString().split('T')[0]
@@ -557,7 +733,7 @@ export function Installments() {
         const newStackedAmount = isFullyPaid ? 0 : Math.max(0, totalRequired - newPaid)
 
         // Update installment - per-client, isolated calculation
-        await supabase
+        const { error: updateError } = await supabase
           .from('installments')
           .update({
             amount_paid: newPaid,
@@ -566,16 +742,40 @@ export function Installments() {
             stacked_amount: newStackedAmount,
           })
           .eq('id', inst.id)
+        
+        if (updateError) {
+          console.error('Error updating installment:', updateError)
+          console.error('Installment ID:', inst.id)
+          console.error('Update data:', {
+            amount_paid: newPaid,
+            status: isFullyPaid ? 'Paid' : newPaid > 0.01 ? 'Partial' : inst.status,
+            paid_date: isFullyPaid ? today : null,
+            stacked_amount: newStackedAmount,
+          })
+          // Provide more helpful error message
+          const errorMessage = updateError.code === 'PGRST116' 
+            ? 'القسط غير موجود' 
+            : updateError.code === '42501'
+            ? 'ليس لديك صلاحية لتحديث هذا القسط'
+            : updateError.message || 'خطأ في تحديث القسط'
+          throw new Error(errorMessage)
+        }
 
         // Record individual payment - linked to this specific client and sale
-        await supabase.from('payments').insert([{
+        const { error: paymentError } = await supabase.from('payments').insert([{
           client_id: clientId, // Ensure payment is linked to correct client
           sale_id: selectedInstallment.sale_id, // Ensure payment is linked to correct sale
           installment_id: inst.id,
           amount_paid: paymentForThis,
           payment_type: 'Installment',
           payment_date: today,
+          recorded_by: user?.id || null, // Track who recorded this payment
         }])
+        
+        if (paymentError) {
+          console.error('Error recording payment:', paymentError)
+          throw paymentError
+        }
 
         remainingPayment -= paymentForThis
       }
@@ -591,15 +791,147 @@ export function Installments() {
       // Recalculate sale status after payment - only affects this sale
       await recalculateSaleStatus(selectedInstallment.sale_id)
 
+      const paidSaleId = selectedInstallment.sale_id
+      const wasDetailsDrawerOpen = detailsDrawerOpen && selectedSaleForDetails?.saleId === paidSaleId
+      
+      console.log('[recordPayment] Payment recorded successfully, refreshing data...')
+      
+      // DON'T close dialog until refresh is complete - keep user informed
+      // setPaymentDialogOpen(false) // Moved below
+      
+      // Wait for database to commit the transaction
+      // Using longer delay to ensure PostgreSQL transaction is committed
+      await new Promise(resolve => setTimeout(resolve, 800))
+      
+      // CRITICAL: Refresh installments data to update UI
+      // Retry up to 3 times if initial fetch fails
+      let refreshSuccess = false
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[recordPayment] Refresh attempt ${attempt}/3...`)
+        try {
+          refreshSuccess = await fetchInstallments()
+          if (refreshSuccess) {
+            console.log('[recordPayment] Refresh successful!')
+            break
+          }
+        } catch (fetchError) {
+          console.error(`[recordPayment] Refresh attempt ${attempt} failed:`, fetchError)
+        }
+        
+        if (attempt < 3) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+      
+      // NOW close the dialog after refresh completes
       setPaymentDialogOpen(false)
       setPaymentAmount('')
       setMonthsToPayCount(1)
       setSelectedInstallment(null)
-      fetchInstallments()
+      
+      // If details drawer was open for this sale, refresh it by fetching fresh data from database
+      if (wasDetailsDrawerOpen) {
+        console.log('[recordPayment] Refreshing details drawer...')
+        
+        // Wait a bit more to ensure database consistency
+        await new Promise(resolve => setTimeout(resolve, 300))
+        
+        try {
+          // Fetch fresh installments for this sale from database
+          const { data: freshData, error } = await supabase
+            .from('installments')
+            .select(`
+              *,
+              sale:sales (
+                *,
+                client:clients (*),
+                land_piece_ids
+              )
+            `)
+            .eq('sale_id', paidSaleId)
+            .order('installment_number', { ascending: true })
+          
+          if (error) {
+            console.error('[recordPayment] Error fetching fresh installments:', error)
+          } else if (freshData && freshData.length > 0) {
+            const freshInstallments = freshData as InstallmentWithRelations[]
+            const firstInst = freshInstallments[0]
+            
+            // Fetch land pieces if needed
+            let pieceNumbers = '-'
+            if (firstInst.sale?.land_piece_ids && firstInst.sale.land_piece_ids.length > 0) {
+              const { data: piecesData } = await supabase
+                .from('land_pieces')
+                .select('piece_number')
+                .in('id', firstInst.sale.land_piece_ids)
+              
+              if (piecesData) {
+                const numbers = piecesData.map(p => p.piece_number).filter(Boolean)
+                pieceNumbers = numbers.length > 0 ? numbers.join('، ') : '-'
+              }
+            }
+            
+            // Calculate totals from fresh installments
+            const totalDue = freshInstallments.reduce((sum, inst) => sum + inst.amount_due, 0)
+            const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0)
+            const totalUnpaid = freshInstallments.reduce((sum, inst) => {
+              const remaining = inst.amount_due + (inst.stacked_amount || 0) - (inst.amount_paid || 0)
+              return sum + Math.max(0, remaining)
+            }, 0)
+            
+            console.log('[recordPayment] Refreshing details drawer with fresh data:', {
+              saleId: paidSaleId,
+              installmentsCount: freshInstallments.length,
+              totalPaid,
+              totalUnpaid,
+              paidInstallments: freshInstallments.filter(i => i.status === 'Paid').length
+            })
+            
+            setSelectedSaleForDetails({
+              saleId: paidSaleId,
+              clientName: firstInst.sale?.client?.name || selectedSaleForDetails?.clientName || '',
+              clientCin: firstInst.sale?.client?.cin || selectedSaleForDetails?.clientCin,
+              saleDate: firstInst.sale?.sale_date || selectedSaleForDetails?.saleDate || '',
+              installments: [...freshInstallments], // Create new array to force update
+              totalDue,
+              totalPaid,
+              totalUnpaid,
+              landPieces: pieceNumbers
+            })
+          } else {
+            console.warn('[recordPayment] No fresh installments data found for sale:', paidSaleId)
+          }
+        } catch (err) {
+          console.error('[recordPayment] Error refreshing sale details:', err)
+        }
+      }
+      
       setErrorMessage(null)
-    } catch (error) {
-      console.error('Payment recording error:', error)
-      setErrorMessage('خطأ في تسجيل الدفع')
+      setIsRefreshing(false)
+      
+      // Show success message
+      const totalPaidAmount = parseFloat(paymentAmount)
+      setSuccessMessage(`✅ تم تسجيل الدفعة بنجاح! (${totalPaidAmount.toLocaleString('ar-TN', { style: 'currency', currency: 'TND' })})`)
+      
+      // Auto-hide success message after 4 seconds
+      setTimeout(() => setSuccessMessage(null), 4000)
+      
+      console.log('[recordPayment] Payment process completed successfully!')
+      
+    } catch (error: any) {
+      console.error('[recordPayment] Payment recording error:', error)
+      setIsRefreshing(false)
+      
+      // Show more specific error message
+      if (error?.message?.includes('ERR_CONNECTION') || error?.message?.includes('Failed to fetch')) {
+        setErrorMessage('خطأ في الاتصال بالخادم. يرجى التحقق من الاتصال بالإنترنت والمحاولة مرة أخرى.')
+      } else if (error?.message) {
+        setErrorMessage(error.message)
+      } else if (error?.code) {
+        setErrorMessage(`خطأ في تسجيل الدفع (${error.code})`)
+      } else {
+        setErrorMessage('خطأ في تسجيل الدفع. يرجى المحاولة مرة أخرى.')
+      }
     }
   }
 
@@ -793,10 +1125,12 @@ export function Installments() {
     })
     
     return Array.from(groups.values())
-  }, [filteredInstallments])
+  }, [filteredInstallments, refreshKey]) // Add refreshKey to force recalculation
   
   // Create deals table data - one row per sale/deal
+  // IMPROVED: Added refreshKey dependency to ensure recalculation after payment
   const dealsTableData = useMemo(() => {
+    console.log('[dealsTableData] Recalculating deals table data, refreshKey:', refreshKey)
     const deals: Array<{
       saleId: string
       clientId: string
@@ -928,7 +1262,7 @@ export function Installments() {
     })
     
     return filtered
-  }, [clientGroups, debouncedSearchTerm, filterOverdue, filterDueThisMonth, filterMinRemaining, filterProgress])
+  }, [clientGroups, debouncedSearchTerm, filterOverdue, filterDueThisMonth, filterMinRemaining, filterProgress, refreshKey])
   
   const openSaleDetails = (deal: typeof dealsTableData[0]) => {
     setSelectedSaleForDetails({
@@ -2192,6 +2526,23 @@ export function Installments() {
         </Card>
       )}
 
+      {/* Success Message */}
+      {successMessage && (
+        <Card className="bg-green-100 border-green-300 fixed top-4 right-4 z-50 max-w-md shadow-lg animate-in slide-in-from-right">
+          <CardContent className="p-4">
+            <p className="text-green-800 font-medium text-sm">{successMessage}</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSuccessMessage(null)}
+              className="mt-2 text-green-700 hover:text-green-900 hover:bg-green-200"
+            >
+              إغلاق
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Client Details Dialog */}
       <Dialog open={clientDetailsOpen} onOpenChange={setClientDetailsOpen}>
         <DialogContent className="w-[95vw] sm:w-full max-w-2xl max-h-[95vh] overflow-y-auto">
@@ -2342,7 +2693,74 @@ export function Installments() {
       <Dialog open={detailsDrawerOpen} onOpenChange={setDetailsDrawerOpen}>
         <DialogContent className="w-[95vw] sm:w-full max-w-4xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>تفاصيل الصفقة</DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle>تفاصيل الصفقة</DialogTitle>
+              {selectedSaleForDetails && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    // Manually refresh the details drawer
+                    try {
+                      const { data: freshData, error } = await supabase
+                        .from('installments')
+                        .select(`
+                          *,
+                          sale:sales (
+                            *,
+                            client:clients (*),
+                            land_piece_ids
+                          )
+                        `)
+                        .eq('sale_id', selectedSaleForDetails.saleId)
+                        .order('installment_number', { ascending: true })
+                      
+                      if (!error && freshData && freshData.length > 0) {
+                        const freshInstallments = freshData as InstallmentWithRelations[]
+                        const firstInst = freshInstallments[0]
+                        
+                        let pieceNumbers = selectedSaleForDetails.landPieces
+                        if (firstInst.sale?.land_piece_ids && firstInst.sale.land_piece_ids.length > 0) {
+                          const { data: piecesData } = await supabase
+                            .from('land_pieces')
+                            .select('piece_number')
+                            .in('id', firstInst.sale.land_piece_ids)
+                          
+                          if (piecesData) {
+                            const numbers = piecesData.map(p => p.piece_number).filter(Boolean)
+                            pieceNumbers = numbers.length > 0 ? numbers.join('، ') : '-'
+                          }
+                        }
+                        
+                        const totalDue = freshInstallments.reduce((sum, inst) => sum + inst.amount_due, 0)
+                        const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0)
+                        const totalUnpaid = freshInstallments.reduce((sum, inst) => {
+                          const remaining = inst.amount_due + (inst.stacked_amount || 0) - (inst.amount_paid || 0)
+                          return sum + Math.max(0, remaining)
+                        }, 0)
+                        
+                        setSelectedSaleForDetails({
+                          saleId: selectedSaleForDetails.saleId,
+                          clientName: firstInst.sale?.client?.name || selectedSaleForDetails.clientName,
+                          clientCin: firstInst.sale?.client?.cin || selectedSaleForDetails.clientCin,
+                          saleDate: firstInst.sale?.sale_date || selectedSaleForDetails.saleDate,
+                          installments: freshInstallments,
+                          totalDue,
+                          totalPaid,
+                          totalUnpaid,
+                          landPieces: pieceNumbers
+                        })
+                      }
+                    } catch (err) {
+                      console.error('Error manually refreshing sale details:', err)
+                    }
+                  }}
+                  className="h-8 w-8 p-0"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </DialogHeader>
           {selectedSaleForDetails && (
             <div className="space-y-6">
@@ -2397,9 +2815,51 @@ export function Installments() {
 
               {/* Installments Schedule */}
               <div>
-                <h4 className="font-semibold mb-3 text-lg">جدول الأقساط</h4>
+                <h4 className="font-semibold mb-3 text-lg flex items-center justify-between">
+                  <span>جدول الأقساط</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={async () => {
+                      // Manual refresh button
+                      setIsRefreshing(true)
+                      await fetchInstallments()
+                      // Re-fetch details for this sale
+                      if (selectedSaleForDetails) {
+                        const { data: freshData } = await supabase
+                          .from('installments')
+                          .select(`*, sale:sales (*, client:clients (*), land_piece_ids)`)
+                          .eq('sale_id', selectedSaleForDetails.saleId)
+                          .order('installment_number', { ascending: true })
+                        
+                        if (freshData && freshData.length > 0) {
+                          const freshInstallments = freshData as InstallmentWithRelations[]
+                          const totalDue = freshInstallments.reduce((sum, inst) => sum + inst.amount_due, 0)
+                          const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0)
+                          const totalUnpaid = freshInstallments.reduce((sum, inst) => {
+                            const remaining = inst.amount_due + (inst.stacked_amount || 0) - (inst.amount_paid || 0)
+                            return sum + Math.max(0, remaining)
+                          }, 0)
+                          
+                          setSelectedSaleForDetails({
+                            ...selectedSaleForDetails,
+                            installments: freshInstallments,
+                            totalDue,
+                            totalPaid,
+                            totalUnpaid
+                          })
+                        }
+                      }
+                      setIsRefreshing(false)
+                    }}
+                    disabled={isRefreshing}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  </Button>
+                </h4>
                 <div className="overflow-x-auto">
-                  <Table>
+                  {/* Key forces complete re-render when data changes */}
+                  <Table key={`installments-table-${selectedSaleForDetails.totalPaid}-${refreshKey}`}>
                     <TableHeader>
                       <TableRow className="bg-gray-50">
                         <TableHead className="font-semibold">#</TableHead>
@@ -2415,26 +2875,29 @@ export function Installments() {
                       {selectedSaleForDetails.installments
                         .sort((a, b) => a.installment_number - b.installment_number)
                         .map((inst) => {
-                          const remaining = getRemainingAmount(inst)
-                          const daysLeft = getDaysUntilDue(inst)
-                          const isOverdue = isInstallmentOverdue(inst)
+                          // Get fresh data from state if available
+                          const freshInst = installments.find(i => i.id === inst.id) || inst
+                          const remaining = getRemainingAmount(freshInst)
+                          const daysLeft = getDaysUntilDue(freshInst)
+                          const isOverdue = isInstallmentOverdue(freshInst)
+                          const isPaid = remaining <= 0.01 || freshInst.status === 'Paid'
                           
                           return (
                             <TableRow 
-                              key={inst.id}
-                              className={isOverdue && remaining > 0.01 ? 'bg-red-50/30' : ''}
+                              key={`${freshInst.id}-${freshInst.amount_paid}-${refreshKey}`}
+                              className={isPaid ? 'bg-green-50/50' : isOverdue ? 'bg-red-50/30' : ''}
                             >
-                              <TableCell className="font-medium">#{inst.installment_number}</TableCell>
-                              <TableCell>{formatCurrency(inst.amount_due + inst.stacked_amount)}</TableCell>
+                              <TableCell className="font-medium">#{freshInst.installment_number}</TableCell>
+                              <TableCell>{formatCurrency(freshInst.amount_due + freshInst.stacked_amount)}</TableCell>
                               <TableCell className="text-green-600 font-medium">
-                                {formatCurrency(inst.amount_paid)}
+                                {formatCurrency(freshInst.amount_paid)}
                               </TableCell>
-                              <TableCell className={remaining > 0.01 ? 'text-red-600 font-semibold' : 'text-muted-foreground'}>
+                              <TableCell className={remaining > 0.01 ? 'text-red-600 font-semibold' : 'text-green-600'}>
                                 {formatCurrency(remaining)}
                               </TableCell>
                               <TableCell>
-                                {formatDate(inst.due_date)}
-                                {daysLeft >= 0 && (
+                                {formatDate(freshInst.due_date)}
+                                {!isPaid && daysLeft >= 0 && (
                                   <div className="text-xs text-muted-foreground">
                                     ({daysLeft} يوم)
                                   </div>
@@ -2443,25 +2906,25 @@ export function Installments() {
                               <TableCell>
                                 <Badge
                                   variant={
-                                    remaining <= 0.01 ? 'success' :
+                                    isPaid ? 'success' :
                                     isOverdue ? 'destructive' :
                                     'warning'
                                   }
                                   className="text-xs"
                                 >
-                                  {remaining <= 0.01 ? 'مدفوع' :
+                                  {isPaid ? 'مدفوع' :
                                    isOverdue ? 'متأخر' :
                                    'مستحق'}
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                {hasPermission('record_payments') && remaining > 0.01 && (
+                                {hasPermission('record_payments') && !isPaid && (
                                   <Button
                                     size="sm"
                                     variant={isOverdue ? 'destructive' : 'default'}
                                     onClick={() => {
                                       setDetailsDrawerOpen(false)
-                                      openPaymentDialog(inst)
+                                      openPaymentDialog(freshInst)
                                     }}
                                   >
                                     دفع
