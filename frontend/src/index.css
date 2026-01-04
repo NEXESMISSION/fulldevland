@@ -95,6 +95,7 @@
       overscroll-behavior-y: none;
       -webkit-overflow-scrolling: touch;
       position: relative;
+      font-size: 14px; /* Slightly smaller base font for mobile */
     }
     
     /* Ensure touch-friendly targets */
@@ -119,6 +120,36 @@
       -webkit-overflow-scrolling: touch;
       overscroll-behavior-y: contain;
       overscroll-behavior-block: contain;
+    }
+    
+    /* Improved mobile spacing */
+    .container {
+      padding-left: 0.75rem;
+      padding-right: 0.75rem;
+    }
+    
+    /* Better card spacing on mobile */
+    .space-y-4 > * + * {
+      margin-top: 0.875rem;
+    }
+    
+    .space-y-6 > * + * {
+      margin-top: 1rem;
+    }
+    
+    /* Improved table readability on mobile */
+    table {
+      font-size: 0.875rem;
+    }
+    
+    th, td {
+      padding: 0.5rem 0.375rem;
+    }
+    
+    /* Better button sizes on mobile */
+    button {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.875rem;
     }
   }
 }
