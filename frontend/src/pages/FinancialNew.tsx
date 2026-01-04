@@ -762,41 +762,40 @@ export function Financial() {
       <Dialog open={paymentDetailDialogOpen} onOpenChange={setPaymentDetailDialogOpen}>
         <DialogContent className="w-[95vw] sm:w-full max-w-6xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
-            <div className="flex items-center justify-between">
-              <DialogTitle>
-                تفاصيل {selectedPaymentType ? getPaymentTypeLabel(selectedPaymentType) : 'المدفوعات'}
-                {dateFilter !== 'all' && ` - ${filterLabels[dateFilter]}`}
-              </DialogTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setPaymentDetailDialogOpen(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+            <DialogTitle className="flex items-center gap-2">
+              <span>تفاصيل {selectedPaymentType ? getPaymentTypeLabel(selectedPaymentType) : 'المدفوعات'}</span>
+              {dateFilter !== 'all' && (
+                <Badge variant="outline" className="text-xs">
+                  {filterLabels[dateFilter]}
+                </Badge>
+              )}
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 sm:space-y-4">
+          <div className="space-y-4 sm:space-y-6">
             {/* Summary Card */}
             {paymentsByLand.length > 0 && (
-              <Card className="bg-primary/5 border-primary/20">
-                <CardContent className="pt-3 sm:pt-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-                    <div>
-                      <p className="text-xs sm:text-sm text-muted-foreground">إجمالي المدفوعات</p>
-                      <p className="text-base sm:text-xl font-bold">{formatCurrency(paymentsByLand.reduce((sum, g) => sum + g.totalAmount, 0))}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs sm:text-sm text-muted-foreground">عدد الدفعات</p>
-                      <p className="text-base sm:text-xl font-bold">{paymentsByLand.length}</p>
-                    </div>
-                <div>
-                      <p className="text-xs sm:text-sm text-muted-foreground">إجمالي المدفوعات</p>
-                      <p className="text-base sm:text-xl font-bold">{paymentsByLand.reduce((sum, g) => sum + g.paymentCount, 0)}</p>
-                    </div>
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 p-4 sm:p-6 rounded-lg border border-green-200 dark:border-green-800">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-white dark:bg-gray-900 p-4 rounded-lg">
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-2">إجمالي المدفوعات</p>
+                    <p className="text-xl sm:text-2xl font-bold text-green-600">
+                      {formatCurrency(paymentsByLand.reduce((sum, g) => sum + g.totalAmount, 0))}
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="bg-white dark:bg-gray-900 p-4 rounded-lg">
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-2">عدد الدفعات</p>
+                    <p className="text-xl sm:text-2xl font-bold text-blue-600">
+                      {paymentsByLand.reduce((sum, g) => sum + g.paymentCount, 0)}
+                    </p>
+                  </div>
+                  <div className="bg-white dark:bg-gray-900 p-4 rounded-lg">
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-2">عدد المجموعات</p>
+                    <p className="text-xl sm:text-2xl font-bold text-purple-600">
+                      {paymentsByLand.length}
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Combined Table - Summary and Details in One */}
@@ -938,45 +937,46 @@ export function Financial() {
       <Dialog open={companyFeeDialogOpen} onOpenChange={setCompanyFeeDialogOpen}>
         <DialogContent className="w-[95vw] sm:w-full max-w-6xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
-            <div className="flex items-center justify-between">
-              <DialogTitle>
-                تفاصيل العمولة
-                {dateFilter !== 'all' && ` - ${filterLabels[dateFilter]}`}
-              </DialogTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCompanyFeeDialogOpen(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+            <DialogTitle className="flex items-center gap-2">
+              <span>تفاصيل العمولة</span>
+              {dateFilter !== 'all' && (
+                <Badge variant="outline" className="text-xs">
+                  {filterLabels[dateFilter]}
+                </Badge>
+              )}
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 sm:space-y-4">
+          <div className="space-y-4 sm:space-y-6">
             {/* Summary Card */}
             {filteredData.groupedCompanyFees.length > 0 && (
-              <Card className="bg-primary/5 border-primary/20">
-                <CardContent className="pt-3 sm:pt-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-                    <div>
-                      <p className="text-xs sm:text-sm text-muted-foreground">إجمالي العمولة</p>
-                      <p className="text-base sm:text-xl font-bold">{formatCurrency(filteredData.companyFeesTotal)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs sm:text-sm text-muted-foreground">عدد المبيعات</p>
-                      <p className="text-base sm:text-xl font-bold">{filteredData.groupedCompanyFees.reduce((sum, g) => sum + g.sales.length, 0)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs sm:text-sm text-muted-foreground">عدد العملاء</p>
-                      <p className="text-base sm:text-xl font-bold">{filteredData.groupedCompanyFees.length}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs sm:text-sm text-muted-foreground">عدد القطع</p>
-                      <p className="text-base sm:text-xl font-bold">{filteredData.groupedCompanyFees.reduce((sum, g) => sum + g.piecesCount, 0)}</p>
-                    </div>
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 p-4 sm:p-6 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="bg-white dark:bg-gray-900 p-4 rounded-lg">
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-2">إجمالي العمولة</p>
+                    <p className="text-xl sm:text-2xl font-bold text-blue-600">
+                      {formatCurrency(filteredData.companyFeesTotal)}
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="bg-white dark:bg-gray-900 p-4 rounded-lg">
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-2">عدد المبيعات</p>
+                    <p className="text-xl sm:text-2xl font-bold text-green-600">
+                      {filteredData.groupedCompanyFees.reduce((sum, g) => sum + g.sales.length, 0)}
+                    </p>
+                  </div>
+                  <div className="bg-white dark:bg-gray-900 p-4 rounded-lg">
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-2">عدد العملاء</p>
+                    <p className="text-xl sm:text-2xl font-bold text-purple-600">
+                      {filteredData.groupedCompanyFees.length}
+                    </p>
+                  </div>
+                  <div className="bg-white dark:bg-gray-900 p-4 rounded-lg">
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-2">عدد القطع</p>
+                    <p className="text-xl sm:text-2xl font-bold text-orange-600">
+                      {filteredData.groupedCompanyFees.reduce((sum, g) => sum + g.piecesCount, 0)}
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Company Fees Table - Grouped by Land Batch */}
