@@ -92,10 +92,19 @@
     /* Prevent horizontal scrolling and overscroll bounce */
     html, body {
       overflow-x: hidden;
+      overscroll-behavior-x: none;
       overscroll-behavior-y: none;
+      overscroll-behavior: none;
       -webkit-overflow-scrolling: touch;
       position: relative;
       font-size: 14px; /* Slightly smaller base font for mobile */
+    }
+    
+    /* Prevent browser swipe navigation on main container */
+    main {
+      overscroll-behavior-x: none;
+      overscroll-behavior: none;
+      touch-action: pan-y;
     }
     
     /* Ensure touch-friendly targets */
@@ -119,7 +128,9 @@
     main {
       -webkit-overflow-scrolling: touch;
       overscroll-behavior-y: contain;
+      overscroll-behavior-x: none;
       overscroll-behavior-block: contain;
+      touch-action: pan-y;
     }
     
     /* Improved mobile spacing */

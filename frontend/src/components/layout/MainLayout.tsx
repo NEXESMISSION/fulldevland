@@ -57,7 +57,7 @@ export function MainLayout() {
   }, [location.pathname])
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background" style={{ overscrollBehaviorX: 'none', touchAction: 'pan-y' }}>
       {/* Mobile burger menu button */}
       <div className="fixed top-4 left-4 z-50 md:hidden">
         <Button
@@ -87,7 +87,7 @@ export function MainLayout() {
         />
       )}
 
-      <main className="flex-1 w-full md:ml-0 min-h-screen">
+      <main className="flex-1 w-full md:ml-0 min-h-screen" style={{ overscrollBehaviorX: 'none', touchAction: 'pan-y' }}>
         <PullToRefresh onRefresh={handleRefresh} />
         <div className="container mx-auto p-3 sm:p-4 md:p-6 pb-6 sm:pb-8">
           <Outlet />
