@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -27,7 +28,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { sanitizeText, sanitizeNotes } from '@/lib/sanitize'
 import { debounce } from '@/lib/throttle'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Edit, Trash2, Map, ChevronDown, ChevronRight, Calculator, X, DollarSign, AlertTriangle } from 'lucide-react'
+import { Plus, Edit, Trash2, Map, ChevronDown, ChevronRight, Calculator, X, DollarSign, AlertTriangle, ShoppingCart } from 'lucide-react'
 import type { LandBatch, LandPiece, LandStatus } from '@/types/database'
 
 interface LandBatchWithPieces extends LandBatch {
@@ -71,6 +72,7 @@ const statusColors: Record<LandStatus, 'success' | 'warning' | 'default' | 'seco
 
 export function LandManagement() {
   const { hasPermission, user } = useAuth()
+  const navigate = useNavigate()
   const [batches, setBatches] = useState<LandBatchWithPieces[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1421,235 +1423,259 @@ export function LandManagement() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold">إدارة الأراضي</h1>
-          <p className="text-muted-foreground text-sm sm:text-base">إدارة دفعات الأراضي والقطع</p>
+    <div className="space-y-3 sm:space-y-4">
+      {/* Compact Header with inline filters */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl sm:text-2xl font-bold">الأراضي</h1>
+          {hasPermission('edit_land') && (
+            <Button onClick={() => openBatchDialog()} size="sm">
+              <Plus className="ml-1 h-4 w-4" />
+              إضافة
+            </Button>
+          )}
         </div>
-        {hasPermission('edit_land') && (
-          <Button onClick={() => openBatchDialog()} className="w-full sm:w-auto">
-            <Plus className="ml-2 h-4 w-4" />
-            إضافة قطع أرض
-          </Button>
-        )}
+        
+        {/* Inline Filters - Compact */}
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Input
+            placeholder="بحث..."
+            value={searchTerm}
+            maxLength={50}
+            onChange={(e) => {
+              setSearchTerm(e.target.value)
+              debouncedSearchFn(e.target.value)
+            }}
+            className="flex-1 h-9 text-sm"
+          />
+          <Select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="w-full sm:w-32 h-9 text-sm"
+          >
+            <option value="Available">متاح</option>
+            <option value="Reserved">محجوز</option>
+            <option value="Sold">مباع</option>
+            <option value="Cancelled">ملغي</option>
+          </Select>
+        </div>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-4 sm:pt-6">
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-            <div className="flex-1 w-full">
-              <Input
-                placeholder="بحث عن دفعة أو موقع أو قطعة..."
-                value={searchTerm}
-                maxLength={50}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value)
-                  debouncedSearchFn(e.target.value)
-                }}
-                className="w-full"
-              />
-            </div>
-            <Select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="w-full sm:w-auto"
+      {/* Batches - Compact Design */}
+      {filteredBatches.map((batch) => {
+        const availableCount = batch.land_pieces.filter(p => p.status === 'Available').length
+        const soldCount = batch.land_pieces.filter(p => p.status === 'Sold').length
+        const reservedCount = batch.land_pieces.filter(p => p.status === 'Reserved').length
+        
+        return (
+          <Card key={batch.id} className="border-gray-200">
+            {/* Batch Header - Compact */}
+            <div 
+              className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+              onClick={() => toggleBatch(batch.id)}
             >
-              <option value="Available">متاح</option>
-              <option value="Reserved">محجوز</option>
-              <option value="Sold">مباع</option>
-              <option value="Cancelled">ملغي</option>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Batches */}
-      {filteredBatches.map((batch) => (
-        <Card key={batch.id}>
-          <CardHeader className="cursor-pointer" onClick={() => toggleBatch(batch.id)}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {expandedBatches.has(batch.id) ? (
-                  <ChevronDown className="h-5 w-5" />
-                ) : (
-                  <ChevronRight className="h-5 w-5" />
-                )}
-                <Map className="h-5 w-5 text-primary" />
-                <div>
-                  <CardTitle>{batch.name}</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    {batch.location && <span className="font-medium text-primary">{batch.location} • </span>}
-                    {formatDate(batch.date_acquired)} • {batch.total_surface} م² •{' '}
-                    {batch.land_pieces.length} قطعة
-                    {(batch as any).real_estate_tax_number && (
-                      <span> • الرسم العقاري: {(batch as any).real_estate_tax_number}</span>
-                    )}
-                  </p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {expandedBatches.has(batch.id) ? (
+                    <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-500" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 flex-shrink-0 text-gray-500" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm truncate">{batch.name}</span>
+                      {batch.location && (
+                        <span className="text-xs text-primary font-medium">{batch.location}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                      <span>{batch.total_surface} م²</span>
+                      <span className="flex items-center gap-1">
+                        <span className="text-green-600 font-medium">{availableCount} متاح</span>
+                        {soldCount > 0 && <span>• {soldCount} مباع</span>}
+                        {reservedCount > 0 && <span>• {reservedCount} محجوز</span>}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  {hasPermission('edit_land') && (
+                    <>
+                      <Button variant="ghost" size="icon" onClick={() => openBatchDialog(batch)} className="h-7 w-7">
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                      {hasPermission('delete_land') && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteBatch(batch.id)}
+                          className="h-7 w-7 text-red-500 hover:text-red-600"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                {hasPermission('edit_land') && (
-                  <>
-                    <Button variant="ghost" size="icon" onClick={() => openBatchDialog(batch)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    {hasPermission('delete_land') && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteBatch(batch.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </>
-                )}
-              </div>
             </div>
-          </CardHeader>
 
-          {expandedBatches.has(batch.id) && (
-            <CardContent>
-              <div className="flex justify-end mb-4">
+            {/* Expanded Content */}
+            {expandedBatches.has(batch.id) && (
+              <div className="border-t">
+                {/* Add Piece Button */}
                 {hasPermission('edit_land') && (
-                  <Button variant="outline" size="sm" onClick={() => openPieceDialog(batch.id)} className="w-full sm:w-auto">
-                    <Plus className="ml-2 h-4 w-4" />
-                    إضافة قطعة
-                  </Button>
+                  <div className="p-2 bg-gray-50 border-b">
+                    <Button variant="outline" size="sm" onClick={() => openPieceDialog(batch.id)} className="w-full h-8 text-xs">
+                      <Plus className="ml-1 h-3.5 w-3.5" />
+                      إضافة قطعة
+                    </Button>
+                  </div>
                 )}
-              </div>
 
-              {(!batch.land_pieces || batch.land_pieces.length === 0) ? (
-                <p className="text-center text-muted-foreground py-4">لا توجد قطع</p>
-              ) : (
-                <>
-                  {/* Mobile Card View */}
-                  <div className="grid grid-cols-1 gap-3 md:hidden">
-                    {batch.land_pieces.map((piece) => (
-                      <Card key={piece.id} className="p-4">
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                              <div className="font-semibold text-base">{piece.piece_number}</div>
-                              <div className="text-sm text-muted-foreground mt-1">{piece.surface_area} م²</div>
-                            </div>
-                            <Badge variant={statusColors[piece.status]}>
+                {(!batch.land_pieces || batch.land_pieces.length === 0) ? (
+                  <p className="text-center text-muted-foreground py-4 text-sm">لا توجد قطع</p>
+                ) : (
+                  <>
+                    {/* Mobile: Compact Grid */}
+                    <div className="grid grid-cols-2 gap-2 p-2 md:hidden">
+                      {batch.land_pieces.map((piece) => (
+                        <div 
+                          key={piece.id} 
+                          className={`p-2 rounded-lg border text-xs ${
+                            piece.status === 'Available' ? 'bg-green-50 border-green-200' :
+                            piece.status === 'Reserved' ? 'bg-orange-50 border-orange-200' :
+                            piece.status === 'Sold' ? 'bg-gray-100 border-gray-200' : 'bg-gray-50 border-gray-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold">{piece.piece_number}</span>
+                            <Badge variant={statusColors[piece.status]} className="text-xs px-1.5 py-0">
                               {piece.status === 'Available' ? 'متاح' :
                                piece.status === 'Reserved' ? 'محجوز' :
                                piece.status === 'Sold' ? 'مباع' : 'ملغي'}
                             </Badge>
                           </div>
-                          <div className="grid grid-cols-2 gap-3 text-sm">
-                            <div>
-                              <span className="text-muted-foreground text-xs">السعر (كامل):</span>
-                              <div className="font-medium text-green-600">{formatCurrency(piece.selling_price_full || 0)}</div>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground text-xs">السعر (أقساط):</span>
-                              <div className="font-medium text-blue-600">{formatCurrency(piece.selling_price_installment || 0)}</div>
-                            </div>
-                          </div>
+                          <div className="text-muted-foreground">{piece.surface_area} م²</div>
+                          <div className="font-semibold text-green-600 mt-1">{formatCurrency(piece.selling_price_full || 0)}</div>
+                          
+                          {/* Sell Button for Available */}
+                          {piece.status === 'Available' && hasPermission('create_sales') && (
+                            <Button
+                              size="sm"
+                              onClick={() => navigate(`/sales?piece=${piece.id}`)}
+                              className="w-full mt-2 h-7 text-xs bg-green-600 hover:bg-green-700"
+                            >
+                              <ShoppingCart className="h-3 w-3 ml-1" />
+                              بيع
+                            </Button>
+                          )}
+                          
+                          {/* Edit buttons */}
                           {hasPermission('edit_land') && (
-                            <div className="flex items-center gap-2 pt-2 border-t">
+                            <div className="flex gap-1 mt-1">
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => openPieceDialog(batch.id, piece)}
-                                className="flex-1"
+                                className="flex-1 h-6 text-xs"
                               >
-                                <Edit className="h-4 w-4 ml-2" />
-                                تعديل
+                                <Edit className="h-3 w-3" />
                               </Button>
                               {user?.role === 'Owner' && (
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   onClick={() => openPriceEditDialog(batch.id, piece)}
-                                  className="flex-1 text-blue-600"
-                                  title="تعديل الأسعار"
+                                  className="h-6 text-xs text-blue-600"
                                 >
-                                  <DollarSign className="h-4 w-4 ml-2" />
-                                  الأسعار
+                                  <DollarSign className="h-3 w-3" />
                                 </Button>
                               )}
                             </div>
                           )}
                         </div>
-                      </Card>
-                    ))}
-                  </div>
-                  {/* Desktop Table View */}
-                  <div className="hidden md:block overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-                  <Table className="min-w-full">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>رقم القطعة</TableHead>
-                        <TableHead>المساحة</TableHead>
-                        <TableHead>السعر (كامل)</TableHead>
-                        <TableHead>السعر (أقساط)</TableHead>
-                        <TableHead>الحالة</TableHead>
-                        {hasPermission('edit_land') && <TableHead>إجراء</TableHead>}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {batch.land_pieces.map((piece) => (
-                        <TableRow key={piece.id}>
-                          <TableCell className="font-medium">{piece.piece_number}</TableCell>
-                          <TableCell>{piece.surface_area} م²</TableCell>
-                          <TableCell className="font-medium text-green-600">{formatCurrency(piece.selling_price_full || 0)}</TableCell>
-                          <TableCell className="font-medium text-blue-600">{formatCurrency(piece.selling_price_installment || 0)}</TableCell>
-                          <TableCell>
-                            <Badge variant={statusColors[piece.status]}>
-                              {piece.status === 'Available' ? 'متاح' :
-                               piece.status === 'Reserved' ? 'محجوز' :
-                               piece.status === 'Sold' ? 'مباع' : 'ملغي'}
-                            </Badge>
-                          </TableCell>
-                          {hasPermission('edit_land') && (
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => openPieceDialog(batch.id, piece)}
-                                  className="h-8 w-8"
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                                {user?.role === 'Owner' && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => openPriceEditDialog(batch.id, piece)}
-                                    className="h-8 w-8 text-blue-600"
-                                    title="تعديل الأسعار"
-                                  >
-                                    <DollarSign className="h-4 w-4" />
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          )}
-                        </TableRow>
                       ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                </>
-              )}
-            </CardContent>
-          )}
-        </Card>
-      ))}
+                    </div>
+
+                    {/* Desktop: Compact Table */}
+                    <div className="hidden md:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="text-xs">
+                            <TableHead className="py-2">قطعة</TableHead>
+                            <TableHead className="py-2">م²</TableHead>
+                            <TableHead className="py-2">كامل</TableHead>
+                            <TableHead className="py-2">أقساط</TableHead>
+                            <TableHead className="py-2">الحالة</TableHead>
+                            <TableHead className="py-2">إجراءات</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {batch.land_pieces.map((piece) => (
+                            <TableRow key={piece.id} className="text-sm">
+                              <TableCell className="py-2 font-medium">{piece.piece_number}</TableCell>
+                              <TableCell className="py-2">{piece.surface_area}</TableCell>
+                              <TableCell className="py-2 text-green-600 font-medium">{formatCurrency(piece.selling_price_full || 0)}</TableCell>
+                              <TableCell className="py-2 text-blue-600">{formatCurrency(piece.selling_price_installment || 0)}</TableCell>
+                              <TableCell className="py-2">
+                                <Badge variant={statusColors[piece.status]} className="text-xs">
+                                  {piece.status === 'Available' ? 'متاح' :
+                                   piece.status === 'Reserved' ? 'محجوز' :
+                                   piece.status === 'Sold' ? 'مباع' : 'ملغي'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-2">
+                                <div className="flex items-center gap-0.5">
+                                  {piece.status === 'Available' && hasPermission('create_sales') && (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => navigate(`/sales?piece=${piece.id}`)}
+                                      className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                                    >
+                                      <ShoppingCart className="h-3 w-3 ml-1" />
+                                      بيع
+                                    </Button>
+                                  )}
+                                  {hasPermission('edit_land') && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => openPieceDialog(batch.id, piece)}
+                                      className="h-7 w-7"
+                                    >
+                                      <Edit className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                  {user?.role === 'Owner' && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => openPriceEditDialog(batch.id, piece)}
+                                      className="h-7 w-7 text-blue-600"
+                                    >
+                                      <DollarSign className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </Card>
+        )
+      })}
 
       {filteredBatches.length === 0 && (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            No land batches found
-          </CardContent>
-        </Card>
+        <div className="text-center text-muted-foreground py-8 text-sm">
+          لا توجد أراضي
+        </div>
       )}
 
       {/* Batch Dialog */}

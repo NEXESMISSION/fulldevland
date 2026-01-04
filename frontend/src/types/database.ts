@@ -269,7 +269,7 @@ export interface ExpenseCategory {
 
 export interface Expense {
   id: string
-  category_id: string
+  category: string // Changed from category_id to match database column
   amount: number
   expense_date: string
   description: string | null

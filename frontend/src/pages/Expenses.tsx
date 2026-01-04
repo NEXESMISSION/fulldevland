@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -25,8 +25,20 @@ import {
 } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { retryWithBackoff } from '@/lib/retry'
-import { Plus, Edit, Trash2, CheckCircle, XCircle, Filter, Download, TrendingUp, DollarSign, Calendar } from 'lucide-react'
+import { Plus, Edit, Trash2, CheckCircle, XCircle, Filter, ChevronDown, ChevronUp, User } from 'lucide-react'
 import type { Expense, ExpenseCategory, LandBatch, Sale, PaymentMethod } from '@/types/database'
+
+interface ExpenseWithUser extends Expense {
+  submitted_by_user?: { id: string; name: string; email?: string }
+}
+
+interface ExpensesByUser {
+  userId: string
+  userName: string
+  totalAmount: number
+  expenseCount: number
+  dailyExpenses: Map<string, ExpenseWithUser[]>
+}
 
 export function Expenses() {
   const { hasPermission, hasPageAccess, profile, user } = useAuth()
@@ -39,11 +51,13 @@ export function Expenses() {
   const canEditExpenses = hasExplicitPageAccess 
     ? hasPageAccess('expenses') // If explicit page access, use page access
     : hasPermission('edit_expenses') // Otherwise use role permission
-  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [expenses, setExpenses] = useState<ExpenseWithUser[]>([])
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [batches, setBatches] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set())
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set())
   
   // Dialog states
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false)
@@ -85,7 +99,7 @@ export function Expenses() {
         const [expensesRes, categoriesRes, batchesRes] = await Promise.all([
           supabase
             .from('expenses')
-            .select('*')
+            .select('*, submitted_by_user:users!expenses_submitted_by_fkey(id, name, email)')
             .order('expense_date', { ascending: false })
             .order('created_at', { ascending: false }),
           supabase
@@ -117,7 +131,7 @@ export function Expenses() {
     if (expense) {
       setEditingExpense(expense)
       setExpenseForm({
-        category_id: expense.category_id,
+        category_id: expense.category,
         amount: expense.amount.toString(),
         expense_date: expense.expense_date,
         description: expense.description || '',
@@ -153,7 +167,7 @@ export function Expenses() {
     setError(null)
     try {
       const expenseData: any = {
-        category_id: expenseForm.category_id,
+        category: expenseForm.category_id, // Database column is 'category', not 'category_id'
         amount: parseFloat(expenseForm.amount),
         expense_date: expenseForm.expense_date,
         description: expenseForm.description || null,
@@ -260,7 +274,7 @@ export function Expenses() {
     
     const filtered = expenses.filter(e => {
       if (filterStatus !== 'all' && e.status !== filterStatus) return false
-      if (filterCategory !== 'all' && e.category_id !== filterCategory) return false
+      if (filterCategory !== 'all' && e.category !== filterCategory) return false
       if (filterPaymentMethod !== 'all' && e.payment_method !== filterPaymentMethod) return false
       if (dateRangeStart && e.expense_date < dateRangeStart) return false
       if (dateRangeEnd && e.expense_date > dateRangeEnd) return false
@@ -268,7 +282,7 @@ export function Expenses() {
       if (amountMax && e.amount > parseFloat(amountMax)) return false
       if (searchTerm) {
         const search = searchTerm.toLowerCase()
-        const category = categories.find(c => c.id === e.category_id)
+        const category = categories.find(c => c.id === e.category)
         const matches = 
           (category?.name.toLowerCase().includes(search)) ||
           (e.description?.toLowerCase().includes(search)) ||
@@ -287,8 +301,8 @@ export function Expenses() {
 
     const byCategory = new Map<string, number>()
     approved.forEach(e => {
-      const current = byCategory.get(e.category_id) || 0
-      byCategory.set(e.category_id, current + e.amount)
+      const current = byCategory.get(e.category) || 0
+      byCategory.set(e.category, current + e.amount)
     })
 
     const topCategories = Array.from(byCategory.entries())
@@ -314,7 +328,7 @@ export function Expenses() {
   const filteredExpenses = useMemo(() => {
     return expenses.filter(e => {
       if (filterStatus !== 'all' && e.status !== filterStatus) return false
-      if (filterCategory !== 'all' && e.category_id !== filterCategory) return false
+      if (filterCategory !== 'all' && e.category !== filterCategory) return false
       if (filterPaymentMethod !== 'all' && e.payment_method !== filterPaymentMethod) return false
       if (dateRangeStart && e.expense_date < dateRangeStart) return false
       if (dateRangeEnd && e.expense_date > dateRangeEnd) return false
@@ -322,7 +336,7 @@ export function Expenses() {
       if (amountMax && e.amount > parseFloat(amountMax)) return false
       if (searchTerm) {
         const search = searchTerm.toLowerCase()
-        const category = categories.find(c => c.id === e.category_id)
+        const category = categories.find(c => c.id === e.category)
         const matches = 
           (category?.name.toLowerCase().includes(search)) ||
           (e.description?.toLowerCase().includes(search)) ||
@@ -333,6 +347,38 @@ export function Expenses() {
       return true
     })
   }, [expenses, categories, filterStatus, filterCategory, filterPaymentMethod, dateRangeStart, dateRangeEnd, amountMin, amountMax, searchTerm, dateFilter])
+
+  // Group expenses by user
+  const expensesByUser = useMemo(() => {
+    const userGroups = new Map<string, ExpensesByUser>()
+    
+    filteredExpenses.forEach(expense => {
+      const userId = expense.submitted_by || 'unknown'
+      const userName = (expense as ExpenseWithUser).submitted_by_user?.name || 'غير معروف'
+      
+      if (!userGroups.has(userId)) {
+        userGroups.set(userId, {
+          userId,
+          userName,
+          totalAmount: 0,
+          expenseCount: 0,
+          dailyExpenses: new Map(),
+        })
+      }
+      
+      const userGroup = userGroups.get(userId)!
+      userGroup.totalAmount += expense.amount
+      userGroup.expenseCount++
+      
+      const dateKey = expense.expense_date
+      if (!userGroup.dailyExpenses.has(dateKey)) {
+        userGroup.dailyExpenses.set(dateKey, [])
+      }
+      userGroup.dailyExpenses.get(dateKey)!.push(expense as ExpenseWithUser)
+    })
+    
+    return Array.from(userGroups.values()).sort((a, b) => b.totalAmount - a.totalAmount)
+  }, [filteredExpenses])
 
   if (loading) {
     return (
@@ -499,8 +545,8 @@ export function Expenses() {
         </CardContent>
       </Card>
 
-      {/* Mobile Card View / Desktop Table View */}
-      {filteredExpenses.length === 0 ? (
+      {/* Expenses by User - Grouped View */}
+      {expensesByUser.length === 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>قائمة المصاريف (0)</CardTitle>
@@ -510,214 +556,359 @@ export function Expenses() {
           </CardContent>
         </Card>
       ) : (
-        <>
-          {/* Mobile Card View */}
-          <div className="space-y-3 md:hidden">
-            {filteredExpenses.map(expense => {
-              const category = categories.find(c => c.id === expense.category_id)
+        <div className="space-y-4">
+          {/* Desktop Table View - Grouped by User */}
+          <div className="hidden md:block">
+            <Card>
+              <CardHeader>
+                <CardTitle>المصاريف حسب المستخدم ({filteredExpenses.length} مصروف)</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead className="font-bold">المستخدم</TableHead>
+                      <TableHead className="font-bold">التاريخ</TableHead>
+                      <TableHead className="font-bold">الفئة</TableHead>
+                      <TableHead className="font-bold">الوصف</TableHead>
+                      <TableHead className="font-bold text-right">المبلغ</TableHead>
+                      <TableHead className="font-bold">الحالة</TableHead>
+                      <TableHead className="font-bold text-center">إجراءات</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {expensesByUser.map((userGroup) => {
+                      const isUserExpanded = expandedUsers.has(userGroup.userId)
+                      const sortedDates = Array.from(userGroup.dailyExpenses.keys()).sort((a, b) => b.localeCompare(a))
+                      
+                      return (
+                        <React.Fragment key={userGroup.userId}>
+                          {/* User Summary Row */}
+                          <TableRow 
+                            className="bg-blue-50 cursor-pointer hover:bg-blue-100"
+                            onClick={() => {
+                              setExpandedUsers(prev => {
+                                const next = new Set(prev)
+                                if (next.has(userGroup.userId)) {
+                                  next.delete(userGroup.userId)
+                                } else {
+                                  next.add(userGroup.userId)
+                                }
+                                return next
+                              })
+                            }}
+                          >
+                            <TableCell className="font-bold">
+                              <div className="flex items-center gap-2">
+                                <User className="h-4 w-4 text-blue-600" />
+                                {userGroup.userName}
+                              </div>
+                            </TableCell>
+                            <TableCell colSpan={3} className="text-muted-foreground">
+                              {sortedDates.length} يوم • {userGroup.expenseCount} مصروف
+                            </TableCell>
+                            <TableCell className="text-right font-bold text-lg text-orange-600">
+                              {formatCurrency(userGroup.totalAmount)}
+                            </TableCell>
+                            <TableCell></TableCell>
+                            <TableCell className="text-center">
+                              {isUserExpanded ? <ChevronUp className="h-4 w-4 inline" /> : <ChevronDown className="h-4 w-4 inline" />}
+                            </TableCell>
+                          </TableRow>
+                          
+                          {/* Expanded User Details */}
+                          {isUserExpanded && sortedDates.map(dateKey => {
+                            const dayExpenses = userGroup.dailyExpenses.get(dateKey) || []
+                            const dayTotal = dayExpenses.reduce((sum, e) => sum + e.amount, 0)
+                            const dateExpandKey = `${userGroup.userId}-${dateKey}`
+                            const isDateExpanded = expandedDates.has(dateExpandKey)
+                            
+                            return (
+                              <React.Fragment key={dateKey}>
+                                {/* Date Summary Row */}
+                                <TableRow 
+                                  className="bg-gray-50 cursor-pointer hover:bg-gray-100"
+                                  onClick={() => {
+                                    setExpandedDates(prev => {
+                                      const next = new Set(prev)
+                                      if (next.has(dateExpandKey)) {
+                                        next.delete(dateExpandKey)
+                                      } else {
+                                        next.add(dateExpandKey)
+                                      }
+                                      return next
+                                    })
+                                  }}
+                                >
+                                  <TableCell className="pr-8"></TableCell>
+                                  <TableCell className="font-medium">{formatDate(dateKey)}</TableCell>
+                                  <TableCell colSpan={2} className="text-muted-foreground">
+                                    {dayExpenses.length} مصروف
+                                  </TableCell>
+                                  <TableCell className="text-right font-semibold text-orange-600">
+                                    {formatCurrency(dayTotal)}
+                                  </TableCell>
+                                  <TableCell></TableCell>
+                                  <TableCell className="text-center">
+                                    {isDateExpanded ? <ChevronUp className="h-3 w-3 inline" /> : <ChevronDown className="h-3 w-3 inline" />}
+                                  </TableCell>
+                                </TableRow>
+                                
+                                {/* Expense Details */}
+                                {isDateExpanded && dayExpenses.map(expense => {
+                                  const category = categories.find(c => c.id === expense.category)
+                                  return (
+                                    <TableRow key={expense.id} className="bg-white">
+                                      <TableCell className="pr-12"></TableCell>
+                                      <TableCell className="text-sm text-muted-foreground">{formatDate(expense.expense_date)}</TableCell>
+                                      <TableCell className="text-sm">{category?.name || 'غير معروف'}</TableCell>
+                                      <TableCell className="text-sm max-w-xs truncate">{expense.description || '-'}</TableCell>
+                                      <TableCell className="text-right font-medium">{formatCurrency(expense.amount)}</TableCell>
+                                      <TableCell>
+                                        <Badge 
+                                          variant={
+                                            expense.status === 'Approved' ? 'success' :
+                                            expense.status === 'Rejected' ? 'destructive' : 'warning'
+                                          }
+                                          className="text-xs"
+                                        >
+                                          {expense.status === 'Approved' ? 'معتمد' :
+                                           expense.status === 'Rejected' ? 'مرفوض' : 'في انتظار'}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center justify-center gap-1">
+                                          {expense.status === 'Pending' && hasPermission('manage_financial') && (
+                                            <>
+                                              <Button
+                                                size="icon"
+                                                variant="ghost"
+                                                onClick={(e) => { e.stopPropagation(); approveExpense(expense.id) }}
+                                                className="h-7 w-7 text-green-600"
+                                              >
+                                                <CheckCircle className="h-3 w-3" />
+                                              </Button>
+                                              <Button
+                                                size="icon"
+                                                variant="ghost"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  const reason = prompt('سبب الرفض:')
+                                                  if (reason) rejectExpense(expense.id, reason)
+                                                }}
+                                                className="h-7 w-7 text-red-600"
+                                              >
+                                                <XCircle className="h-3 w-3" />
+                                              </Button>
+                                            </>
+                                          )}
+                                          {canEditExpenses && (
+                                            <>
+                                              <Button
+                                                size="icon"
+                                                variant="ghost"
+                                                onClick={(e) => { e.stopPropagation(); openExpenseDialog(expense) }}
+                                                className="h-7 w-7"
+                                              >
+                                                <Edit className="h-3 w-3" />
+                                              </Button>
+                                              <Button
+                                                size="icon"
+                                                variant="ghost"
+                                                onClick={(e) => { e.stopPropagation(); deleteExpense(expense.id) }}
+                                                className="h-7 w-7 text-destructive"
+                                              >
+                                                <Trash2 className="h-3 w-3" />
+                                              </Button>
+                                            </>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  )
+                                })}
+                              </React.Fragment>
+                            )
+                          })}
+                        </React.Fragment>
+                      )
+                    })}
+                    {/* Total Row */}
+                    <TableRow className="bg-gray-100 font-bold border-t-2">
+                      <TableCell colSpan={4} className="font-bold text-lg">الإجمالي</TableCell>
+                      <TableCell className="text-right font-bold text-lg text-orange-600">
+                        {formatCurrency(filteredExpenses.reduce((sum, e) => sum + e.amount, 0))}
+                      </TableCell>
+                      <TableCell colSpan={2}></TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Mobile Card View - Grouped by User */}
+          <div className="md:hidden space-y-3">
+            {expensesByUser.map((userGroup) => {
+              const isUserExpanded = expandedUsers.has(userGroup.userId)
+              const sortedDates = Array.from(userGroup.dailyExpenses.keys()).sort((a, b) => b.localeCompare(a))
+              
               return (
-                <Card key={expense.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-4">
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-base text-orange-600">
-                            {formatCurrency(expense.amount)}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {formatDate(expense.expense_date)}
-                          </div>
-                        </div>
-                        <Badge 
-                          variant={
-                            expense.status === 'Approved' ? 'success' :
-                            expense.status === 'Rejected' ? 'destructive' : 'warning'
+                <Card key={userGroup.userId} className="border-blue-200">
+                  <CardContent className="p-3">
+                    {/* User Header */}
+                    <div 
+                      className="flex items-center justify-between cursor-pointer"
+                      onClick={() => {
+                        setExpandedUsers(prev => {
+                          const next = new Set(prev)
+                          if (next.has(userGroup.userId)) {
+                            next.delete(userGroup.userId)
+                          } else {
+                            next.add(userGroup.userId)
                           }
-                          className="text-xs flex-shrink-0"
-                        >
-                          {expense.status === 'Approved' ? 'معتمد' :
-                           expense.status === 'Rejected' ? 'مرفوض' : 'في انتظار'}
-                        </Badge>
+                          return next
+                        })
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4 text-blue-600" />
+                        <span className="font-bold text-sm">{userGroup.userName}</span>
                       </div>
-                      
-                      <div className="space-y-1.5 text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground">الفئة:</span>
-                          <span className="font-medium">{category?.name || 'غير معروف'}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="text-right">
+                          <div className="text-sm font-bold text-orange-600">{formatCurrency(userGroup.totalAmount)}</div>
+                          <div className="text-xs text-muted-foreground">{userGroup.expenseCount} مصروف</div>
                         </div>
-                        {expense.description && (
-                          <div>
-                            <span className="text-muted-foreground">الوصف:</span>
-                            <div className="font-medium mt-0.5">{expense.description}</div>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground">طريقة الدفع:</span>
-                          <span className="font-medium">
-                            {expense.payment_method === 'Cash' ? 'نقد' :
-                             expense.payment_method === 'BankTransfer' ? 'تحويل بنكي' :
-                             expense.payment_method === 'Check' ? 'شيك' :
-                             expense.payment_method === 'CreditCard' ? 'بطاقة ائتمان' : 'أخرى'}
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 pt-2 border-t">
-                        {expense.status === 'Pending' && hasPermission('manage_financial') && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex-1 text-xs h-8 text-green-600"
-                              onClick={() => approveExpense(expense.id)}
-                            >
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              موافقة
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex-1 text-xs h-8 text-red-600"
-                              onClick={() => {
-                                const reason = prompt('سبب الرفض:')
-                                if (reason) rejectExpense(expense.id, reason)
-                              }}
-                            >
-                              <XCircle className="h-3 w-3 mr-1" />
-                              رفض
-                            </Button>
-                          </>
-                        )}
-                        {canEditExpenses && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex-1 text-xs h-8"
-                              onClick={() => openExpenseDialog(expense)}
-                            >
-                              <Edit className="h-3 w-3 mr-1" />
-                              تعديل
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-xs h-8"
-                              onClick={() => deleteExpense(expense.id)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </>
-                        )}
+                        {isUserExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </div>
                     </div>
+                    
+                    {/* Expanded User Details */}
+                    {isUserExpanded && (
+                      <div className="mt-3 pt-3 border-t space-y-2">
+                        {sortedDates.map(dateKey => {
+                          const dayExpenses = userGroup.dailyExpenses.get(dateKey) || []
+                          const dayTotal = dayExpenses.reduce((sum, e) => sum + e.amount, 0)
+                          const dateExpandKey = `${userGroup.userId}-${dateKey}`
+                          const isDateExpanded = expandedDates.has(dateExpandKey)
+                          
+                          return (
+                            <div key={dateKey} className="bg-gray-50 rounded-md p-2">
+                              <div 
+                                className="flex items-center justify-between cursor-pointer"
+                                onClick={() => {
+                                  setExpandedDates(prev => {
+                                    const next = new Set(prev)
+                                    if (next.has(dateExpandKey)) {
+                                      next.delete(dateExpandKey)
+                                    } else {
+                                      next.add(dateExpandKey)
+                                    }
+                                    return next
+                                  })
+                                }}
+                              >
+                                <span className="text-xs font-medium">{formatDate(dateKey)}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-semibold text-orange-600">{formatCurrency(dayTotal)}</span>
+                                  <span className="text-xs text-muted-foreground">({dayExpenses.length})</span>
+                                  {isDateExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                </div>
+                              </div>
+                              
+                              {isDateExpanded && (
+                                <div className="mt-2 space-y-1.5">
+                                  {dayExpenses.map(expense => {
+                                    const category = categories.find(c => c.id === expense.category)
+                                    return (
+                                      <div key={expense.id} className="bg-white rounded p-2 border border-gray-100">
+                                        <div className="flex items-start justify-between">
+                                          <div className="flex-1">
+                                            <div className="text-xs font-medium">{category?.name || 'غير معروف'}</div>
+                                            {expense.description && (
+                                              <div className="text-xs text-muted-foreground mt-0.5">{expense.description}</div>
+                                            )}
+                                          </div>
+                                          <div className="text-right">
+                                            <div className="text-xs font-bold text-orange-600">{formatCurrency(expense.amount)}</div>
+                                            <Badge 
+                                              variant={
+                                                expense.status === 'Approved' ? 'success' :
+                                                expense.status === 'Rejected' ? 'destructive' : 'warning'
+                                              }
+                                              className="text-xs mt-0.5"
+                                            >
+                                              {expense.status === 'Approved' ? 'معتمد' :
+                                               expense.status === 'Rejected' ? 'مرفوض' : 'في انتظار'}
+                                            </Badge>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-1 mt-2 pt-1.5 border-t">
+                                          {expense.status === 'Pending' && hasPermission('manage_financial') && (
+                                            <>
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="flex-1 text-xs h-7 text-green-600"
+                                                onClick={(e) => { e.stopPropagation(); approveExpense(expense.id) }}
+                                              >
+                                                <CheckCircle className="h-3 w-3 mr-1" />
+                                                موافقة
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="flex-1 text-xs h-7 text-red-600"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  const reason = prompt('سبب الرفض:')
+                                                  if (reason) rejectExpense(expense.id, reason)
+                                                }}
+                                              >
+                                                <XCircle className="h-3 w-3 mr-1" />
+                                                رفض
+                                              </Button>
+                                            </>
+                                          )}
+                                          {canEditExpenses && (
+                                            <>
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="flex-1 text-xs h-7"
+                                                onClick={(e) => { e.stopPropagation(); openExpenseDialog(expense) }}
+                                              >
+                                                <Edit className="h-3 w-3 mr-1" />
+                                                تعديل
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="text-xs h-7"
+                                                onClick={(e) => { e.stopPropagation(); deleteExpense(expense.id) }}
+                                              >
+                                                <Trash2 className="h-3 w-3" />
+                                              </Button>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )
             })}
           </div>
-
-          {/* Desktop Table View */}
-          <Card className="hidden md:block">
-            <CardHeader>
-              <CardTitle>قائمة المصاريف ({filteredExpenses.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>التاريخ</TableHead>
-                      <TableHead>الفئة</TableHead>
-                      <TableHead>المبلغ</TableHead>
-                      <TableHead>الوصف</TableHead>
-                      <TableHead>طريقة الدفع</TableHead>
-                      <TableHead>الحالة</TableHead>
-                      <TableHead className="text-center">إجراءات</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredExpenses.map(expense => {
-                      const category = categories.find(c => c.id === expense.category_id)
-                      return (
-                        <TableRow key={expense.id}>
-                          <TableCell>{formatDate(expense.expense_date)}</TableCell>
-                          <TableCell>{category?.name || 'غير معروف'}</TableCell>
-                          <TableCell className="font-medium">{formatCurrency(expense.amount)}</TableCell>
-                          <TableCell className="max-w-xs truncate">{expense.description || '-'}</TableCell>
-                          <TableCell>
-                            {expense.payment_method === 'Cash' ? 'نقد' :
-                             expense.payment_method === 'BankTransfer' ? 'تحويل بنكي' :
-                             expense.payment_method === 'Check' ? 'شيك' :
-                             expense.payment_method === 'CreditCard' ? 'بطاقة ائتمان' : 'أخرى'}
-                          </TableCell>
-                          <TableCell>
-                            <Badge 
-                              variant={
-                                expense.status === 'Approved' ? 'success' :
-                                expense.status === 'Rejected' ? 'destructive' : 'warning'
-                              }
-                            >
-                              {expense.status === 'Approved' ? 'معتمد' :
-                               expense.status === 'Rejected' ? 'مرفوض' : 'في انتظار'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center gap-2">
-                              {expense.status === 'Pending' && hasPermission('manage_financial') && (
-                                <>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={() => approveExpense(expense.id)}
-                                    className="h-8 w-8 text-green-600"
-                                  >
-                                    <CheckCircle className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      const reason = prompt('سبب الرفض:')
-                                      if (reason) rejectExpense(expense.id, reason)
-                                    }}
-                                    className="h-8 w-8 text-red-600"
-                                  >
-                                    <XCircle className="h-4 w-4" />
-                                  </Button>
-                                </>
-                              )}
-                              {canEditExpenses && (
-                                <>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={() => openExpenseDialog(expense)}
-                                    className="h-8 w-8"
-                                  >
-                                    <Edit className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={() => deleteExpense(expense.id)}
-                                    className="h-8 w-8 text-destructive"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </>
+        </div>
       )}
 
       {/* Expense Dialog */}
