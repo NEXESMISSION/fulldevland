@@ -952,27 +952,27 @@ export function Financial() {
               </Button>
             </div>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {/* Summary Card */}
             {filteredData.groupedCompanyFees.length > 0 && (
               <Card className="bg-primary/5 border-primary/20">
-                <CardContent className="pt-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <CardContent className="pt-3 sm:pt-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                     <div>
-                      <p className="text-sm text-muted-foreground">إجمالي العمولة</p>
-                      <p className="text-xl font-bold">{formatCurrency(filteredData.companyFeesTotal)}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">إجمالي العمولة</p>
+                      <p className="text-base sm:text-xl font-bold">{formatCurrency(filteredData.companyFeesTotal)}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">عدد المبيعات</p>
-                      <p className="text-xl font-bold">{filteredData.groupedCompanyFees.reduce((sum, g) => sum + g.sales.length, 0)}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">عدد المبيعات</p>
+                      <p className="text-base sm:text-xl font-bold">{filteredData.groupedCompanyFees.reduce((sum, g) => sum + g.sales.length, 0)}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">عدد العملاء</p>
-                      <p className="text-xl font-bold">{filteredData.groupedCompanyFees.length}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">عدد العملاء</p>
+                      <p className="text-base sm:text-xl font-bold">{filteredData.groupedCompanyFees.length}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">عدد القطع</p>
-                      <p className="text-xl font-bold">{filteredData.groupedCompanyFees.reduce((sum, g) => sum + g.piecesCount, 0)}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">عدد القطع</p>
+                      <p className="text-base sm:text-xl font-bold">{filteredData.groupedCompanyFees.reduce((sum, g) => sum + g.piecesCount, 0)}</p>
                     </div>
                   </div>
                 </CardContent>
