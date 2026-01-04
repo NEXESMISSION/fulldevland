@@ -1422,13 +1422,13 @@ export function Installments() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-2xl sm:text-3xl font-bold">الأقساط</h1>
         {filterStatus !== 'Paid' || dealsTableData.length > 0 ? (
-          <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm">
-            <span>مدفوع: <strong className="text-green-600">{formatCurrency(stats.totalPaid)}</strong></span>
-            <span>متبقي: <strong>{formatCurrency(stats.totalDue - stats.totalPaid)}</strong></span>
-            {stats.totalOverdue > 0 && (
-              <span className="text-red-600">متأخر: <strong>{formatCurrency(stats.totalOverdue)}</strong></span>
-            )}
-          </div>
+        <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm">
+          <span>مدفوع: <strong className="text-green-600">{formatCurrency(stats.totalPaid)}</strong></span>
+          <span>متبقي: <strong>{formatCurrency(stats.totalDue - stats.totalPaid)}</strong></span>
+          {stats.totalOverdue > 0 && (
+            <span className="text-red-600">متأخر: <strong>{formatCurrency(stats.totalOverdue)}</strong></span>
+          )}
+        </div>
         ) : (
           <div className="text-xs sm:text-sm text-muted-foreground">
             لا توجد أقساط مدفوعة جزئياً
