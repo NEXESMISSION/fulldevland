@@ -2933,44 +2933,44 @@ export function Installments() {
             </div>
           </DialogHeader>
           {selectedSaleForDetails && (
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
               {/* Sale Summary */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-3 sm:p-4 rounded-lg border">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
-                    <p className="text-sm text-muted-foreground mb-1">العميل</p>
-                    <p className="font-semibold text-base">{selectedSaleForDetails.clientName}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-1">العميل</p>
+                    <p className="font-semibold text-sm sm:text-base">{selectedSaleForDetails.clientName}</p>
                     {selectedSaleForDetails.clientCin && (
                       <p className="text-xs text-muted-foreground mt-1">CIN: {selectedSaleForDetails.clientCin}</p>
                     )}
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground mb-1">تاريخ البيع</p>
-                    <p className="font-semibold text-base">{formatDate(selectedSaleForDetails.saleDate)}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-1">تاريخ البيع</p>
+                    <p className="font-semibold text-sm sm:text-base">{formatDate(selectedSaleForDetails.saleDate)}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground mb-1">القطع</p>
-                    <Badge variant="outline" className="text-sm">
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-1">القطع</p>
+                    <Badge variant="outline" className="text-xs sm:text-sm">
                       {selectedSaleForDetails.landPieces}
                     </Badge>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground mb-1">إجمالي المبلغ</p>
-                    <p className="font-semibold text-base text-primary">{formatCurrency(selectedSaleForDetails.totalDue)}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-1">إجمالي المبلغ</p>
+                    <p className="font-semibold text-sm sm:text-base text-primary">{formatCurrency(selectedSaleForDetails.totalDue)}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground mb-1">المدفوع</p>
-                    <p className="font-semibold text-base text-green-600">{formatCurrency(selectedSaleForDetails.totalPaid)}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-1">المدفوع</p>
+                    <p className="font-semibold text-sm sm:text-base text-green-600">{formatCurrency(selectedSaleForDetails.totalPaid)}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground mb-1">المتبقي</p>
-                    <p className="font-semibold text-base text-red-600">{formatCurrency(selectedSaleForDetails.totalUnpaid)}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-1">المتبقي</p>
+                    <p className="font-semibold text-sm sm:text-base text-red-600">{formatCurrency(selectedSaleForDetails.totalUnpaid)}</p>
                   </div>
                 </div>
-                <div className="mt-4 pt-4 border-t">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">التقدم</span>
-                    <span className="text-sm font-semibold">
+                <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
+                  <div className="flex items-center justify-between text-xs sm:text-sm">
+                    <span className="text-muted-foreground">التقدم</span>
+                    <span className="font-semibold">
                       {Math.round((selectedSaleForDetails.totalPaid / selectedSaleForDetails.totalDue) * 100)}%
                     </span>
                   </div>
@@ -2985,7 +2985,7 @@ export function Installments() {
 
               {/* Installments Schedule */}
               <div>
-                <h4 className="font-semibold mb-3 text-lg flex items-center justify-between">
+                <h4 className="font-semibold mb-2 sm:mb-3 text-sm sm:text-lg flex items-center justify-between">
                   <span>جدول الأقساط</span>
                   <Button
                     variant="ghost"
@@ -3027,8 +3027,84 @@ export function Installments() {
                     <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                   </Button>
                 </h4>
-                <div className="overflow-x-auto">
-                  {/* Key forces complete re-render when data changes */}
+                {/* Mobile Card View / Desktop Table View */}
+                <div className="md:hidden space-y-2">
+                  {selectedSaleForDetails.installments
+                    .sort((a, b) => a.installment_number - b.installment_number)
+                    .map((inst) => {
+                      const freshInst = installments.find(i => i.id === inst.id) || inst
+                      const remaining = getRemainingAmount(freshInst)
+                      const daysLeft = getDaysUntilDue(freshInst)
+                      const isOverdue = isInstallmentOverdue(freshInst)
+                      const isPaid = remaining <= 0.01 || freshInst.status === 'Paid'
+                      
+                      return (
+                        <Card 
+                          key={`${freshInst.id}-${freshInst.amount_paid}-${refreshKey}`}
+                          className={`${isPaid ? 'bg-green-50/50' : isOverdue ? 'bg-red-50/30' : ''}`}
+                        >
+                          <CardContent className="p-3">
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="font-medium text-sm">#{freshInst.installment_number}</div>
+                                <Badge
+                                  variant={
+                                    isPaid ? 'success' :
+                                    isOverdue ? 'destructive' :
+                                    'warning'
+                                  }
+                                  className="text-xs"
+                                >
+                                  {isPaid ? 'مدفوع' :
+                                   isOverdue ? 'متأخر' :
+                                   'مستحق'}
+                                </Badge>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <span className="text-muted-foreground">المبلغ المستحق:</span>
+                                  <div className="font-medium">{formatCurrency(freshInst.amount_due + freshInst.stacked_amount)}</div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">المدفوع:</span>
+                                  <div className="font-medium text-green-600">{formatCurrency(freshInst.amount_paid)}</div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">المتبقي:</span>
+                                  <div className={`font-semibold ${remaining > 0.01 ? 'text-red-600' : 'text-green-600'}`}>
+                                    {formatCurrency(remaining)}
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">تاريخ الاستحقاق:</span>
+                                  <div className="font-medium">{formatDate(freshInst.due_date)}</div>
+                                  {!isPaid && daysLeft >= 0 && (
+                                    <div className="text-xs text-muted-foreground">({daysLeft} يوم)</div>
+                                  )}
+                                </div>
+                              </div>
+                              {hasPermission('record_payments') && !isPaid && (
+                                <Button
+                                  size="sm"
+                                  variant={isOverdue ? 'destructive' : 'default'}
+                                  onClick={() => {
+                                    setDetailsDrawerOpen(false)
+                                    openPaymentDialog(freshInst)
+                                  }}
+                                  className="w-full text-xs h-8"
+                                >
+                                  دفع
+                                </Button>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
+                </div>
+
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
                   <Table key={`installments-table-${selectedSaleForDetails.totalPaid}-${refreshKey}`}>
                     <TableHeader>
                       <TableRow className="bg-gray-50">
@@ -3045,7 +3121,6 @@ export function Installments() {
                       {selectedSaleForDetails.installments
                         .sort((a, b) => a.installment_number - b.installment_number)
                         .map((inst) => {
-                          // Get fresh data from state if available
                           const freshInst = installments.find(i => i.id === inst.id) || inst
                           const remaining = getRemainingAmount(freshInst)
                           const daysLeft = getDaysUntilDue(freshInst)

@@ -85,7 +85,7 @@ export function Financial() {
   const [payments, setPayments] = useState<PaymentWithDetails[]>([])
   const [landPieces, setLandPieces] = useState<Array<LandPiece & { land_batch?: LandBatch }>>([])
   const [loading, setLoading] = useState(true)
-  const [dateFilter, setDateFilter] = useState<DateFilter>('all')
+  const [dateFilter, setDateFilter] = useState<DateFilter>('today')
   const [paymentDetailDialogOpen, setPaymentDetailDialogOpen] = useState(false)
   const [selectedPaymentType, setSelectedPaymentType] = useState<PaymentTypeFilter>(null)
   const [companyFeeDialogOpen, setCompanyFeeDialogOpen] = useState(false)
@@ -776,23 +776,23 @@ export function Financial() {
               </Button>
             </div>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {/* Summary Card */}
             {paymentsByLand.length > 0 && (
               <Card className="bg-primary/5 border-primary/20">
-                <CardContent className="pt-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <CardContent className="pt-3 sm:pt-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                     <div>
-                      <p className="text-sm text-muted-foreground">إجمالي المدفوعات</p>
-                      <p className="text-xl font-bold">{formatCurrency(paymentsByLand.reduce((sum, g) => sum + g.totalAmount, 0))}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">إجمالي المدفوعات</p>
+                      <p className="text-base sm:text-xl font-bold">{formatCurrency(paymentsByLand.reduce((sum, g) => sum + g.totalAmount, 0))}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">عدد الدفعات</p>
-                      <p className="text-xl font-bold">{paymentsByLand.length}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">عدد الدفعات</p>
+                      <p className="text-base sm:text-xl font-bold">{paymentsByLand.length}</p>
                     </div>
                 <div>
-                      <p className="text-sm text-muted-foreground">إجمالي المدفوعات</p>
-                      <p className="text-xl font-bold">{paymentsByLand.reduce((sum, g) => sum + g.paymentCount, 0)}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">إجمالي المدفوعات</p>
+                      <p className="text-base sm:text-xl font-bold">{paymentsByLand.reduce((sum, g) => sum + g.paymentCount, 0)}</p>
                     </div>
                   </div>
                 </CardContent>

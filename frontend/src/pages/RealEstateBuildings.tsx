@@ -848,62 +848,62 @@ export function RealEstateBuildings() {
             </DialogTitle>
           </DialogHeader>
           {selectedProject && (
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
               {/* Project Info */}
               <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Package className="h-5 w-5" />
+                <CardHeader className="p-3 sm:p-6">
+                  <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                    <Package className="h-4 w-4 sm:h-5 sm:w-5" />
                     {selectedProject.name}
                   </CardTitle>
-                  <CardDescription>معلومات المشروع الأساسية</CardDescription>
+                  <CardDescription className="text-xs sm:text-sm">معلومات المشروع الأساسية</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <CardContent className="space-y-3 sm:space-y-4 p-3 sm:p-6">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                     <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">النوع</p>
-                      <p className="font-medium">{projectTypeLabels[selectedProject.project_type]}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">النوع</p>
+                      <p className="font-medium text-sm sm:text-base">{projectTypeLabels[selectedProject.project_type]}</p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">الحالة</p>
-                      <Badge className={statusColors[selectedProject.status]}>
+                      <p className="text-xs sm:text-sm text-muted-foreground">الحالة</p>
+                      <Badge className={`text-xs sm:text-sm ${statusColors[selectedProject.status]}`}>
                         {projectStatusLabels[selectedProject.status]}
                       </Badge>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">الميزانية</p>
-                      <p className="font-medium">{formatCurrency(selectedProject.estimated_budget)}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">الميزانية</p>
+                      <p className="font-medium text-sm sm:text-base">{formatCurrency(selectedProject.estimated_budget)}</p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">المصروفات</p>
-                      <p className="font-medium text-orange-600">{formatCurrency(selectedProject.total_expenses)}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">المصروفات</p>
+                      <p className="font-medium text-sm sm:text-base text-orange-600">{formatCurrency(selectedProject.total_expenses)}</p>
                     </div>
                   </div>
                   {selectedProject.location && (
                     <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground flex items-center gap-1">
+                      <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1">
                         <MapPin className="h-3 w-3" />
                         الموقع
                       </p>
-                      <p className="font-medium">{selectedProject.location}</p>
+                      <p className="font-medium text-sm sm:text-base">{selectedProject.location}</p>
                     </div>
                   )}
                   {selectedProject.description && (
                     <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">الوصف</p>
-                      <p className="text-sm">{selectedProject.description}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">الوصف</p>
+                      <p className="text-xs sm:text-sm">{selectedProject.description}</p>
                     </div>
                   )}
                   {selectedProject.start_date && (
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                       <div className="space-y-1">
-                        <p className="text-sm text-muted-foreground">تاريخ البدء</p>
-                        <p className="font-medium">{formatDate(selectedProject.start_date)}</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground">تاريخ البدء</p>
+                        <p className="font-medium text-sm sm:text-base">{formatDate(selectedProject.start_date)}</p>
                       </div>
                       {selectedProject.expected_completion_date && (
                         <div className="space-y-1">
-                          <p className="text-sm text-muted-foreground">تاريخ الانتهاء المتوقع</p>
-                          <p className="font-medium">{formatDate(selectedProject.expected_completion_date)}</p>
+                          <p className="text-xs sm:text-sm text-muted-foreground">تاريخ الانتهاء المتوقع</p>
+                          <p className="font-medium text-sm sm:text-base">{formatDate(selectedProject.expected_completion_date)}</p>
                         </div>
                       )}
                     </div>
@@ -913,14 +913,14 @@ export function RealEstateBuildings() {
 
               {/* Expenses Section */}
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
+                <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 sm:p-6">
                   <div>
-                    <CardTitle>المصروفات</CardTitle>
-                    <CardDescription>إجمالي المصروفات: {formatCurrency(selectedProject.total_expenses)}</CardDescription>
+                    <CardTitle className="text-base sm:text-lg">المصروفات</CardTitle>
+                    <CardDescription className="text-xs sm:text-sm">إجمالي المصروفات: {formatCurrency(selectedProject.total_expenses)}</CardDescription>
                   </div>
                   {isOwner && (
-                    <Button onClick={() => openExpenseDialog()} className="gap-2">
-                      <Plus className="h-4 w-4" />
+                    <Button onClick={() => openExpenseDialog()} className="gap-2 w-full sm:w-auto text-xs sm:text-sm">
+                      <Plus className="h-3 w-3 sm:h-4 sm:w-4" />
                       إضافة مصروف
                     </Button>
                   )}
