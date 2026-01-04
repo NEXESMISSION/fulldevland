@@ -43,18 +43,18 @@ export function useSwipeGesture({
 
       // Only trigger if horizontal swipe is more dominant than vertical
       if (absDeltaX > absDeltaY && absDeltaX > minSwipeDistance) {
-        // Swipe left (start is more right than end) - swipe from right edge to left
-        if (deltaX > 0 && onSwipeLeft) {
-          // Check if swipe started near the right edge (within threshold)
-          // This allows opening sidebar by swiping from right edge toward left
-          if (touchStartX.current > window.innerWidth - threshold) {
-            onSwipeLeft()
+        // Swipe right (start is more left than end) - swipe from left to right
+        if (deltaX < 0 && onSwipeRight) {
+          // Check if swipe started near the left edge (within threshold)
+          // This allows opening sidebar by swiping from left edge toward right
+          if (touchStartX.current < threshold) {
+            onSwipeRight()
           }
         }
-        // Swipe right (start is more left than end) - swipe from left to right
-        else if (deltaX < 0 && onSwipeRight) {
+        // Swipe left (start is more right than end) - swipe from right to left
+        else if (deltaX > 0 && onSwipeLeft) {
           // Can be triggered anywhere, typically used to close sidebar
-          onSwipeRight()
+          onSwipeLeft()
         }
       }
 
