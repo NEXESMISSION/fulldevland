@@ -23,7 +23,8 @@ interface PieceWithStatus {
   purchase_cost: number
   selling_price_full: number
   selling_price_installment: number
-  land_batch?: { name: string; id: string; real_estate_tax_number?: string | null; location?: string | null }
+  notes?: string | null
+  land_batch?: { name: string; id: string; real_estate_tax_number?: string | null; location?: string | null; notes?: string | null }
   status_display: 'Available' | 'Reserved' | 'Sold'
   sale?: any
   reservation?: any
@@ -95,7 +96,7 @@ export function LandAvailability() {
       setLoading(true)
       const { data: piecesData, error: piecesError } = await supabase
         .from('land_pieces')
-        .select('*, land_batch:land_batches(name, real_estate_tax_number, location)')
+        .select('id, piece_number, surface_area, purchase_cost, selling_price_full, selling_price_installment, status, notes, land_batch:land_batches(name, real_estate_tax_number, location, notes)')
         .order('piece_number', { ascending: true })
 
       if (piecesError) throw piecesError
@@ -162,6 +163,7 @@ export function LandAvailability() {
           purchase_cost: piece.purchase_cost || 0,
           selling_price_full: piece.selling_price_full || 0,
           selling_price_installment: piece.selling_price_installment || 0,
+          notes: piece.notes || null,
           land_batch: piece.land_batch,
           status_display,
           sale: completedSale || activeSale || undefined,
@@ -496,6 +498,22 @@ export function LandAvailability() {
                   <p className="text-sm text-green-700">هذه القطعة متاحة للبيع أو الحجز</p>
                 )}
               </div>
+
+              {/* Piece Notes - Show first if exists */}
+              {selectedPiece.notes && selectedPiece.notes.trim() && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-900 mb-2">ملاحظات القطعة:</h4>
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap">{selectedPiece.notes}</p>
+                </div>
+              )}
+
+              {/* Land Batch Notes - Show after piece notes if exists */}
+              {selectedPiece.land_batch?.notes && selectedPiece.land_batch.notes.trim() && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-900 mb-2">ملاحظات الأرض:</h4>
+                  <p className="text-sm text-blue-800 whitespace-pre-wrap">{selectedPiece.land_batch.notes}</p>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

@@ -84,18 +84,18 @@ export function MainLayout() {
           <div className="bg-background border border-border rounded-md">
             <NotificationBell />
           </div>
-          
-          {/* Go back button */}
-          {canGoBack && (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate(-1)}
+        
+        {/* Go back button */}
+        {canGoBack && (
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => navigate(-1)}
               className="bg-background shrink-0 h-9 w-9"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          )}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        )}
         </div>
       </div>
 

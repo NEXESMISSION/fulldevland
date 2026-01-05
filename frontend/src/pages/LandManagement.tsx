@@ -28,7 +28,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { sanitizeText, sanitizeNotes } from '@/lib/sanitize'
 import { debounce } from '@/lib/throttle'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Edit, Trash2, Map, ChevronDown, ChevronRight, Calculator, X, DollarSign, AlertTriangle, ShoppingCart } from 'lucide-react'
+import { Plus, Edit, Trash2, Map, ChevronDown, ChevronRight, Calculator, X, DollarSign, AlertTriangle, ShoppingCart, Upload, Image as ImageIcon } from 'lucide-react'
 import type { LandBatch, LandPiece, LandStatus } from '@/types/database'
 
 interface LandBatchWithPieces extends LandBatch {
@@ -82,6 +82,11 @@ export function LandManagement() {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [batchToDelete, setBatchToDelete] = useState<string | null>(null)
+  const [deletePieceConfirmOpen, setDeletePieceConfirmOpen] = useState(false)
+  const [pieceToDelete, setPieceToDelete] = useState<{ id: string; piece_number: string; batch_id: string } | null>(null)
+  const [imageViewDialogOpen, setImageViewDialogOpen] = useState(false)
+  const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null)
+  const [viewingImageName, setViewingImageName] = useState<string>('')
   
   // Debounced search
   const debouncedSearchFn = useCallback(
@@ -102,7 +107,11 @@ export function LandManagement() {
     real_estate_tax_number: '',
     price_per_m2_full: '',
     price_per_m2_installment: '',
+    image_url: '',
   })
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
   
   // Advanced generation options
   const [autoMinSize, setAutoMinSize] = useState('200')
@@ -165,9 +174,15 @@ export function LandManagement() {
 
   // Piece dialog
   const [pieceDialogOpen, setPieceDialogOpen] = useState(false)
+  const [bulkAddDialogOpen, setBulkAddDialogOpen] = useState(false)
   const [editingPiece, setEditingPiece] = useState<LandPiece | null>(null)
   const [selectedBatchId, setSelectedBatchId] = useState<string>('')
   const [selectedBatchForPiece, setSelectedBatchForPiece] = useState<LandBatch | null>(null)
+  const [bulkAddForm, setBulkAddForm] = useState({
+    from: '',
+    to: '',
+    surface_area: '',
+  })
   const [pieceForm, setPieceForm] = useState({
     piece_number: '', // Just a number (1, 2, 99, etc.)
     surface_area: '', // Optional - will use default if empty
@@ -319,7 +334,10 @@ export function LandManagement() {
         real_estate_tax_number: (batch as any).real_estate_tax_number || '',
         price_per_m2_full: (batch as any).price_per_m2_full?.toString() || '',
         price_per_m2_installment: (batch as any).price_per_m2_installment?.toString() || '',
+        image_url: (batch as any).image_url || '',
       })
+      setImagePreview((batch as any).image_url || null)
+      setImageFile(null)
       // No generation mode when editing
     } else {
       setEditingBatch(null)
@@ -333,7 +351,10 @@ export function LandManagement() {
         real_estate_tax_number: '',
         price_per_m2_full: '',
         price_per_m2_installment: '',
+        image_url: '',
       })
+      setImagePreview(null)
+      setImageFile(null)
       setGenerationMode('none')
       setUniformSize('400')
       setCustomConfigs([
@@ -682,6 +703,77 @@ export function LandManagement() {
 
   const [savingBatch, setSavingBatch] = useState(false)
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('يرجى اختيار ملف صورة صحيح')
+        return
+      }
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('حجم الصورة كبير جداً. الحد الأقصى 5 ميجابايت')
+        return
+      }
+      setImageFile(file)
+      // Create preview
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const uploadImage = async (batchId: string): Promise<string | null> => {
+    if (!imageFile) return batchForm.image_url || null
+
+    try {
+      setUploadingImage(true)
+      const fileExt = imageFile.name.split('.').pop()
+      const fileName = `${batchId}-${Date.now()}.${fileExt}`
+      const filePath = `land-batches/${fileName}`
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('land-images')
+        .upload(filePath, imageFile, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError)
+        
+        // Provide specific error messages
+        if (uploadError.message?.includes('row-level security') || uploadError.message?.includes('RLS')) {
+          throw new Error('خطأ في الصلاحيات: يرجى التأكد من تشغيل ملف SQL لإعداد Storage Bucket (ADD_IMAGE_TO_LAND_BATCHES.sql)')
+        } else if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('does not exist')) {
+          throw new Error('خطأ: Bucket غير موجود. يرجى تشغيل ملف SQL لإعداد Storage Bucket')
+        } else if (uploadError.message?.includes('file size')) {
+          throw new Error('حجم الملف كبير جداً. الحد الأقصى 5 ميجابايت')
+        } else {
+          throw new Error(uploadError.message || 'خطأ في رفع الصورة')
+        }
+      }
+
+      // Get public URL
+      const { data } = supabase.storage
+        .from('land-images')
+        .getPublicUrl(filePath)
+
+      return data.publicUrl
+    } catch (error: any) {
+      console.error('Error uploading image:', error)
+      const errorMessage = error.message || 'خطأ غير معروف في رفع الصورة'
+      setError(errorMessage)
+      return null
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
   const saveBatch = async () => {
     if (savingBatch) return // Prevent double submission
     
@@ -737,6 +829,20 @@ export function LandManagement() {
       // Always include these fields in batchData (even if null) to ensure they're saved
       batchData.price_per_m2_full = pricePerM2Full !== null && !isNaN(pricePerM2Full) ? pricePerM2Full : null
       batchData.price_per_m2_installment = pricePerM2Installment !== null && !isNaN(pricePerM2Installment) ? pricePerM2Installment : null
+
+      // Handle image upload
+      let imageUrl = batchForm.image_url || null
+      if (imageFile) {
+        // For new batches, we'll upload after creation
+        // For existing batches, upload now
+        if (editingBatch) {
+          const uploadedUrl = await uploadImage(editingBatch.id)
+          if (uploadedUrl) {
+            imageUrl = uploadedUrl
+          }
+        }
+      }
+      batchData.image_url = imageUrl
 
       // Add created_by for new batches (track who created this batch)
       if (!editingBatch) {
@@ -807,6 +913,19 @@ export function LandManagement() {
           .select('*')
           .single()
         if (batchError) throw batchError
+
+        // Upload image for new batch if provided
+        if (newBatch && imageFile) {
+          const uploadedUrl = await uploadImage(newBatch.id)
+          if (uploadedUrl) {
+            // Update batch with image URL
+            await supabase
+              .from('land_batches')
+              .update({ image_url: uploadedUrl })
+              .eq('id', newBatch.id)
+            batchData.image_url = uploadedUrl
+          }
+        }
 
         // If this is a new batch and user might add pieces immediately, set it as selected
         // This ensures the price_per_m2 fields are available when calculating piece prices
@@ -989,13 +1108,8 @@ export function LandManagement() {
 
       setBatchDialogOpen(false)
       
-      // If we just created/updated a batch and it's selected, refresh it immediately
-      if (editingBatch && selectedBatchForPiece && editingBatch.id === selectedBatchForPiece.id) {
-        // Refresh batches to get updated price data
-        await fetchBatches()
-      } else {
-      fetchBatches()
-      }
+      // Always refresh batches after save to show updated data
+      await fetchBatches()
       
       setError(null)
     } catch (error: any) {
@@ -1045,6 +1159,84 @@ export function LandManagement() {
     } finally {
       setBatchToDelete(null)
       setDeleteConfirmOpen(false)
+    }
+  }
+
+  const deletePiece = (piece: LandPiece, batchId: string) => {
+    if (!hasPermission('edit_land')) {
+      setError('ليس لديك صلاحية لحذف القطع')
+      return
+    }
+    setPieceToDelete({ id: piece.id, piece_number: piece.piece_number, batch_id: batchId })
+    setDeletePieceConfirmOpen(true)
+  }
+
+  const confirmDeletePiece = async () => {
+    if (!pieceToDelete) return
+
+    setError(null)
+    try {
+      // Check if piece is sold or reserved
+      const { data: pieceData, error: fetchError } = await supabase
+        .from('land_pieces')
+        .select('status')
+        .eq('id', pieceToDelete.id)
+        .single()
+
+      if (fetchError) throw fetchError
+
+      if (pieceData?.status === 'Sold') {
+        setError('لا يمكن حذف قطعة مباعة')
+        setDeletePieceConfirmOpen(false)
+        setPieceToDelete(null)
+        return
+      }
+
+      // Check if piece has active reservations
+      const { data: reservations } = await supabase
+        .from('reservations')
+        .select('id')
+        .contains('land_piece_ids', [pieceToDelete.id])
+        .in('status', ['Pending', 'Confirmed'])
+
+      if (reservations && reservations.length > 0) {
+        setError('لا يمكن حذف قطعة محجوزة. يرجى إلغاء الحجز أولاً')
+        setDeletePieceConfirmOpen(false)
+        setPieceToDelete(null)
+        return
+      }
+
+      // Check if piece has active sales
+      const { data: sales } = await supabase
+        .from('sales')
+        .select('id, status')
+        .contains('land_piece_ids', [pieceToDelete.id])
+        .neq('status', 'Cancelled')
+
+      if (sales && sales.length > 0) {
+        const hasActiveSale = sales.some(s => s.status !== 'Completed')
+        if (hasActiveSale) {
+          setError('لا يمكن حذف قطعة مرتبطة ببيع نشط')
+          setDeletePieceConfirmOpen(false)
+          setPieceToDelete(null)
+          return
+        }
+      }
+
+      const { error } = await supabase
+        .from('land_pieces')
+        .delete()
+        .eq('id', pieceToDelete.id)
+
+      if (error) throw error
+      
+      fetchBatches()
+      setError(null)
+    } catch (error: any) {
+      setError(error.message || 'خطأ في حذف القطعة')
+    } finally {
+      setPieceToDelete(null)
+      setDeletePieceConfirmOpen(false)
     }
   }
 
@@ -1197,6 +1389,26 @@ export function LandManagement() {
     }
   }
 
+  const openBulkAddDialog = (batchId: string) => {
+    setSelectedBatchId(batchId)
+    const batch = batches.find(b => b.id === batchId)
+    setSelectedBatchForPiece(batch || null)
+    
+    // Get default surface area
+    let avgSurface = defaultSurfaceArea
+    if (batch?.land_pieces && batch.land_pieces.length > 0) {
+      const totalSurface = batch.land_pieces.reduce((sum, p) => sum + (p.surface_area || 0), 0)
+      avgSurface = Math.round(totalSurface / batch.land_pieces.length).toString()
+    }
+    
+    setBulkAddForm({
+      from: '',
+      to: '',
+      surface_area: avgSurface,
+    })
+    setBulkAddDialogOpen(true)
+  }
+
   const openPieceDialog = (batchId: string, piece?: LandPiece) => {
     setSelectedBatchId(batchId)
     // Find the batch for auto-calculation
@@ -1249,34 +1461,31 @@ export function LandManagement() {
         })
         
         if (sortedPieces.length > 0) {
+          // Get the most recent pattern (last piece's pattern)
           const lastPiece = sortedPieces[sortedPieces.length - 1]
+          const lastAlphanumericMatch = lastPiece.match(/^([A-Za-z\u0600-\u06FF]+)(\d+)$/i)
+          const lastNumberMatch = lastPiece.match(/^(\d+)$/)
           
-          // Check if last piece uses alphanumeric pattern (e.g., B0, B1, R1, P001)
-          const alphanumericMatch = lastPiece.match(/^([A-Za-z\u0600-\u06FF]+)(\d+)$/i)
-          
-          if (alphanumericMatch) {
-            // Extract prefix and number
-            const prefix = alphanumericMatch[1]
-            const lastNumber = parseInt(alphanumericMatch[2], 10)
-            const numDigits = alphanumericMatch[2].length
-            // Increment and preserve padding if original had padding
+          if (lastAlphanumericMatch) {
+            // Last piece is alphanumeric - continue that pattern
+            const prefix = lastAlphanumericMatch[1]
+            const lastNumber = parseInt(lastAlphanumericMatch[2], 10)
+            const numDigits = lastAlphanumericMatch[2].length
             const nextNumber = lastNumber + 1
+            
             if (numDigits > 1 && lastNumber.toString().length < numDigits) {
               // Preserve zero padding
               nextPieceNumber = `${prefix}${String(nextNumber).padStart(numDigits, '0')}`
             } else {
               nextPieceNumber = `${prefix}${nextNumber}`
             }
+          } else if (lastNumberMatch) {
+            // Last piece is pure number - continue numeric sequence
+            const lastNumber = parseInt(lastNumberMatch[1], 10)
+            nextPieceNumber = (lastNumber + 1).toString()
           } else {
-            // Check if it's just a number
-            const numberMatch = lastPiece.match(/^(\d+)$/)
-            if (numberMatch) {
-              const lastNumber = parseInt(numberMatch[1], 10)
-              nextPieceNumber = (lastNumber + 1).toString()
-            } else {
-              // Default: use count + 1
-              nextPieceNumber = (sortedPieces.length + 1).toString()
-            }
+            // Unknown pattern - suggest next in sequence
+            nextPieceNumber = (sortedPieces.length + 1).toString()
           }
         }
       }
@@ -1451,15 +1660,156 @@ export function LandManagement() {
   }
   }
 
+  const saveBulkPieces = async () => {
+    if (!hasPermission('edit_land')) {
+      setError('ليس لديك صلاحية لتعديل الأراضي')
+      return
+    }
+
+    setError(null)
+    try {
+      if (!selectedBatchId || !selectedBatchForPiece) {
+        setError('يرجى اختيار دفعة أرض أولاً')
+        return
+      }
+
+      const fromStr = bulkAddForm.from.trim()
+      const toStr = bulkAddForm.to.trim()
+      const surfaceArea = parseFloat(bulkAddForm.surface_area || defaultSurfaceArea)
+
+      if (!fromStr || !toStr) {
+        setError('يرجى إدخال رقم البداية والنهاية')
+        return
+      }
+
+      if (isNaN(surfaceArea) || surfaceArea <= 0) {
+        setError('يرجى إدخال مساحة صحيحة')
+        return
+      }
+
+      // Parse from and to - support both numeric and alphanumeric
+      const fromMatch = fromStr.match(/^([A-Za-z\u0600-\u06FF]*)(\d+)$/i)
+      const toMatch = toStr.match(/^([A-Za-z\u0600-\u06FF]*)(\d+)$/i)
+
+      if (!fromMatch || !toMatch) {
+        setError('تنسيق غير صحيح. استخدم أرقام فقط (مثل: 1، 10) أو حروف وأرقام (مثل: B1، B10)')
+        return
+      }
+
+      const fromPrefix = fromMatch[1] || ''
+      const fromNumber = parseInt(fromMatch[2], 10)
+      const toPrefix = toMatch[1] || ''
+      const toNumber = parseInt(toMatch[2], 10)
+
+      if (fromPrefix !== toPrefix) {
+        setError('يجب أن يكون البادئة (الحروف) متطابقة في البداية والنهاية')
+        return
+      }
+
+      if (fromNumber > toNumber) {
+        setError('رقم البداية يجب أن يكون أصغر من أو يساوي رقم النهاية')
+        return
+      }
+
+      const numDigits = Math.max(fromMatch[2].length, toMatch[2].length)
+      const piecesToCreate: Array<{ piece_number: string; surface_area: number }> = []
+
+      // Generate piece numbers from "from" to "to"
+      for (let i = fromNumber; i <= toNumber; i++) {
+        const pieceNumber = fromPrefix 
+          ? `${fromPrefix}${String(i).padStart(numDigits, '0')}`
+          : String(i)
+        piecesToCreate.push({
+          piece_number: pieceNumber,
+          surface_area: surfaceArea,
+        })
+      }
+
+      if (piecesToCreate.length === 0) {
+        setError('لا توجد قطع لإضافتها')
+        return
+      }
+
+      if (piecesToCreate.length > 100) {
+        setError('لا يمكن إضافة أكثر من 100 قطعة في المرة الواحدة')
+        return
+      }
+
+      // Calculate prices for all pieces
+      const calculatedValues = calculatePieceValues(piecesToCreate[0].piece_number, surfaceArea.toString())
+      if (!calculatedValues) {
+        setError('خطأ في حساب القيم. يرجى التأكد من بيانات الدفعة.')
+        return
+      }
+
+      // Prepare data for bulk insert
+      const piecesData = piecesToCreate.map(piece => ({
+        land_batch_id: selectedBatchId,
+        piece_number: piece.piece_number,
+        surface_area: piece.surface_area,
+        purchase_cost: 0,
+        selling_price_full: calculatedValues.selling_price_full,
+        selling_price_installment: calculatedValues.selling_price_installment,
+        status: 'Available' as LandStatus,
+        notes: null,
+      }))
+
+      // Insert all pieces
+      const { error, data } = await supabase
+        .from('land_pieces')
+        .insert(piecesData)
+        .select()
+
+      if (error) {
+        console.error('Error inserting bulk pieces:', error)
+        if (error.code === '23505') {
+          setError('بعض القطع موجودة بالفعل. يرجى التحقق من الأرقام.')
+        } else {
+          setError(`خطأ في حفظ القطع: ${error.message}`)
+        }
+        throw error
+      }
+
+      // Reset form and close dialog
+      setBulkAddDialogOpen(false)
+      setBulkAddForm({
+        from: '',
+        to: '',
+        surface_area: '',
+      })
+
+      // Refresh batches and expand the batch
+      await fetchBatches()
+      if (selectedBatchId) {
+        setExpandedBatches(prev => new Set(prev).add(selectedBatchId))
+      }
+
+      setError(null)
+    } catch (error: any) {
+      console.error('Error in saveBulkPieces:', error)
+      if (!error.message || !error.message.includes('خطأ في حفظ القطع')) {
+        setError(error.message || 'خطأ في حفظ القطع. يرجى التحقق من البيانات والمحاولة مرة أخرى.')
+      }
+    }
+  }
+
   // Filter batches by search term (name, location) and filter pieces within each batch
   const filteredBatches = batches
     .filter((batch) => {
-      // Filter batches by name or location
+      // Filter batches by name, location, or piece numbers
       if (debouncedSearchTerm) {
-        const search = debouncedSearchTerm.toLowerCase()
-        const matchesName = batch.name.toLowerCase().includes(search)
+        const search = debouncedSearchTerm.toLowerCase().trim()
+        if (!search) return true
+        
+        const matchesName = batch.name?.toLowerCase().includes(search) || false
         const matchesLocation = batch.location?.toLowerCase().includes(search) || false
-        if (!matchesName && !matchesLocation) {
+        
+        // Also check if any piece number matches
+        const matchesPiece = batch.land_pieces?.some((piece: LandPiece) => 
+          piece.piece_number?.toLowerCase().includes(search)
+        ) || false
+        
+        if (!matchesName && !matchesLocation && !matchesPiece) {
           return false // Hide batch if it doesn't match search
         }
       }
@@ -1467,14 +1817,46 @@ export function LandManagement() {
     })
     .map((batch) => ({
     ...batch,
-      land_pieces: (Array.isArray(batch.land_pieces) ? batch.land_pieces : []).filter((piece) => {
-        const matchesStatus = filterStatus === 'all' || filterStatus === '' || piece.status === filterStatus
-      const matchesSearch =
-        debouncedSearchTerm === '' ||
-        piece.piece_number.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
-      return matchesStatus && matchesSearch
-    }),
-  }))
+      land_pieces: (Array.isArray(batch.land_pieces) ? batch.land_pieces : [])
+        .filter((piece) => {
+          const matchesStatus = filterStatus === 'all' || filterStatus === '' || piece.status === filterStatus
+          const matchesSearch =
+            !debouncedSearchTerm || debouncedSearchTerm.trim() === '' ||
+            piece.piece_number?.toLowerCase().includes(debouncedSearchTerm.toLowerCase().trim())
+          return matchesStatus && matchesSearch
+        })
+        .sort((a, b) => {
+          // Natural sort for alphanumeric piece numbers
+          const aNum = a.piece_number || ''
+          const bNum = b.piece_number || ''
+          
+          // Extract prefix and number for comparison
+          const matchA = aNum.match(/^([A-Za-z\u0600-\u06FF]*)(\d*)$/i)
+          const matchB = bNum.match(/^([A-Za-z\u0600-\u06FF]*)(\d*)$/i)
+          
+          if (matchA && matchB) {
+            const prefixA = matchA[1] || ''
+            const prefixB = matchB[1] || ''
+            const numA = parseInt(matchA[2] || '0', 10)
+            const numB = parseInt(matchB[2] || '0', 10)
+            
+            // Compare prefixes first
+            if (prefixA !== prefixB) {
+              return prefixA.localeCompare(prefixB, 'ar')
+            }
+            // Then compare numbers
+            return numA - numB
+          }
+          // Fallback to string comparison
+          return aNum.localeCompare(bNum, 'ar')
+        }),
+    }))
+    .sort((a, b) => {
+      // Sort batches by name (alphabetically)
+      const nameA = a.name?.toLowerCase() || ''
+      const nameB = b.name?.toLowerCase() || ''
+      return nameA.localeCompare(nameB, 'ar')
+    })
 
   if (loading) {
     return (
@@ -1603,14 +1985,54 @@ export function LandManagement() {
             {/* Expanded Content */}
           {expandedBatches.has(batch.id) && (
               <div className="border-t">
-                {/* Add Piece Button */}
+                {/* Add Piece Buttons */}
                 {hasPermission('edit_land') && (
-                  <div className="p-2 bg-gray-50 border-b">
-                    <Button variant="outline" size="sm" onClick={() => openPieceDialog(batch.id)} className="w-full h-8 text-xs">
+                  <div className="p-2 bg-gray-50 border-b flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => openPieceDialog(batch.id)} className="flex-1 h-8 text-xs">
                       <Plus className="ml-1 h-3.5 w-3.5" />
-                    إضافة قطعة
-                  </Button>
+                      إضافة قطعة
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => openBulkAddDialog(batch.id)} className="flex-1 h-8 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200">
+                      <Plus className="ml-1 h-3.5 w-3.5" />
+                      إضافة متعددة
+                    </Button>
               </div>
+                )}
+
+                {/* Land Batch Image */}
+                {(batch as any).image_url && (
+                  <div className="p-2 border-b bg-gray-50">
+                    <div className="relative group">
+                      <img 
+                        src={(batch as any).image_url} 
+                        alt={batch.name}
+                        className="w-full h-auto max-h-48 sm:max-h-64 object-cover rounded-lg border shadow-sm cursor-pointer transition-transform hover:scale-[1.02]"
+                        onClick={() => {
+                          setViewingImageUrl((batch as any).image_url)
+                          setViewingImageName(batch.name)
+                          setImageViewDialogOpen(true)
+                        }}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none'
+                        }}
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-colors rounded-lg">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setViewingImageUrl((batch as any).image_url)
+                            setViewingImageName(batch.name)
+                            setImageViewDialogOpen(true)
+                          }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 hover:bg-white"
+                        >
+                          <ImageIcon className="h-4 w-4 ml-1" />
+                          عرض الصورة
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
               {(!batch.land_pieces || batch.land_pieces.length === 0) ? (
@@ -1672,6 +2094,14 @@ export function LandManagement() {
                                   <DollarSign className="h-3 w-3" />
                                 </Button>
                               )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => deletePiece(piece, batch.id)}
+                                className="h-6 text-xs text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
                             </div>
                           )}
                         </div>
@@ -1718,14 +2148,24 @@ export function LandManagement() {
                                     </Button>
                                   )}
                           {hasPermission('edit_land') && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => openPieceDialog(batch.id, piece)}
-                                      className="h-7 w-7"
-                              >
-                                      <Edit className="h-3.5 w-3.5" />
-                              </Button>
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => openPieceDialog(batch.id, piece)}
+                                  className="h-7 w-7"
+                                >
+                                  <Edit className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deletePiece(piece, batch.id)}
+                                  className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </>
                                   )}
                                 {user?.role === 'Owner' && (
                                   <Button
@@ -1856,6 +2296,58 @@ export function LandManagement() {
                 rows={3}
               />
             </div>
+
+            {/* Image Upload */}
+            <div className="space-y-2">
+              <Label htmlFor="image">صورة الأرض (اختياري)</Label>
+              <div className="space-y-3">
+                {imagePreview && (
+                  <div className="relative">
+                    <img 
+                      src={imagePreview} 
+                      alt="Preview" 
+                      className="w-full h-auto max-h-64 object-cover rounded-lg border"
+                    />
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      className="absolute top-2 right-2 h-8 w-8"
+                      onClick={() => {
+                        setImagePreview(null)
+                        setImageFile(null)
+                        setBatchForm({ ...batchForm, image_url: '' })
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="image"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="hidden"
+                    disabled={uploadingImage}
+                  />
+                  <Label 
+                    htmlFor="image" 
+                    className="flex items-center gap-2 px-4 py-2 border rounded-lg cursor-pointer hover:bg-accent transition-colors"
+                  >
+                    <Upload className="h-4 w-4" />
+                    {imageFile ? 'تغيير الصورة' : 'اختر صورة'}
+                  </Label>
+                  {uploadingImage && (
+                    <span className="text-sm text-muted-foreground">جاري الرفع...</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  الحد الأقصى لحجم الصورة: 5 ميجابايت. الصيغ المدعومة: JPG, PNG, GIF, WebP
+                </p>
+              </div>
+            </div>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setBatchDialogOpen(false)} className="w-full sm:w-auto">
@@ -1887,7 +2379,7 @@ export function LandManagement() {
                 maxLength={20}
               />
               <p className="text-xs text-muted-foreground">
-                أدخل رقم القطعة (يمكن أن يكون رقم فقط مثل 1، أو حروف وأرقام مثل B1، R1، P001). يمكنك تغيير التنسيق في أي وقت - النظام مرن ويدعم أي تنسيق.
+                أدخل رقم القطعة (يمكن أن يكون رقم فقط مثل 1، أو حروف وأرقام مثل B1، R1، P001). سيتم حساب باقي القيم تلقائياً.
               </p>
             </div>
             
@@ -1978,6 +2470,143 @@ export function LandManagement() {
             </Button>
             <Button onClick={savePiece} className="w-full sm:w-auto">
               {editingPiece ? 'حفظ' : 'إضافة'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Add Pieces Dialog */}
+      <Dialog open={bulkAddDialogOpen} onOpenChange={setBulkAddDialogOpen}>
+        <DialogContent className="w-[95vw] sm:w-full max-w-lg max-h-[95vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>إضافة قطع متعددة</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 text-blue-600 mt-0.5" />
+                <div className="text-sm text-blue-800">
+                  <p className="font-medium mb-1">إضافة سريعة:</p>
+                  <p>أدخل رقم البداية والنهاية لإنشاء عدة قطع بنفس المساحة. مثال: من 1 إلى 10، أو من B1 إلى B10</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="bulk_from">من *</Label>
+                <Input
+                  id="bulk_from"
+                  type="text"
+                  value={bulkAddForm.from}
+                  onChange={(e) => setBulkAddForm({ ...bulkAddForm, from: e.target.value })}
+                  placeholder="مثال: 1، B1، R1"
+                  autoFocus
+                  maxLength={20}
+                />
+                <p className="text-xs text-muted-foreground">
+                  رقم القطعة الأولى (رقم فقط أو حروف وأرقام)
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="bulk_to">إلى *</Label>
+                <Input
+                  id="bulk_to"
+                  type="text"
+                  value={bulkAddForm.to}
+                  onChange={(e) => setBulkAddForm({ ...bulkAddForm, to: e.target.value })}
+                  placeholder="مثال: 10، B10، R10"
+                  maxLength={20}
+                />
+                <p className="text-xs text-muted-foreground">
+                  رقم القطعة الأخيرة (يجب أن يكون نفس البادئة)
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bulk_surface_area">المساحة (م²) *</Label>
+              <Input
+                id="bulk_surface_area"
+                type="number"
+                value={bulkAddForm.surface_area}
+                onChange={(e) => setBulkAddForm({ ...bulkAddForm, surface_area: e.target.value })}
+                placeholder={defaultSurfaceArea}
+                min="1"
+              />
+              <p className="text-xs text-muted-foreground">
+                المساحة المشتركة لجميع القطع
+              </p>
+            </div>
+
+            {bulkAddForm.from && bulkAddForm.to && bulkAddForm.surface_area && (() => {
+              try {
+                const fromMatch = bulkAddForm.from.match(/^([A-Za-z\u0600-\u06FF]*)(\d+)$/i)
+                const toMatch = bulkAddForm.to.match(/^([A-Za-z\u0600-\u06FF]*)(\d+)$/i)
+                
+                if (fromMatch && toMatch && fromMatch[1] === toMatch[1]) {
+                  const fromNumber = parseInt(fromMatch[2], 10)
+                  const toNumber = parseInt(toMatch[2], 10)
+                  const numDigits = Math.max(fromMatch[2].length, toMatch[2].length)
+                  const prefix = fromMatch[1] || ''
+                  const count = toNumber >= fromNumber ? toNumber - fromNumber + 1 : 0
+                  
+                  if (count > 0 && count <= 100) {
+                    const calculated = calculatePieceValues(
+                      prefix ? `${prefix}${String(fromNumber).padStart(numDigits, '0')}` : String(fromNumber),
+                      bulkAddForm.surface_area
+                    )
+                    
+                    if (calculated) {
+                      return (
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                          <p className="text-sm font-medium mb-2">معاينة:</p>
+                          <div className="space-y-1 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">عدد القطع:</span>
+                              <span className="mr-2 font-medium">{count}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">المساحة لكل قطعة:</span>
+                              <span className="mr-2 font-medium">{bulkAddForm.surface_area} م²</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">السعر (بالحاضر):</span>
+                              <span className="mr-2 font-medium text-green-600">{formatCurrency(calculated.selling_price_full)}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">السعر (بالتقسيط):</span>
+                              <span className="mr-2 font-medium text-blue-600">{formatCurrency(calculated.selling_price_installment)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+                  } else if (count > 100) {
+                    return (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                        <p className="text-sm text-red-800">لا يمكن إضافة أكثر من 100 قطعة في المرة الواحدة</p>
+                      </div>
+                    )
+                  }
+                }
+              } catch (e) {
+                // Ignore errors in preview
+              }
+              return null
+            })()}
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setBulkAddDialogOpen(false)} className="w-full sm:w-auto">
+              إلغاء
+            </Button>
+            <Button 
+              onClick={saveBulkPieces} 
+              disabled={!bulkAddForm.from || !bulkAddForm.to || !bulkAddForm.surface_area}
+              className="w-full sm:w-auto"
+            >
+              إضافة القطع
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2121,6 +2750,33 @@ export function LandManagement() {
         </DialogContent>
       </Dialog>
 
+      {/* Image View Dialog */}
+      <Dialog open={imageViewDialogOpen} onOpenChange={setImageViewDialogOpen}>
+        <DialogContent className="w-[95vw] sm:w-full max-w-4xl max-h-[95vh] p-0">
+          <DialogHeader className="px-6 py-4 border-b">
+            <DialogTitle>{viewingImageName}</DialogTitle>
+          </DialogHeader>
+          <div className="p-6 flex items-center justify-center bg-gray-50 min-h-[400px]">
+            {viewingImageUrl && (
+              <img 
+                src={viewingImageUrl} 
+                alt={viewingImageName}
+                className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = ''
+                  ;(e.target as HTMLImageElement).alt = 'خطأ في تحميل الصورة'
+                }}
+              />
+            )}
+          </div>
+          <DialogFooter className="px-6 py-4 border-t">
+            <Button variant="outline" onClick={() => setImageViewDialogOpen(false)} className="w-full sm:w-auto">
+              إغلاق
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Batch Confirmation Dialog */}
       <ConfirmDialog
         open={deleteConfirmOpen}
@@ -2128,6 +2784,18 @@ export function LandManagement() {
         onConfirm={confirmDeleteBatch}
         title="تأكيد الحذف"
         description="هل أنت متأكد من حذف هذه الدفعة وجميع قطعها؟ لا يمكن التراجع عن هذا الإجراء."
+        variant="destructive"
+        confirmText="نعم، حذف"
+        cancelText="إلغاء"
+      />
+
+      {/* Delete Piece Confirmation Dialog */}
+      <ConfirmDialog
+        open={deletePieceConfirmOpen}
+        onOpenChange={setDeletePieceConfirmOpen}
+        onConfirm={confirmDeletePiece}
+        title="تأكيد حذف القطعة"
+        description={pieceToDelete ? `هل أنت متأكد من حذف القطعة رقم ${pieceToDelete.piece_number}؟ لا يمكن التراجع عن هذا الإجراء.` : 'هل أنت متأكد من حذف هذه القطعة؟'}
         variant="destructive"
         confirmText="نعم، حذف"
         cancelText="إلغاء"

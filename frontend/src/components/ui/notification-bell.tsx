@@ -30,39 +30,10 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [conversationDetails, setConversationDetails] = useState<Map<string, { senderName: string }>>(new Map())
+  const [retryCount, setRetryCount] = useState(0)
+  const maxRetries = 3
 
-  useEffect(() => {
-    if (!user) return
-
-    fetchNotifications()
-    
-    // Set up real-time subscription for notifications
-    const channel = supabase
-      .channel('notifications')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          fetchNotifications()
-        }
-      )
-      .subscribe()
-
-    // Also poll every 30 seconds as backup
-    const interval = setInterval(fetchNotifications, 30000)
-
-    return () => {
-      clearInterval(interval)
-      supabase.removeChannel(channel)
-    }
-  }, [user])
-
-  const fetchNotifications = async () => {
+  const fetchNotifications = async (isRetry = false) => {
     if (!user) return
 
     try {
@@ -73,7 +44,14 @@ export function NotificationBell() {
         .order('created_at', { ascending: false })
         .limit(100)
 
-      if (error) throw error
+      if (error) {
+        // Don't retry for certain error types
+        if (error.code === 'PGRST116' || error.message?.includes('JWT')) {
+          console.warn('Notification fetch failed (auth issue):', error.message)
+          return
+        }
+        throw error
+      }
 
       setNotifications((data as Notification[]) || [])
       
@@ -81,10 +59,80 @@ export function NotificationBell() {
       const unreadNotifications = (data || []).filter(n => !n.is_read && n.type === 'new_message')
       const uniqueConversations = new Set(unreadNotifications.map(n => n.reference_id).filter(Boolean))
       setUnreadCount(uniqueConversations.size)
+      setRetryCount(0) // Reset retry count on success
     } catch (error: any) {
-      console.error('Error fetching notifications:', error)
+      const currentRetry = isRetry ? retryCount + 1 : 0
+      if (currentRetry < maxRetries) {
+        // Exponential backoff: wait 1s, 2s, 4s
+        const delay = Math.pow(2, currentRetry) * 1000
+        console.warn(`Notification fetch failed, retrying in ${delay}ms (attempt ${currentRetry + 1}/${maxRetries}):`, error.message)
+        setRetryCount(currentRetry + 1)
+        setTimeout(() => {
+          fetchNotifications(true)
+        }, delay)
+      } else {
+        console.error('Error fetching notifications (max retries reached):', error)
+        // Set empty state on persistent failure
+        setNotifications([])
+        setUnreadCount(0)
+        setRetryCount(0)
+      }
     }
   }
+
+  useEffect(() => {
+    if (!user) return
+
+    let isMounted = true
+
+    fetchNotifications()
+    
+    // Set up real-time subscription for notifications
+    let channel: any = null
+    try {
+      channel = supabase
+        .channel(`notifications-${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => {
+            // Only fetch if component is still mounted
+            if (isMounted) {
+              fetchNotifications()
+            }
+          }
+        )
+        .subscribe((status: string) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('Notifications subscription active')
+          } else if (status === 'CHANNEL_ERROR') {
+            console.warn('Notifications subscription error, will retry on next fetch')
+          }
+        })
+    } catch (err) {
+      console.warn('Failed to set up notifications subscription:', err)
+    }
+
+    // Poll every 30 seconds as backup (only if subscription might have failed)
+    const interval = setInterval(() => {
+      if (isMounted) {
+        fetchNotifications()
+      }
+    }, 30000)
+
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
+    }
+  }, [user])
 
   // Fetch conversation details for grouped notifications
   useEffect(() => {
