@@ -46,10 +46,8 @@ export function SaleConfirmation() {
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   
-  // Search and filter state
+  // Search state
   const [searchTerm, setSearchTerm] = useState('')
-  const [clientFilter, setClientFilter] = useState('')
-  const [batchFilter, setBatchFilter] = useState('all')
   
   // Confirmation form state
   const [companyFeePercentage, setCompanyFeePercentage] = useState('2')
@@ -110,45 +108,10 @@ export function SaleConfirmation() {
         if (!matchesSearch) return false
       }
       
-      // Client filter
-      if (clientFilter && client?.name?.toLowerCase() !== clientFilter.toLowerCase()) {
-        return false
-      }
-      
-      // Batch filter
-      if (batchFilter !== 'all') {
-        const hasBatch = sale.land_pieces.some((p: any) => 
-          p.land_batch?.name === batchFilter
-        )
-        if (!hasBatch) return false
-      }
-      
       return true
     })
-  }, [sales, searchTerm, clientFilter, batchFilter])
+  }, [sales, searchTerm])
 
-  // Get unique clients and batches for filters - MUST be before any early returns
-  const uniqueClients = useMemo(() => {
-    const clients = new Set<string>()
-    sales.forEach(sale => {
-      if (sale.client?.name) {
-        clients.add(sale.client.name)
-      }
-    })
-    return Array.from(clients).sort()
-  }, [sales])
-
-  const uniqueBatches = useMemo(() => {
-    const batches = new Set<string>()
-    sales.forEach(sale => {
-      sale.land_pieces.forEach((p: any) => {
-        if (p.land_batch?.name) {
-          batches.add(p.land_batch.name)
-        }
-      })
-    })
-    return Array.from(batches).sort()
-  }, [sales])
 
   useEffect(() => {
     if (!canAccess) {
@@ -882,56 +845,32 @@ export function SaleConfirmation() {
         </div>
       </div>
 
-      {/* Search and Filters */}
+      {/* Search */}
       <Card>
         <CardContent className="pt-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <Input
               placeholder="بحث (اسم العميل، رقم الهاتف، رقم البيع، رقم القطعة)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full"
+              className="flex-1"
             />
-            <Select
-              value={clientFilter}
-              onChange={(e) => setClientFilter(e.target.value)}
-              className="w-full"
-            >
-              <option value="">كل العملاء</option>
-              {uniqueClients.map(client => (
-                <option key={client} value={client}>{client}</option>
-              ))}
-            </Select>
-            <Select
-              value={batchFilter}
-              onChange={(e) => setBatchFilter(e.target.value)}
-              className="w-full"
-            >
-              <option value="all">كل الدفعات</option>
-              {uniqueBatches.map(batch => (
-                <option key={batch} value={batch}>{batch}</option>
-              ))}
-            </Select>
+            {searchTerm && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  {filteredSales.length} نتيجة من {sales.length}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSearchTerm('')}
+                  className="text-xs"
+                >
+                  مسح
+                </Button>
+              </div>
+            )}
           </div>
-          {(searchTerm || clientFilter || batchFilter !== 'all') && (
-            <div className="flex items-center gap-2 mt-3">
-              <span className="text-sm text-muted-foreground">
-                {filteredSales.length} نتيجة من {sales.length}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSearchTerm('')
-                  setClientFilter('')
-                  setBatchFilter('all')
-                }}
-                className="text-xs"
-              >
-                مسح الفلاتر
-              </Button>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -1059,7 +998,7 @@ export function SaleConfirmation() {
                                     size="sm"
                                   >
                                     <CheckCircle className="ml-1 h-3 w-3" />
-                                    تأكيد
+                                    اتمام البيع
                                   </Button>
                                 )}
                                 {sale.payment_type === 'Installment' && (
@@ -1127,7 +1066,7 @@ export function SaleConfirmation() {
                                       size="sm"
                                     >
                                       <CheckCircle className="ml-1 h-3 w-3" />
-                                      تأكيد
+                                      اتمام البيع
                                     </Button>
                                   )}
                                   {sale.payment_type === 'Installment' && (
@@ -1291,7 +1230,7 @@ export function SaleConfirmation() {
                   إلغاء
                 </Button>
                 <Button onClick={handleConfirmation} disabled={confirming} className="w-full sm:w-auto">
-                  {confirming ? 'جاري التأكيد...' : 'تأكيد'}
+                  {confirming ? 'جاري التأكيد...' : 'اتمام البيع'}
                 </Button>
               </DialogFooter>
             </div>
