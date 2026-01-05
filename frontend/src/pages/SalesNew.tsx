@@ -1878,35 +1878,41 @@ export function SalesNew() {
                 }}
                       className="w-full text-xs sm:text-sm"
               />
-              <div className="max-h-48 sm:max-h-40 overflow-y-auto border-2 border-gray-200 rounded-lg p-3 sm:p-2 bg-gray-50 space-y-2">
+              <div className="max-h-64 sm:max-h-48 overflow-y-auto border-2 border-gray-200 rounded-lg p-2 sm:p-2 bg-gray-50">
                 {filteredAvailablePieces.length === 0 ? (
                   <p className="text-xs sm:text-sm text-muted-foreground text-center py-4">لا توجد قطع متاحة</p>
                 ) : (
-                  filteredAvailablePieces.map((piece: any) => (
-                    <label key={piece.id} className="flex items-center gap-3 p-3 sm:p-2 bg-white hover:bg-blue-50 rounded-lg border border-gray-200 cursor-pointer transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={selectedPieces.includes(piece.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedPieces([...selectedPieces, piece.id])
-                          } else {
-                            setSelectedPieces(selectedPieces.filter(id => id !== piece.id))
-                          }
-                        }}
-                        className="h-5 w-5 sm:h-4 sm:w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary"
-                      />
-                      <div className="flex-1">
-                        <span className="text-sm sm:text-sm font-semibold block">
-                          #{piece.piece_number}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {piece.surface_area} م²
-                          {piece.land_batch?.name && ` • ${piece.land_batch.name}`}
-                        </span>
-                      </div>
-                    </label>
-                  ))
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {filteredAvailablePieces.map((piece: any) => (
+                      <label key={piece.id} className="flex flex-col items-start gap-1.5 p-2 bg-white hover:bg-blue-50 rounded-lg border border-gray-200 cursor-pointer transition-colors">
+                        <div className="flex items-center gap-2 w-full">
+                          <input
+                            type="checkbox"
+                            checked={selectedPieces.includes(piece.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedPieces([...selectedPieces, piece.id])
+                              } else {
+                                setSelectedPieces(selectedPieces.filter(id => id !== piece.id))
+                              }
+                            }}
+                            className="h-5 w-5 sm:h-4 sm:w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary flex-shrink-0"
+                          />
+                          <span className="text-xs sm:text-sm font-semibold truncate flex-1">
+                            #{piece.piece_number}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground w-full">
+                          <div>{piece.surface_area} م²</div>
+                          {piece.land_batch?.name && (
+                            <div className="truncate" title={piece.land_batch.name}>
+                              {piece.land_batch.name}
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                    ))}
+                  </div>
                 )}
               </div>
               {selectedPieces.length > 0 && (
