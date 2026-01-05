@@ -22,7 +22,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText, CreditCard, Home, Building, Wallet, DollarSign, Lock, Eye, EyeOff } from 'lucide-react'
+import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText, CreditCard, Home, Building, Wallet, DollarSign, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import type { User as UserType, UserRole, UserStatus, Sale } from '@/types/database'
 import { sanitizeText, sanitizeEmail } from '@/lib/sanitize'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -1022,8 +1022,9 @@ export function Users() {
           </DialogHeader>
           <div className="space-y-3 sm:space-y-4">
             {error && (
-              <div className="p-2.5 sm:p-3 bg-red-50 border border-red-200 rounded-md text-red-800 text-xs sm:text-sm">
-                {error}
+              <div className="bg-destructive/10 border-2 border-destructive/30 text-destructive p-3 sm:p-4 rounded-lg text-xs sm:text-sm flex items-start gap-2 shadow-md">
+                <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                <p className="flex-1 font-medium break-words">{error}</p>
               </div>
             )}
             <div className="space-y-1.5 sm:space-y-2">

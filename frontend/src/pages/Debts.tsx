@@ -669,8 +669,9 @@ export function Debts() {
               />
             </div>
             {errorMessage && (
-              <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm">
-                {errorMessage}
+              <div className="bg-destructive/10 border-2 border-destructive/30 text-destructive p-3 sm:p-4 rounded-lg text-sm flex items-start gap-2 shadow-md">
+                <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                <p className="flex-1 font-medium break-words">{errorMessage}</p>
               </div>
             )}
 

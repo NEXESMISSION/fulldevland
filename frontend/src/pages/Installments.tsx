@@ -26,7 +26,7 @@ import {
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { sanitizeNotes } from '@/lib/sanitize'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { User, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
+import { User, ChevronDown, ChevronUp, RefreshCw, AlertTriangle, X } from 'lucide-react'
 import type { Installment, Sale, Client, InstallmentStatus } from '@/types/database'
 
 interface InstallmentWithRelations extends Installment {
@@ -2684,21 +2684,26 @@ export function Installments() {
         cancelText="إلغاء"
       />
 
-      {/* Error Message */}
+      {/* Error Message - Use notification system instead of fixed card */}
       {errorMessage && (
-        <Card className="bg-destructive/10 border-destructive/20 fixed top-4 right-4 z-50 max-w-md">
-          <CardContent className="p-3">
-            <p className="text-destructive text-sm">{errorMessage}</p>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setErrorMessage(null)}
-              className="mt-2"
-            >
-              إغلاق
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="fixed top-16 left-4 right-4 z-[10001] md:top-4 pointer-events-none">
+          <Card className="bg-destructive/10 border-2 border-destructive/30 shadow-2xl max-w-md mx-auto pointer-events-auto">
+            <CardContent className="p-3">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-destructive text-sm font-medium break-words">{errorMessage}</p>
+                </div>
+                <button
+                  onClick={() => setErrorMessage(null)}
+                  className="flex-shrink-0 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors p-1.5 flex items-center justify-center"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Success Message */}

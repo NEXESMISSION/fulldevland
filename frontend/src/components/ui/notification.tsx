@@ -77,20 +77,20 @@ export function NotificationContainer() {
   }
 
   return (
-    <div className="fixed top-4 left-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+    <div className="fixed top-16 left-4 right-4 z-[10000] flex flex-col gap-2 pointer-events-none md:top-4">
       {notifications.map((notification) => {
         const Icon = icons[notification.type]
         return (
           <div
             key={notification.id}
             className={cn(
-              'pointer-events-auto max-w-md mx-auto w-full rounded-lg border shadow-lg p-4 flex items-start gap-3 animate-in slide-in-from-top-5',
+              'pointer-events-auto max-w-md mx-auto w-full rounded-lg border-2 shadow-2xl p-3 sm:p-4 flex items-start gap-3 animate-in slide-in-from-top-5',
               colors[notification.type]
             )}
           >
             <Icon className="h-5 w-5 mt-0.5 flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">{notification.message}</p>
+              <p className="text-sm font-medium break-words">{notification.message}</p>
             </div>
             <button
               onClick={() => removeNotification(notification.id)}

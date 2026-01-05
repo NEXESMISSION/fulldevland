@@ -28,7 +28,7 @@ import { sanitizeText, sanitizePhone, sanitizeCIN, sanitizeEmail, sanitizeNotes,
 import { debounce } from '@/lib/throttle'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { retryWithBackoff, isRetryableError } from '@/lib/retry'
-import { Plus, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X } from 'lucide-react'
+import { Plus, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, AlertCircle } from 'lucide-react'
 import type { Sale, Client, LandPiece, Installment } from '@/types/database'
 
 // Types for per-piece tracking
@@ -2326,8 +2326,9 @@ export function SalesNew() {
               />
             </div>
             {errorMessage && (
-              <div className="bg-destructive/10 text-destructive p-2.5 sm:p-3 rounded-md text-xs sm:text-sm">
-                {errorMessage}
+              <div className="bg-destructive/10 border-2 border-destructive/30 text-destructive p-3 sm:p-4 rounded-lg text-xs sm:text-sm flex items-start gap-2 shadow-md">
+                <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                <p className="flex-1 font-medium break-words">{errorMessage}</p>
               </div>
             )}
           </div>
