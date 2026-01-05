@@ -157,6 +157,7 @@ export function NotificationBell() {
           count: 1,
           latestNotification: notif,
           isRead: notif.is_read,
+          senderName: undefined,
         })
       }
     }
@@ -181,6 +182,7 @@ export function NotificationBell() {
       count: 1,
       latestNotification: n,
       isRead: n.is_read,
+      senderName: undefined,
     }))
     
     return [...groupedArray, ...otherArray]
