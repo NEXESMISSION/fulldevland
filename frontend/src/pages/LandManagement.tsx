@@ -883,28 +883,36 @@ export function LandManagement() {
                   status: 'Available',
                 })
               } else if ((pieceConfig as any).startNumber !== undefined) {
-                // Auto range
-                const startNumber = (pieceConfig as any).startNumber || 1
+                // Auto range - support alphanumeric patterns (B1, R1, P001, etc.)
+                const startNumber = (pieceConfig as any).startNumber
+                const startNumberStr = String(startNumber)
+                
                 for (let i = 0; i < pieceConfig.count; i++) {
-                  const currentNumber = startNumber + i
                   const purchaseCost = effectiveTotalSurface > 0 
                     ? (pieceConfig.surface / effectiveTotalSurface) * totalCost 
                     : 0
                   
                   // Format number - support alphanumeric patterns (B1, R1, P001, etc.)
-                  let formattedNumber = String(currentNumber)
+                  let formattedNumber = ''
                   
-                  // Check if startNumber is alphanumeric (e.g., B1, R1, P001)
-                  const alphanumericMatch = startNumber.toString().match(/^([A-Za-z\u0600-\u06FF]+)(\d+)$/i)
+                  // Check if startNumber is alphanumeric (e.g., B1, R1, P001, B0)
+                  const alphanumericMatch = startNumberStr.match(/^([A-Za-z\u0600-\u06FF]+)(\d+)$/i)
                   if (alphanumericMatch) {
                     const prefix = alphanumericMatch[1]
                     const startNum = parseInt(alphanumericMatch[2], 10)
                     const numDigits = alphanumericMatch[2].length
                     const newNumber = startNum + i
                     formattedNumber = `${prefix}${String(newNumber).padStart(numDigits, '0')}`
-                  } else if (startNumber.toString().includes('P') || startNumber.toString().startsWith('0')) {
-                    // Legacy P001 format
-                    formattedNumber = `P${String(currentNumber).padStart(3, '0')}`
+                  } else {
+                    // Pure number - check if it's a number
+                    const numberMatch = startNumberStr.match(/^(\d+)$/)
+                    if (numberMatch) {
+                      const startNum = parseInt(numberMatch[1], 10)
+                      formattedNumber = String(startNum + i)
+                    } else {
+                      // Fallback: use as-is and append counter
+                      formattedNumber = `${startNumberStr}${i > 0 ? i : ''}`
+                    }
                   }
                   
                   const pricePerM2Full = parseFloat(batchForm.price_per_m2_full) || 0
@@ -1216,19 +1224,49 @@ export function LandManagement() {
         const pieceNumbers = batch.land_pieces
           .map(p => p.piece_number)
           .filter(Boolean)
-          .sort()
         
-        if (pieceNumbers.length > 0) {
-          const lastPiece = pieceNumbers[pieceNumbers.length - 1]
+        // Natural sort for alphanumeric (B0, B1, B2, B10, not B1, B10, B2)
+        const sortedPieces = [...pieceNumbers].sort((a, b) => {
+          // Extract prefix and number for comparison
+          const matchA = a.match(/^([A-Za-z\u0600-\u06FF]*)(\d*)$/i)
+          const matchB = b.match(/^([A-Za-z\u0600-\u06FF]*)(\d*)$/i)
           
-          // Check if last piece uses alphanumeric pattern (e.g., B1, R1, P001)
+          if (matchA && matchB) {
+            const prefixA = matchA[1] || ''
+            const prefixB = matchB[1] || ''
+            const numA = parseInt(matchA[2] || '0', 10)
+            const numB = parseInt(matchB[2] || '0', 10)
+            
+            // Compare prefixes first
+            if (prefixA !== prefixB) {
+              return prefixA.localeCompare(prefixB)
+            }
+            // Then compare numbers
+            return numA - numB
+          }
+          // Fallback to string comparison
+          return a.localeCompare(b)
+        })
+        
+        if (sortedPieces.length > 0) {
+          const lastPiece = sortedPieces[sortedPieces.length - 1]
+          
+          // Check if last piece uses alphanumeric pattern (e.g., B0, B1, R1, P001)
           const alphanumericMatch = lastPiece.match(/^([A-Za-z\u0600-\u06FF]+)(\d+)$/i)
           
           if (alphanumericMatch) {
             // Extract prefix and number
             const prefix = alphanumericMatch[1]
             const lastNumber = parseInt(alphanumericMatch[2], 10)
-            nextPieceNumber = `${prefix}${lastNumber + 1}`
+            const numDigits = alphanumericMatch[2].length
+            // Increment and preserve padding if original had padding
+            const nextNumber = lastNumber + 1
+            if (numDigits > 1 && lastNumber.toString().length < numDigits) {
+              // Preserve zero padding
+              nextPieceNumber = `${prefix}${String(nextNumber).padStart(numDigits, '0')}`
+            } else {
+              nextPieceNumber = `${prefix}${nextNumber}`
+            }
           } else {
             // Check if it's just a number
             const numberMatch = lastPiece.match(/^(\d+)$/)
@@ -1237,7 +1275,7 @@ export function LandManagement() {
               nextPieceNumber = (lastNumber + 1).toString()
             } else {
               // Default: use count + 1
-              nextPieceNumber = (pieceNumbers.length + 1).toString()
+              nextPieceNumber = (sortedPieces.length + 1).toString()
             }
           }
         }
