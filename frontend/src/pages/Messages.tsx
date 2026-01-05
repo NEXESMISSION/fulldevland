@@ -966,40 +966,40 @@ export function Messages() {
         ${showConversations ? 'fixed inset-0 z-50 md:relative md:z-auto' : ''}
       `}>
         {/* Header */}
-        <div className="p-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="p-3 md:p-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xl font-bold">المحادثات</h2>
-            <div className="flex items-center gap-2">
+            <h2 className="text-lg md:text-xl font-semibold">المحادثات</h2>
+            <div className="flex items-center gap-1.5">
               {profile?.role === 'Owner' && (
                 <Button 
                   size="icon" 
                   variant="ghost"
                   onClick={() => setNewConversationOpen(true)}
-                  className="h-9 w-9"
+                  className="h-8 w-8 md:h-9 md:w-9"
                 >
-                  <Plus className="h-5 w-5" />
+                  <Plus className="h-4 w-4 md:h-5 md:w-5" />
                 </Button>
               )}
               <Button 
                 size="icon" 
                 variant="ghost"
                 onClick={() => navigate('/')}
-                className="h-9 w-9 md:hidden"
+                className="h-8 w-8 md:hidden"
                 title="العودة للرئيسية"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </Button>
             </div>
           </div>
           {/* Search */}
           <div className="relative">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
             <Input
               type="text"
               placeholder="بحث في المحادثات..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pr-9 bg-muted/50"
+              className="pr-8 md:pr-9 h-9 md:h-10 text-sm bg-muted/50 border-border/50"
             />
           </div>
         </div>
@@ -1007,15 +1007,39 @@ export function Messages() {
         {/* Conversations List */}
         <div className="flex-1 overflow-y-auto">
           {filteredConversations.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">
-              <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-30" />
-              <p className="font-medium mb-1">{searchQuery ? 'لا توجد نتائج' : 'لا توجد محادثات'}</p>
-              {!searchQuery && profile?.role !== 'Owner' && (
-                <p className="text-sm opacity-70">سيتم عرض المحادثات هنا عند وصولها</p>
+            <div className="flex flex-col items-center justify-center h-full p-6 md:p-8 text-center text-muted-foreground">
+              {!searchQuery && profile?.role === 'Owner' ? (
+                <>
+                  <div className="mb-4 md:mb-6 flex justify-center">
+                    <div className="h-14 w-14 md:h-16 md:w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                      <MessageSquare className="h-7 w-7 md:h-8 md:w-8 text-primary" />
+                    </div>
+                  </div>
+                  <h3 className="text-base md:text-lg font-semibold mb-2 text-foreground">ابدأ محادثة جديدة</h3>
+                  <p className="text-xs md:text-sm text-muted-foreground mb-4 md:mb-5 px-4">
+                    لا توجد محادثات بعد. أنشئ محادثة جديدة للتواصل مع العمال
+                  </p>
+                  <Button 
+                    onClick={() => setNewConversationOpen(true)}
+                    className="w-full max-w-xs md:w-auto px-5 py-2.5 text-sm"
+                    size="default"
+                  >
+                    <Plus className="h-4 w-4 ml-2" />
+                    محادثة جديدة
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="h-10 w-10 md:h-12 md:w-12 mx-auto mb-3 md:mb-4 opacity-30" />
+                  <p className="font-medium text-sm md:text-base mb-1">{searchQuery ? 'لا توجد نتائج' : 'لا توجد محادثات'}</p>
+                  {!searchQuery && (
+                    <p className="text-xs md:text-sm opacity-70">سيتم عرض المحادثات هنا عند وصولها</p>
+                  )}
+                </>
               )}
             </div>
           ) : (
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-border/50">
               {filteredConversations.map((conv) => {
                 const otherUser = conv.created_by === user?.id
                   ? conv.worker
@@ -1027,10 +1051,10 @@ export function Messages() {
                   <div
                     key={conv.id}
                     className={`
-                      p-4 cursor-pointer transition-colors
+                      p-3 md:p-4 cursor-pointer transition-all active:bg-muted/70
                       ${isSelected 
-                        ? 'bg-primary/10 border-r-2 border-r-primary' 
-                        : 'hover:bg-muted/50'
+                        ? 'bg-primary/5 md:bg-primary/10 border-r-2 border-r-primary' 
+                        : 'hover:bg-muted/30 active:bg-muted/50'
                       }
                     `}
                     onClick={() => {
@@ -1038,32 +1062,32 @@ export function Messages() {
                       setShowConversations(false) // Close on mobile after selection
                     }}
                   >
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-center gap-2.5 md:gap-3">
                       {/* Avatar */}
-                      <div className="flex-shrink-0 h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
+                      <div className="flex-shrink-0 h-10 w-10 md:h-12 md:w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm md:text-base">
                         {displayName.charAt(0).toUpperCase()}
                       </div>
                       
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="font-semibold text-sm truncate">
+                        <div className="flex items-center justify-between gap-2 mb-0.5 md:mb-1">
+                          <p className="font-semibold text-sm md:text-base truncate">
                             {displayName}
                           </p>
                           {conv.last_message && (
-                            <span className="text-xs text-muted-foreground whitespace-nowrap mr-2">
+                            <span className="text-[10px] md:text-xs text-muted-foreground whitespace-nowrap shrink-0">
                               {formatMessageTime(conv.last_message.created_at)}
                             </span>
                           )}
                         </div>
                         
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm text-muted-foreground truncate flex-1">
+                          <p className="text-xs md:text-sm text-muted-foreground truncate flex-1">
                             {conv.last_message?.body || conv.subject}
                           </p>
                           {conv.unread_count && conv.unread_count > 0 && (
                             <Badge 
                               variant="destructive" 
-                              className="h-5 min-w-[20px] flex items-center justify-center text-xs px-1.5 rounded-full shrink-0"
+                              className="h-4 min-w-[18px] md:h-5 md:min-w-[20px] flex items-center justify-center text-[10px] md:text-xs px-1 md:px-1.5 rounded-full shrink-0 font-medium"
                             >
                               {conv.unread_count > 9 ? '9+' : conv.unread_count}
                             </Badge>
@@ -1291,23 +1315,23 @@ export function Messages() {
       ) : (
         // Only show empty state for owners, non-owners just see conversation list
         profile?.role === 'Owner' ? (
-          <div className="flex-1 flex items-center justify-center bg-background md:bg-muted/30 p-6 md:p-8">
+          <div className="hidden md:flex flex-1 items-center justify-center bg-muted/30 p-8">
             <div className="text-center w-full max-w-sm">
-              <div className="mb-4 md:mb-6 flex justify-center">
-                <div className="h-16 w-16 md:h-20 md:w-20 rounded-full bg-primary/10 flex items-center justify-center">
-                  <MessageSquare className="h-8 w-8 md:h-10 md:w-10 text-primary" />
+              <div className="mb-6 flex justify-center">
+                <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center">
+                  <MessageSquare className="h-10 w-10 text-primary" />
                 </div>
               </div>
-              <h3 className="text-lg md:text-xl font-semibold mb-2 md:mb-3 text-foreground">ابدأ محادثة جديدة</h3>
-              <p className="text-xs md:text-sm text-muted-foreground mb-5 md:mb-6 px-2">
+              <h3 className="text-xl font-semibold mb-3 text-foreground">ابدأ محادثة جديدة</h3>
+              <p className="text-sm text-muted-foreground mb-6">
                 اختر محادثة من القائمة أو أنشئ محادثة جديدة
               </p>
               <Button 
                 onClick={() => setNewConversationOpen(true)}
-                className="w-full md:w-auto px-5 md:px-6 py-2.5 md:py-2 text-sm md:text-sm"
+                className="w-auto px-6 py-2 text-sm"
                 size="default"
               >
-                <Plus className="h-4 w-4 md:h-5 md:w-5 ml-2" />
+                <Plus className="h-5 w-5 ml-2" />
                 محادثة جديدة
               </Button>
             </div>
