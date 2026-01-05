@@ -1687,7 +1687,7 @@ export function LandManagement() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="name">اسم الدفعة *</Label>
+                <Label htmlFor="name">اسم الأرض *</Label>
                 <Input
                   id="name"
                   value={batchForm.name}
@@ -1725,7 +1725,7 @@ export function LandManagement() {
               <p className="text-sm font-medium text-blue-800">أسعار البيع لكل متر مربع</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="price_per_m2_full">سعر المتر المربع (دفع كامل) *</Label>
+                  <Label htmlFor="price_per_m2_full">سعر المتر المربع (بالحاضر) *</Label>
                   <Input
                     id="price_per_m2_full"
                     type="number"
@@ -1737,7 +1737,7 @@ export function LandManagement() {
                   <p className="text-xs text-muted-foreground">سيتم تطبيق هذا السعر على القطع الجديدة فقط. القطع الموجودة والمبيعات السابقة لن تتأثر.</p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="price_per_m2_installment">سعر المتر المربع (أقساط) *</Label>
+                  <Label htmlFor="price_per_m2_installment">سعر المتر المربع (بالتقسيط) *</Label>
                   <Input
                     id="price_per_m2_installment"
                     type="number"
@@ -1844,7 +1844,7 @@ export function LandManagement() {
                 />
               </div>
               <div className="space-y-2">
-                  <Label htmlFor="selling_price_installment">السعر (أقساط) *</Label>
+                  <Label htmlFor="selling_price_installment">السعر (بالتقسيط) *</Label>
                 <Input
                   id="selling_price_installment"
                   type="number"
@@ -1869,7 +1869,7 @@ export function LandManagement() {
                           <span className="mr-2 font-medium text-green-600">{formatCurrency(calculated.selling_price_full)}</span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">السعر (أقساط):</span>
+                          <span className="text-muted-foreground">السعر (بالتقسيط):</span>
                           <span className="mr-2 font-medium text-blue-600">{formatCurrency(calculated.selling_price_installment)}</span>
                         </div>
                       </div>
@@ -1921,7 +1921,7 @@ export function LandManagement() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="selling_price_full">السعر (دفع كامل) *</Label>
+                <Label htmlFor="selling_price_full">السعر (بالحاضر) *</Label>
                 <Input
                   id="selling_price_full"
                   type="number"
@@ -1932,7 +1932,7 @@ export function LandManagement() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="selling_price_installment">السعر (أقساط) *</Label>
+                <Label htmlFor="selling_price_installment">السعر (بالتقسيط) *</Label>
                 <Input
                   id="selling_price_installment"
                   type="number"
@@ -1947,7 +1947,7 @@ export function LandManagement() {
               <div className="text-sm text-muted-foreground">
                 <p>المساحة: {editingPricePiece.surface_area} م²</p>
                 <p>السعر الحالي للكامل: {formatCurrency(editingPricePiece.selling_price_full)}</p>
-                <p>السعر الحالي للأقساط: {formatCurrency(editingPricePiece.selling_price_installment)}</p>
+                <p>السعر الحالي للتقسيط: {formatCurrency(editingPricePiece.selling_price_installment)}</p>
               </div>
             )}
           </div>
@@ -1985,7 +1985,7 @@ export function LandManagement() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-                <Label htmlFor="bulk_price_per_m2_full">السعر لكل م² (دفع كامل) *</Label>
+                <Label htmlFor="bulk_price_per_m2_full">السعر لكل م² (بالحاضر) *</Label>
                 <Input
                   id="bulk_price_per_m2_full"
                   type="number"
@@ -1996,7 +1996,7 @@ export function LandManagement() {
               />
             </div>
               <div className="space-y-2">
-                <Label htmlFor="bulk_price_per_m2_installment">السعر لكل م² (أقساط) *</Label>
+                <Label htmlFor="bulk_price_per_m2_installment">السعر لكل م² (بالتقسيط) *</Label>
                 <Input
                   id="bulk_price_per_m2_installment"
                   type="number"
