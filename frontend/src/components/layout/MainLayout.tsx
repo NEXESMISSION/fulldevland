@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
-import { Menu, X } from 'lucide-react'
+import { Menu, X, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PullToRefresh } from './PullToRefresh'
 import { useSwipeGesture } from '@/hooks/useSwipeGesture'
@@ -9,6 +9,10 @@ import { useSwipeGesture } from '@/hooks/useSwipeGesture'
 export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
+  const navigate = useNavigate()
+  
+  // Check if we can go back (not on home page)
+  const canGoBack = location.pathname !== '/'
 
   // Pull to refresh handler - reload the page
   const handleRefresh = useCallback(async () => {
@@ -58,8 +62,9 @@ export function MainLayout() {
 
   return (
     <div className="flex min-h-screen bg-background" style={{ overscrollBehaviorX: 'none', touchAction: 'pan-y' }}>
-      {/* Mobile burger menu button */}
-      <div className="fixed top-4 left-4 z-50 md:hidden">
+      {/* Mobile header buttons */}
+      <div className="fixed top-2 left-2 right-2 z-50 md:hidden flex items-center justify-between">
+        {/* Burger menu button */}
         <Button
           variant="outline"
           size="icon"
@@ -68,6 +73,18 @@ export function MainLayout() {
         >
           {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
+        
+        {/* Go back button */}
+        {canGoBack && (
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => navigate(-1)}
+            className="bg-background"
+          >
+            <ArrowRight className="h-5 w-5" />
+          </Button>
+        )}
       </div>
 
       {/* Sidebar - hidden on mobile, shown when sidebarOpen is true */}
@@ -89,7 +106,7 @@ export function MainLayout() {
 
       <main className="flex-1 w-full md:ml-0 min-h-screen" style={{ overscrollBehaviorX: 'none', touchAction: 'pan-y' }}>
         <PullToRefresh onRefresh={handleRefresh} />
-        <div className="container mx-auto p-3 sm:p-4 md:p-6 pb-6 sm:pb-8">
+        <div className="container mx-auto p-3 sm:p-4 md:p-6 pb-6 sm:pb-8 pt-20 md:pt-6">
           <Outlet />
         </div>
       </main>

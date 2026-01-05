@@ -23,7 +23,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { sanitizeText, sanitizePhone, sanitizeCIN, validateLebanesePhone } from '@/lib/sanitize'
+import { sanitizeText, sanitizePhone, sanitizeCIN, sanitizeEmail, sanitizeNotes, validateLebanesePhone } from '@/lib/sanitize'
 import { debounce } from '@/lib/throttle'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { retryWithBackoff, isRetryableError } from '@/lib/retry'
@@ -104,10 +104,15 @@ export function SalesNew() {
   
   // New Client Dialog (from sale popup)
   const [newClientOpen, setNewClientOpen] = useState(false)
-  const [newClientName, setNewClientName] = useState('')
-  const [newClientPhone, setNewClientPhone] = useState('')
-  const [newClientAddress, setNewClientAddress] = useState('')
-  const [newClientCin, setNewClientCin] = useState('')
+  const [newClientForm, setNewClientForm] = useState({
+    name: '',
+    cin: '',
+    phone: '',
+    email: '',
+    address: '',
+    client_type: 'Individual',
+    notes: '',
+  })
   
   // Confirm dialogs
   const [confirmFullOpen, setConfirmFullOpen] = useState(false)
@@ -684,10 +689,12 @@ export function SalesNew() {
     setErrorMessage(null)
     
     // Sanitize inputs
-    const sanitizedName = sanitizeText(newClientName)
-    const sanitizedCIN = sanitizeCIN(newClientCin)
-    const sanitizedPhone = newClientPhone ? sanitizePhone(newClientPhone) : null
-    const sanitizedAddress = newClientAddress ? sanitizeText(newClientAddress) : null
+    const sanitizedName = sanitizeText(newClientForm.name)
+    const sanitizedCIN = sanitizeCIN(newClientForm.cin)
+    const sanitizedPhone = newClientForm.phone ? sanitizePhone(newClientForm.phone) : null
+    const sanitizedEmail = newClientForm.email ? sanitizeEmail(newClientForm.email) : null
+    const sanitizedAddress = newClientForm.address ? sanitizeText(newClientForm.address) : null
+    const sanitizedNotes = newClientForm.notes ? sanitizeNotes(newClientForm.notes) : null
     
     if (!sanitizedName || !sanitizedCIN) {
       setErrorMessage('يرجى إدخال اسم العميل ورقم CIN')
@@ -696,7 +703,7 @@ export function SalesNew() {
     }
     
     // Validate phone is required (no format check, just required)
-    if (!newClientPhone || !newClientPhone.trim()) {
+    if (!newClientForm.phone || !newClientForm.phone.trim()) {
       setErrorMessage('رقم الهاتف مطلوب')
       setCreatingClient(false)
       return
@@ -723,15 +730,20 @@ export function SalesNew() {
         return
       }
 
+      const clientData: any = {
+        name: sanitizedName,
+        cin: sanitizedCIN,
+        phone: sanitizedPhone, // Now required
+        email: sanitizedEmail,
+        address: sanitizedAddress,
+        client_type: newClientForm.client_type,
+        notes: sanitizedNotes,
+        created_by: user?.id || null,
+      }
+
       const { data, error } = await supabase
         .from('clients')
-        .insert([{
-          name: sanitizedName,
-          cin: sanitizedCIN,
-          phone: sanitizedPhone, // Now required
-          address: sanitizedAddress,
-          client_type: 'Individual',
-        }])
+        .insert([clientData])
         .select()
         .single()
       
@@ -743,10 +755,15 @@ export function SalesNew() {
       setClientSearch(data.name)
       
       // Reset and close new client dialog
-      setNewClientName('')
-      setNewClientPhone('')
-      setNewClientAddress('')
-      setNewClientCin('')
+      setNewClientForm({
+        name: '',
+        cin: '',
+        phone: '',
+        email: '',
+        address: '',
+        client_type: 'Individual',
+        notes: '',
+      })
       setNewClientOpen(false)
       setErrorMessage(null)
     } catch (error) {
@@ -1855,12 +1872,12 @@ export function SalesNew() {
                 }}
                       className="w-full text-xs sm:text-sm"
               />
-              <div className="max-h-32 sm:max-h-40 overflow-y-auto border rounded-md p-2 space-y-1">
+              <div className="max-h-48 sm:max-h-40 overflow-y-auto border-2 border-gray-200 rounded-lg p-3 sm:p-2 bg-gray-50 space-y-2">
                 {filteredAvailablePieces.length === 0 ? (
-                  <p className="text-xs sm:text-sm text-muted-foreground">لا توجد قطع متاحة</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground text-center py-4">لا توجد قطع متاحة</p>
                 ) : (
                   filteredAvailablePieces.map((piece: any) => (
-                    <label key={piece.id} className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer">
+                    <label key={piece.id} className="flex items-center gap-3 p-3 sm:p-2 bg-white hover:bg-blue-50 rounded-lg border border-gray-200 cursor-pointer transition-colors">
                       <input
                         type="checkbox"
                         checked={selectedPieces.includes(piece.id)}
@@ -1871,11 +1888,17 @@ export function SalesNew() {
                             setSelectedPieces(selectedPieces.filter(id => id !== piece.id))
                           }
                         }}
-                        className="rounded"
+                        className="h-5 w-5 sm:h-4 sm:w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary"
                       />
-                      <span className="text-xs sm:text-sm">
-                              #{piece.piece_number} ({piece.surface_area} م²)
-                      </span>
+                      <div className="flex-1">
+                        <span className="text-sm sm:text-sm font-semibold block">
+                          #{piece.piece_number}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {piece.surface_area} م²
+                          {piece.land_batch?.name && ` • ${piece.land_batch.name}`}
+                        </span>
+                      </div>
                     </label>
                   ))
                 )}
@@ -2219,61 +2242,101 @@ export function SalesNew() {
 
       {/* New Client Dialog */}
       <Dialog open={newClientOpen} onOpenChange={setNewClientOpen}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] sm:w-full max-w-2xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>إضافة عميل جديد</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>الاسم *</Label>
-              <Input
-                value={newClientName}
-                onChange={e => setNewClientName(e.target.value)}
-                placeholder="اسم العميل"
-                maxLength={255}
-              />
+          <div className="space-y-3 sm:space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label htmlFor="newClientName" className="text-xs sm:text-sm">الاسم *</Label>
+                <Input
+                  id="newClientName"
+                  value={newClientForm.name}
+                  onChange={e => setNewClientForm({ ...newClientForm, name: e.target.value })}
+                  placeholder="اسم العميل"
+                  maxLength={255}
+                />
+              </div>
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label htmlFor="newClientCin" className="text-xs sm:text-sm">رقم الهوية *</Label>
+                <Input
+                  id="newClientCin"
+                  value={newClientForm.cin}
+                  onChange={e => setNewClientForm({ ...newClientForm, cin: e.target.value })}
+                  placeholder="رقم CIN"
+                  maxLength={50}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>CIN *</Label>
-              <Input
-                value={newClientCin}
-                onChange={e => setNewClientCin(e.target.value)}
-                placeholder="رقم CIN"
-                maxLength={50}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label htmlFor="newClientPhone" className="text-xs sm:text-sm">الهاتف *</Label>
+                <Input
+                  id="newClientPhone"
+                  value={newClientForm.phone}
+                  onChange={e => setNewClientForm({ ...newClientForm, phone: e.target.value })}
+                  placeholder="03123456 أو 70123456"
+                  maxLength={20}
+                />
+              </div>
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label htmlFor="newClientEmail" className="text-xs sm:text-sm">البريد الإلكتروني</Label>
+                <Input
+                  id="newClientEmail"
+                  type="email"
+                  value={newClientForm.email}
+                  onChange={e => setNewClientForm({ ...newClientForm, email: e.target.value })}
+                  placeholder="example@email.com"
+                  maxLength={254}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>رقم الهاتف <span className="text-destructive">*</span></Label>
+            <div className="space-y-1.5 sm:space-y-2">
+              <Label htmlFor="newClientAddress" className="text-xs sm:text-sm">العنوان</Label>
               <Input
-                value={newClientPhone}
-                onChange={e => setNewClientPhone(e.target.value)}
-                placeholder="03123456 أو 70123456"
-                maxLength={20}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>العنوان</Label>
-              <Input
-                value={newClientAddress}
-                onChange={e => setNewClientAddress(e.target.value)}
+                id="newClientAddress"
+                value={newClientForm.address}
+                onChange={e => setNewClientForm({ ...newClientForm, address: e.target.value })}
                 placeholder="العنوان (اختياري)"
                 maxLength={500}
               />
             </div>
+            <div className="space-y-1.5 sm:space-y-2">
+              <Label htmlFor="newClientNotes" className="text-xs sm:text-sm">ملاحظات</Label>
+              <Textarea
+                id="newClientNotes"
+                value={newClientForm.notes}
+                onChange={e => setNewClientForm({ ...newClientForm, notes: e.target.value })}
+                placeholder="ملاحظات إضافية (اختياري)"
+                maxLength={5000}
+                className="min-h-[80px] sm:min-h-[100px]"
+              />
+            </div>
+            {errorMessage && (
+              <div className="bg-destructive/10 text-destructive p-2.5 sm:p-3 rounded-md text-xs sm:text-sm">
+                {errorMessage}
+              </div>
+            )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => {
               setNewClientOpen(false)
-              setNewClientName('')
-              setNewClientPhone('')
-              setNewClientAddress('')
-              setNewClientCin('')
-            }}>
+              setNewClientForm({
+                name: '',
+                cin: '',
+                phone: '',
+                email: '',
+                address: '',
+                client_type: 'Individual',
+                notes: '',
+              })
+              setErrorMessage(null)
+            }} className="w-full sm:w-auto">
               إلغاء
             </Button>
-            <Button onClick={createNewClient} disabled={creatingClient}>
-              إضافة واختيار
+            <Button onClick={createNewClient} disabled={creatingClient} className="w-full sm:w-auto">
+              {creatingClient ? 'جاري الإضافة...' : 'إضافة واختيار'}
             </Button>
           </DialogFooter>
         </DialogContent>

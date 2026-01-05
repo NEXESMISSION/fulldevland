@@ -59,6 +59,9 @@
     @apply bg-background text-foreground;
     height: auto;
     min-height: 100%;
+    /* Prevent double-tap zoom globally */
+    touch-action: manipulation;
+    -ms-touch-action: manipulation;
   }
   
   body {
@@ -98,6 +101,9 @@
       -webkit-overflow-scrolling: touch;
       position: relative;
       font-size: 14px; /* Slightly smaller base font for mobile */
+      /* Prevent double-tap zoom */
+      touch-action: manipulation;
+      -ms-touch-action: manipulation;
     }
     
     /* Prevent browser swipe navigation on main container */
@@ -111,6 +117,9 @@
     button, a, input[type="button"], input[type="submit"], select {
       min-height: 44px;
       min-width: 44px;
+      /* Prevent double-tap zoom */
+      touch-action: manipulation;
+      -ms-touch-action: manipulation;
     }
     
     /* Better table scrolling on mobile */
@@ -119,9 +128,32 @@
       overscroll-behavior-x: contain;
     }
     
-    /* Prevent text size adjustment on iOS */
+    /* Prevent text size adjustment and zoom on iOS - MUST be 16px or larger */
     input, select, textarea {
       font-size: 16px !important;
+      /* Prevent zoom on focus */
+      -webkit-appearance: none;
+      -webkit-tap-highlight-color: transparent;
+      /* Prevent double-tap zoom */
+      touch-action: manipulation;
+      -ms-touch-action: manipulation;
+    }
+    
+    /* Prevent zoom on input focus - ensure all input types have 16px */
+    input[type="text"],
+    input[type="number"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="password"],
+    input[type="search"],
+    input[type="date"],
+    input[type="time"],
+    input[type="datetime-local"],
+    textarea,
+    select {
+      font-size: 16px !important;
+      touch-action: manipulation;
+      -ms-touch-action: manipulation;
     }
     
     /* Fix scrolling container - smooth momentum scrolling */

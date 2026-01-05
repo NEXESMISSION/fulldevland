@@ -226,7 +226,6 @@ export function SaleConfirmation() {
               supabase
                 .from('sales')
                 .update({ 
-                  big_advance_confirmed: true,
                   status: 'Pending' // Keep as Pending for installment sales
                 } as any)
                 .eq('id', sale.id)
@@ -243,9 +242,7 @@ export function SaleConfirmation() {
             supabase
               .from('sales')
               .update({ 
-                status: 'Completed',
-                is_confirmed: true,
-                confirmed_by: user?.id || null
+                status: 'Completed'
               } as any)
               .eq('id', sale.id)
               .then(({ error }) => {
@@ -507,7 +504,6 @@ export function SaleConfirmation() {
         const updates: any = {
           company_fee_percentage: parseFloat(companyFeePercentage) || null,
           company_fee_amount: companyFeePerPiece > 0 ? companyFeePerPiece : null,
-          confirmed_by: user?.id || null, // Track who confirmed this sale
         }
 
         if (confirmationType === 'full') {
@@ -516,7 +512,6 @@ export function SaleConfirmation() {
         } else if (confirmationType === 'bigAdvance') {
           updates.big_advance_amount = received
           updates.status = 'Pending'
-          updates.big_advance_confirmed = true
           
           // If this is an installment sale, create installments automatically
           if (selectedSale.payment_type === 'Installment') {
@@ -640,7 +635,6 @@ export function SaleConfirmation() {
           sale_date: selectedSale.sale_date,
           notes: `تأكيد قطعة من البيع #${selectedSale.id.slice(0, 8)}`,
           created_by: selectedSale.created_by || user?.id || null, // Keep original creator
-          confirmed_by: user?.id || null, // Track who confirmed this sale
         }
 
         if (confirmationType === 'full') {
@@ -649,7 +643,6 @@ export function SaleConfirmation() {
         } else if (confirmationType === 'bigAdvance') {
           newSaleData.big_advance_amount = received
           newSaleData.status = 'Pending'
-          newSaleData.big_advance_confirmed = true
           
           // If this is an installment sale, create installments automatically
           if (selectedSale.payment_type === 'Installment') {
@@ -676,14 +669,77 @@ export function SaleConfirmation() {
         }
 
         // Create the new sale for the confirmed piece
-        const { data: newSale } = await supabase
-          .from('sales')
-          .insert([newSaleData] as any)
-          .select()
-          .single()
+        // Temporarily remove company_fee columns if they don't exist in DB (will be added via SQL)
+        const saleDataToInsert = { ...newSaleData }
+        delete (saleDataToInsert as any).company_fee_percentage
+        delete (saleDataToInsert as any).company_fee_amount
         
-        if (!newSale) {
-          throw new Error('فشل في إنشاء البيع الجديد')
+        let newSale: any = null
+        
+        // Try inserting the sale
+        const { data: newSaleDataArray, error: insertError } = await supabase
+          .from('sales')
+          .insert([saleDataToInsert] as any)
+          .select('*')
+        
+        if (insertError) {
+          console.error('Error inserting sale:', insertError)
+          console.error('Error details:', JSON.stringify(insertError, null, 2))
+          console.error('Sale data attempted:', saleDataToInsert)
+          throw new Error(`فشل في إنشاء البيع الجديد: ${insertError.message || insertError.code || 'خطأ غير معروف'}`)
+        }
+        
+        if (newSaleDataArray && newSaleDataArray.length > 0) {
+          newSale = newSaleDataArray[0]
+        } else {
+          // If select() didn't return data, try fetching it manually
+          console.warn('Insert succeeded but select() returned no data. Attempting to fetch...')
+          
+          // Wait a moment for the insert to complete
+          await new Promise(resolve => setTimeout(resolve, 100))
+          
+          // Try to fetch the most recent sale for this client with matching data
+          const { data: fetchedSales, error: fetchError } = await supabase
+            .from('sales')
+            .select('*')
+            .eq('client_id', saleDataToInsert.client_id)
+            .eq('total_selling_price', saleDataToInsert.total_selling_price)
+            .eq('status', saleDataToInsert.status)
+            .order('created_at', { ascending: false })
+            .limit(1)
+          
+          if (fetchError) {
+            console.error('Error fetching inserted sale:', fetchError)
+            throw new Error('فشل في إنشاء البيع الجديد: تم الإدراج لكن فشل في جلب البيانات')
+          }
+          
+          if (!fetchedSales || fetchedSales.length === 0) {
+            throw new Error('فشل في إنشاء البيع الجديد: لم يتم إرجاع بيانات من قاعدة البيانات. يرجى التحقق من قاعدة البيانات.')
+          }
+          
+          newSale = fetchedSales[0]
+        }
+        
+        // Update with company fee if columns exist (after SQL migration)
+        // We'll try to update, but ignore errors if columns don't exist yet
+        if (companyFeePerPiece > 0) {
+          try {
+            const { error: updateError } = await supabase
+              .from('sales')
+              .update({
+                company_fee_percentage: parseFloat(companyFeePercentage) || null,
+                company_fee_amount: companyFeePerPiece
+              } as any)
+              .eq('id', newSale.id)
+            
+            if (updateError) {
+              console.warn('Could not update company fee (columns may not exist yet):', updateError.message)
+              // Don't throw - this is optional, will work after SQL migration
+            }
+          } catch (e) {
+            console.warn('Error updating company fee:', e)
+            // Continue anyway
+          }
         }
 
         // Create payment record if amount was received
@@ -1003,7 +1059,7 @@ export function SaleConfirmation() {
                                     size="sm"
                                   >
                                     <CheckCircle className="ml-1 h-3 w-3" />
-                                    كامل
+                                    تأكيد
                                   </Button>
                                 )}
                                 {sale.payment_type === 'Installment' && (
@@ -1071,7 +1127,7 @@ export function SaleConfirmation() {
                                       size="sm"
                                     >
                                       <CheckCircle className="ml-1 h-3 w-3" />
-                                      كامل
+                                      تأكيد
                                     </Button>
                                   )}
                                   {sale.payment_type === 'Installment' && (
@@ -1307,7 +1363,7 @@ export function SaleConfirmation() {
                               >
                                 {sale.status === 'Completed' ? 'مباع' :
                                  sale.status === 'Cancelled' ? 'ملغي' :
-                                 (sale as any).is_confirmed || (sale as any).big_advance_confirmed ? 'قيد الدفع' :
+                                 sale.status === 'Pending' && (sale.big_advance_amount || 0) > 0 ? 'قيد الدفع' :
                                  'غير مؤكد'}
                               </Badge>
                             </TableCell>
