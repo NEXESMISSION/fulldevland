@@ -138,27 +138,28 @@ const DialogContent = React.forwardRef<
 
   if (!context.open) return null
 
+  // Check if this is a notification dialog (has data-notification attribute)
+  const isNotificationDialog = className?.includes('notification-dialog')
+  
   return (
     <DialogPortal>
       <DialogOverlay />
-      <div
-        ref={ref}
-        className={cn(
-          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-[95vw] sm:max-w-lg md:max-w-2xl lg:max-w-3xl translate-x-[-50%] translate-y-[-50%] gap-3 sm:gap-4 border bg-background p-3 sm:p-4 md:p-6 shadow-lg duration-200 rounded-lg sm:rounded-lg max-h-[95vh] sm:max-h-[90vh] overflow-y-auto relative",
-          className
-        )}
-        {...props}
-      >
-        <button
-          className="absolute left-2 sm:left-4 top-2 sm:top-4 z-10 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:pointer-events-none p-1.5 sm:p-2 flex items-center justify-center shadow-md"
-          onClick={() => context.setOpen(false)}
-          type="button"
-          aria-label="إغلاق"
+      <div className={cn(
+        "fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4",
+        isNotificationDialog && "md:items-start md:justify-start md:left-[16rem] md:right-auto md:top-4 md:inset-auto md:p-0"
+      )}>
+        <div
+          ref={ref}
+          className={cn(
+            "relative w-full max-w-[95vw] sm:max-w-lg md:max-w-2xl lg:max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden border bg-background shadow-lg duration-200 rounded-lg flex flex-col",
+            className
+          )}
+          {...props}
         >
-          <X className="h-4 w-4 sm:h-5 sm:w-5" />
-        </button>
-        <div className="pr-8 sm:pr-10">
-          {children}
+          {/* Content with balanced padding - responsive for mobile */}
+          <div className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-5 md:p-6 lg:p-8">
+            {children}
+          </div>
         </div>
       </div>
     </DialogPortal>
@@ -168,16 +169,37 @@ DialogContent.displayName = "DialogContent"
 
 const DialogHeader = ({
   className,
+  children,
   ...props
-}: React.HTMLAttributes<HTMLDivElement>) => (
-  <div
-    className={cn(
-      "flex flex-col space-y-1 sm:space-y-1.5 text-center sm:text-left pb-2 sm:pb-3 pr-0",
-      className
-    )}
-    {...props}
-  />
-)
+}: React.HTMLAttributes<HTMLDivElement>) => {
+  const context = React.useContext(DialogContext)
+  if (!context) throw new Error("DialogHeader must be used within Dialog")
+  
+  return (
+    <div
+      className={cn(
+        "flex items-start justify-between gap-3 sm:gap-4 pb-3 sm:pb-4 md:pb-5",
+        className
+      )}
+      {...props}
+    >
+      {/* Title and subtitle container - takes available space */}
+      <div className="flex-1 min-w-0 flex flex-col space-y-1 sm:space-y-1.5 text-right">
+        {children}
+      </div>
+      
+      {/* Close button - fixed on the right side with proper separation */}
+      <button
+        className="rounded-full bg-red-500 hover:bg-red-600 active:bg-red-700 text-white transition-all focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:pointer-events-none p-2 sm:p-2.5 flex items-center justify-center shadow-lg shrink-0 hover:scale-110 active:scale-95 touch-manipulation"
+        onClick={() => context.setOpen(false)}
+        type="button"
+        aria-label="إغلاق"
+      >
+        <X className="h-4 w-4 sm:h-5 sm:w-5" />
+      </button>
+    </div>
+  )
+}
 DialogHeader.displayName = "DialogHeader"
 
 const DialogFooter = ({

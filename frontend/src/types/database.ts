@@ -8,6 +8,9 @@ export type InstallmentStatus = 'Unpaid' | 'Paid' | 'Late' | 'Partial'
 export type PaymentRecordType = 'BigAdvance' | 'SmallAdvance' | 'Installment' | 'Full' | 'Partial' | 'Field' | 'Refund'
 export type UserRole = 'Owner' | 'Manager' | 'FieldStaff'
 export type UserStatus = 'Active' | 'Inactive'
+export type WorkerAvailabilityStatus = 'Available' | 'Busy' | 'Unavailable'
+export type ConversationStatus = 'open' | 'closed'
+export type NotificationType = 'new_message' | 'task_update' | 'system'
 
 export interface Role {
   id: string
@@ -255,6 +258,26 @@ export interface Database {
         Insert: Omit<Expense, 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<Expense, 'id'>>
       }
+      worker_profiles: {
+        Row: WorkerProfile
+        Insert: Omit<WorkerProfile, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<WorkerProfile, 'id'>>
+      }
+      conversations: {
+        Row: Conversation
+        Insert: Omit<Conversation, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Conversation, 'id'>>
+      }
+      messages: {
+        Row: Message
+        Insert: Omit<Message, 'id' | 'created_at'>
+        Update: Partial<Omit<Message, 'id' | 'created_at'>>
+      }
+      notifications: {
+        Row: Notification
+        Insert: Omit<Notification, 'id' | 'created_at'>
+        Update: Partial<Omit<Notification, 'id' | 'created_at'>>
+      }
     }
   }
 }
@@ -286,4 +309,43 @@ export interface Expense {
   notes: string | null
   created_at: string
   updated_at: string
+}
+
+export interface WorkerProfile {
+  id: string
+  user_id: string
+  worker_type: string
+  region: string | null
+  skills: string[] | null
+  availability: WorkerAvailabilityStatus
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Conversation {
+  id: string
+  subject: string
+  created_by: string
+  worker_id: string
+  status: ConversationStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface Message {
+  id: string
+  conversation_id: string
+  sender_id: string
+  body: string
+  created_at: string
+}
+
+export interface Notification {
+  id: string
+  user_id: string
+  type: NotificationType
+  reference_id: string | null
+  is_read: boolean
+  created_at: string
 }

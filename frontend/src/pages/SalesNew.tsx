@@ -248,14 +248,25 @@ export function SalesNew() {
         const bigAdvancePaidPerPiece = bigAdvancePaid / pieceCount
         const reservationPaidPerPiece = reservationPaid / pieceCount
         
-        // Calculate remaining: total price - reservation - big advance - other payments
+        // Calculate company fee per piece
         const companyFeePerPiece = sale.company_fee_amount ? sale.company_fee_amount / sale.land_piece_ids.length : 0
         const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
-        const remainingPerPiece = Math.max(0, totalPayablePerPiece - reservationPaidPerPiece - bigAdvancePaidPerPiece - (paidPerPiece - reservationPaidPerPiece - bigAdvancePaidPerPiece))
         
         // Determine status based on payment state
         let status: PieceSale['status'] = 'Pending'
-        const isConfirmed = (sale as any).is_confirmed === true
+        
+        // Determine if sale is confirmed:
+        // 1. If status is 'Completed', it's definitely confirmed
+        // 2. If there are payments recorded (beyond just reservation), it's confirmed
+        // 3. If big_advance_amount is set and there are payments, it's confirmed
+        // 4. Check is_confirmed field if it exists
+        const hasPayments = totalPaid > reservationPaid
+        const hasBigAdvance = sale.big_advance_amount > 0 && bigAdvancePaid > 0
+        const isConfirmed = sale.status === 'Completed' || 
+                           hasPayments || 
+                           hasBigAdvance ||
+                           (sale as any).is_confirmed === true ||
+                           (sale as any).big_advance_confirmed === true
         
         if (sale.status === 'Cancelled') {
           status = 'Cancelled'
@@ -264,19 +275,42 @@ export function SalesNew() {
           // PRIORITY: If database says 'Completed', use that - payments may have been recorded
           if (sale.status === 'Completed') {
             status = 'Completed' // مباع - fully paid
-          } else if (!isConfirmed && !bigAdvancePaidPerPiece) {
-            status = 'Pending' // معلق - not confirmed yet
           } else if (!isConfirmed) {
-            status = 'AwaitingPayment' // قيد الدفع - waiting for big advance confirmation
+            // Not confirmed yet - always show as Pending (غير مؤكد)
+            status = 'Pending'
           } else {
+            // Confirmed - check payment status
             // Big advance paid - check if all installments are paid
             const allPaid = saleInstallments.length > 0 && 
               saleInstallments.every(i => i.status === 'Paid')
-            status = allPaid ? 'Completed' : 'InstallmentsOngoing' // أقساط جارية
+            if (allPaid) {
+              status = 'Completed'
+            } else if (bigAdvancePaidPerPiece > 0) {
+              status = 'InstallmentsOngoing' // أقساط جارية - big advance paid, installments ongoing
+            } else {
+              status = 'AwaitingPayment' // قيد الدفع - confirmed but waiting for big advance
+            }
           }
         } else {
           // Full payment sale
-          status = sale.status === 'Completed' ? 'Completed' : 'AwaitingPayment'
+          if (sale.status === 'Completed') {
+            status = 'Completed'
+          } else if (!isConfirmed) {
+            status = 'Pending' // غير مؤكد - not confirmed yet
+          } else {
+            status = 'AwaitingPayment' // قيد الدفع - confirmed but waiting for payment
+          }
+        }
+        
+        // Calculate remaining amount: Total Payable - Total Paid
+        // If status is 'Completed', remaining should be 0
+        let remainingPerPiece = 0
+        if (status === 'Completed') {
+          remainingPerPiece = 0 // مباع - fully paid, no remaining
+        } else {
+          // Remaining = Total Payable - Total Paid
+          // Total Paid includes: reservation + bigAdvance + other payments
+          remainingPerPiece = Math.max(0, totalPayablePerPiece - paidPerPiece)
         }
         
         result.push({
@@ -797,12 +831,15 @@ export function SalesNew() {
   const filteredClients = useMemo(() => {
     if (!debouncedClientSearch) return clients
     const search = debouncedClientSearch.toLowerCase()
-    return clients.filter(client => 
-      client.id.toLowerCase().includes(search) ||
-      client.phone?.toLowerCase().includes(search) ||
-      client.name.toLowerCase().includes(search) ||
-      client.cin?.toLowerCase().includes(search)
-    )
+    return clients.filter(client => {
+      if (!client) return false
+      return (
+        client.id?.toLowerCase().includes(search) ||
+        client.phone?.toLowerCase().includes(search) ||
+        client.name?.toLowerCase().includes(search) ||
+        client.cin?.toLowerCase().includes(search)
+      )
+    })
   }, [clients, debouncedClientSearch])
 
   // Filter pieces by land number and batch
@@ -1572,7 +1609,7 @@ export function SalesNew() {
                         >
                           {sale.status === 'Completed' ? 'مباع' :
                            sale.status === 'InstallmentsOngoing' ? 'بالتقسيط' :
-                           sale.status === 'Pending' && !sale.bigAdvanceConfirmed && !(sale as any).is_confirmed ? 'غير مؤكد' :
+                           sale.status === 'Pending' && !(sale as any).is_confirmed ? 'غير مؤكد' :
                            sale.status === 'AwaitingPayment' ? 'قيد الدفع' :
                            sale.status === 'Pending' ? 'معلق' : 'ملغي'}
                         </Badge>
@@ -1745,7 +1782,7 @@ export function SalesNew() {
                         >
                           {sale.status === 'Completed' ? 'مباع' :
                            sale.status === 'InstallmentsOngoing' ? 'بالتقسيط' :
-                           sale.status === 'Pending' && !sale.bigAdvanceConfirmed && !(sale as any).is_confirmed ? 'غير مؤكد' :
+                           sale.status === 'Pending' && !(sale as any).is_confirmed ? 'غير مؤكد' :
                            sale.status === 'AwaitingPayment' ? 'قيد الدفع' :
                            sale.status === 'Pending' ? 'معلق' : 'ملغي'}
                         </Badge>

@@ -5,6 +5,7 @@ import { Menu, X, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PullToRefresh } from './PullToRefresh'
 import { useSwipeGesture } from '@/hooks/useSwipeGesture'
+import { NotificationBell } from '@/components/ui/notification-bell'
 
 export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -63,28 +64,39 @@ export function MainLayout() {
   return (
     <div className="flex min-h-screen bg-background" style={{ overscrollBehaviorX: 'none', touchAction: 'pan-y' }}>
       {/* Mobile header buttons */}
-      <div className="fixed top-2 left-2 right-2 z-50 md:hidden flex items-center justify-between">
+      <div className="fixed top-2 left-2 right-2 z-50 md:hidden flex items-center gap-2">
         {/* Burger menu button */}
         <Button
           variant="outline"
           size="icon"
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="bg-background"
+          className="bg-background shrink-0 h-9 w-9"
         >
           {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
         
-        {/* Go back button */}
-        {canGoBack && (
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => navigate(-1)}
-            className="bg-background"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        )}
+        {/* Spacer */}
+        <div className="flex-1" />
+        
+        {/* Right side buttons */}
+        <div className="flex items-center gap-2">
+          {/* Notification bell */}
+          <div className="bg-background border border-border rounded-md">
+            <NotificationBell />
+          </div>
+          
+          {/* Go back button */}
+          {canGoBack && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => navigate(-1)}
+              className="bg-background shrink-0 h-9 w-9"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Sidebar - hidden on mobile, shown when sidebarOpen is true */}

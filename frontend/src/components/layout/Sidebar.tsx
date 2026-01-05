@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import { NotificationBell } from '@/components/ui/notification-bell'
 import {
   LayoutDashboard,
   Map,
@@ -16,6 +17,7 @@ import {
   Settings2,
   Receipt,
   Building2,
+  MessageSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -33,6 +35,7 @@ const navItems = [
   { to: '/expenses', icon: Receipt, label: 'المصاريف', permission: 'view_financial', pageId: 'expenses' },
   { to: '/debts', icon: TrendingDown, label: 'الديون', permission: null, pageId: 'debts' },
   { to: '/real-estate-buildings', icon: Building2, label: 'التطوير والبناء', permission: null, pageId: 'real-estate' },
+  { to: '/messages', icon: MessageSquare, label: 'الرسائل', permission: 'view_messages', pageId: 'messages' },
   { to: '/users', icon: Settings, label: 'المستخدمين', permission: 'manage_users', pageId: 'users' },
   { to: '/security', icon: Shield, label: 'الأمان', permission: 'view_audit_logs', pageId: 'security' },
 ]
@@ -64,8 +67,12 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   return (
     <aside className="flex h-screen w-64 flex-col border-l bg-card shadow-lg md:shadow-none">
-      <div className="flex h-16 items-center border-b px-6">
+      <div className="flex h-16 items-center justify-between border-b px-4 md:px-6">
         <h1 className="text-xl font-bold text-primary">نظام الأراضي</h1>
+        {/* Desktop notification bell in sidebar header */}
+        <div className="hidden md:block">
+          <NotificationBell />
+        </div>
       </div>
 
       <nav className="flex-1 space-y-1 p-4">

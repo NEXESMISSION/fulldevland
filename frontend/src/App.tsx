@@ -16,6 +16,8 @@ import { Home } from '@/pages/Home'
 import { Debts } from '@/pages/Debts'
 import { Expenses } from '@/pages/Expenses'
 import { RealEstateBuildings } from '@/pages/RealEstateBuildings'
+import { Workers } from '@/pages/Workers'
+import { Messages } from '@/pages/Messages'
 import { AccountDisabled } from '@/pages/AccountDisabled'
 import { LoadingProgress } from '@/components/ui/loading-progress'
 import { NotificationContainer } from '@/components/ui/notification'
@@ -260,6 +262,22 @@ function AppRoutes() {
           element={
             <PermissionProtectedRoute permission={null} pageId="real-estate">
               <RealEstateBuildings />
+            </PermissionProtectedRoute>
+          } 
+        />
+        <Route 
+          path="workers" 
+          element={
+            <PermissionProtectedRoute permission="view_workers" pageId="workers">
+              <Workers />
+            </PermissionProtectedRoute>
+          } 
+        />
+        <Route 
+          path="messages" 
+          element={
+            <PermissionProtectedRoute permission="view_messages" pageId="messages">
+              <Messages />
             </PermissionProtectedRoute>
           } 
         />

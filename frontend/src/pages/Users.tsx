@@ -22,11 +22,21 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText, CreditCard, Home, Building, Wallet, DollarSign, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react'
-import type { User as UserType, UserRole, UserStatus, Sale } from '@/types/database'
+import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText, CreditCard, Home, Building, Wallet, DollarSign, Lock, Eye, EyeOff, AlertCircle, Briefcase, MessageSquare, XCircle } from 'lucide-react'
+import type { User as UserType, UserRole, UserStatus, Sale, WorkerProfile, WorkerAvailabilityStatus } from '@/types/database'
 import { sanitizeText, sanitizeEmail } from '@/lib/sanitize'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
+
+const WORKER_TYPES = [
+  'electrician',
+  'surveyor',
+  'agent',
+  'supervisor',
+  'engineer',
+  'contractor',
+  'other'
+]
 
 const roleColors: Record<UserRole, 'default' | 'secondary' | 'destructive'> = {
   Owner: 'default',
@@ -46,9 +56,11 @@ const ALL_PAGES = [
   { id: 'finance', name: 'المالية', icon: TrendingUp, description: 'التقارير المالية' },
   { id: 'expenses', name: 'المصاريف', icon: Wallet, description: 'إدارة المصاريف' },
   { id: 'debts', name: 'الديون', icon: CreditCard, description: 'إدارة الديون' },
+  { id: 'real-estate', name: 'التطوير والبناء', icon: Building, description: 'المشاريع العقارية' },
+  { id: 'workers', name: 'العمال', icon: Briefcase, description: 'إدارة العمال' },
+  { id: 'messages', name: 'الرسائل', icon: MessageSquare, description: 'الرسائل والمحادثات' },
   { id: 'users', name: 'المستخدمين', icon: User, description: 'إدارة المستخدمين' },
   { id: 'security', name: 'الأمان', icon: Shield, description: 'سجلات الأمان' },
-  { id: 'real-estate', name: 'التطوير والبناء', icon: Building, description: 'المشاريع العقارية' },
 ]
 
 interface UserStats {
@@ -95,7 +107,16 @@ export function Users() {
     role: 'FieldStaff' as UserRole,
     status: 'Active' as UserStatus,
     allowedPages: [] as string[],
+    // Worker profile fields
+    isWorker: false,
+    worker_type: '',
+    region: '',
+    skills: [] as string[],
+    availability: 'Available' as WorkerAvailabilityStatus,
+    worker_notes: '',
   })
+  const [skillInput, setSkillInput] = useState('')
+  const [workerProfiles, setWorkerProfiles] = useState<Map<string, WorkerProfile>>(new Map())
 
   useEffect(() => {
     if (!hasPermission('manage_users')) return
@@ -126,6 +147,9 @@ export function Users() {
       setUsers((data as UserType[]) || [])
       setError(null) // Clear any previous errors
       
+      // Fetch worker profiles
+      await fetchWorkerProfiles((data as UserType[]) || [])
+      
       // Fetch user statistics
       await fetchUserStats((data as UserType[]) || [])
     } catch (error) {
@@ -133,6 +157,31 @@ export function Users() {
       setUsers([]) // Set empty array on error
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchWorkerProfiles = async (usersList: UserType[]) => {
+    try {
+      const userIds = usersList.map(u => u.id)
+      if (userIds.length === 0) return
+
+      const { data, error } = await supabase
+        .from('worker_profiles')
+        .select('*')
+        .in('user_id', userIds)
+
+      if (error) {
+        console.error('Error fetching worker profiles:', error)
+        return
+      }
+
+      const profilesMap = new Map<string, WorkerProfile>()
+      ;(data || []).forEach((profile: WorkerProfile) => {
+        profilesMap.set(profile.user_id, profile)
+      })
+      setWorkerProfiles(profilesMap)
+    } catch (error) {
+      console.error('Error fetching worker profiles:', error)
     }
   }
 
@@ -292,6 +341,7 @@ export function Users() {
     setError(null) // Clear any previous errors
     if (user) {
       setEditingUser(user)
+      const workerProfile = workerProfiles.get(user.id)
       setForm({
         name: user.name,
         email: user.email,
@@ -299,6 +349,13 @@ export function Users() {
         role: user.role,
         status: user.status,
         allowedPages: (user as any).allowed_pages || [],
+        // Worker profile fields
+        isWorker: !!workerProfile,
+        worker_type: workerProfile?.worker_type || '',
+        region: workerProfile?.region || '',
+        skills: workerProfile?.skills || [],
+        availability: workerProfile?.availability || 'Available',
+        worker_notes: workerProfile?.notes || '',
       })
     } else {
       setEditingUser(null)
@@ -311,8 +368,16 @@ export function Users() {
         role: 'FieldStaff',
         status: 'Active',
         allowedPages: defaultPages,
+        // Worker profile fields
+        isWorker: false,
+        worker_type: '',
+        region: '',
+        skills: [],
+        availability: 'Available',
+        worker_notes: '',
       })
     }
+    setSkillInput('')
     setDialogOpen(true)
   }
 
@@ -336,6 +401,17 @@ export function Users() {
   // Deselect all pages
   const deselectAllPages = () => {
     setForm(prev => ({ ...prev, allowedPages: [] }))
+  }
+
+  const addSkill = () => {
+    if (skillInput.trim() && !form.skills.includes(skillInput.trim())) {
+      setForm({ ...form, skills: [...form.skills, skillInput.trim()] })
+      setSkillInput('')
+    }
+  }
+
+  const removeSkill = (skill: string) => {
+    setForm({ ...form, skills: form.skills.filter(s => s !== skill) })
   }
 
   const saveUser = async () => {
@@ -386,8 +462,54 @@ export function Users() {
           return
         }
 
+        // Save/update worker profile if isWorker is checked
+        if (form.isWorker && form.worker_type) {
+          const existingProfile = workerProfiles.get(editingUser.id)
+          const workerData = {
+            user_id: editingUser.id,
+            worker_type: sanitizeText(form.worker_type),
+            region: form.region ? sanitizeText(form.region) : null,
+            skills: form.skills.length > 0 ? form.skills.map(s => sanitizeText(s)) : null,
+            availability: form.availability,
+            notes: form.worker_notes ? sanitizeText(form.worker_notes) : null,
+          }
+
+          if (existingProfile) {
+            await supabase
+              .from('worker_profiles')
+              .update(workerData)
+              .eq('id', existingProfile.id)
+          } else {
+            await supabase
+              .from('worker_profiles')
+              .insert([workerData])
+          }
+        } else {
+          // Remove worker profile if unchecked
+          const existingProfile = workerProfiles.get(editingUser.id)
+          if (existingProfile) {
+            await supabase
+              .from('worker_profiles')
+              .delete()
+              .eq('id', existingProfile.id)
+          }
+        }
+
         setDialogOpen(false)
-        setForm({ name: '', email: '', password: '', role: 'FieldStaff', status: 'Active', allowedPages: [] })
+        setForm({ 
+          name: '', 
+          email: '', 
+          password: '', 
+          role: 'FieldStaff', 
+          status: 'Active', 
+          allowedPages: [],
+          isWorker: false,
+          worker_type: '',
+          region: '',
+          skills: [],
+          availability: 'Available',
+          worker_notes: '',
+        })
         await fetchUsers()
       } else {
         // Create new user with Supabase Auth
@@ -625,9 +747,41 @@ export function Users() {
           return
         }
 
+        // Create worker profile if isWorker is checked
+        if (form.isWorker && form.worker_type && authData.user) {
+          try {
+            await supabase
+              .from('worker_profiles')
+              .insert([{
+                user_id: authData.user.id,
+                worker_type: sanitizeText(form.worker_type),
+                region: form.region ? sanitizeText(form.region) : null,
+                skills: form.skills.length > 0 ? form.skills.map(s => sanitizeText(s)) : null,
+                availability: form.availability,
+                notes: form.worker_notes ? sanitizeText(form.worker_notes) : null,
+              }])
+          } catch (workerError) {
+            console.error('Error creating worker profile:', workerError)
+            // Don't fail the whole operation if worker profile creation fails
+          }
+        }
+
         // Success
         setDialogOpen(false)
-        setForm({ name: '', email: '', password: '', role: 'FieldStaff', status: 'Active', allowedPages: [] })
+        setForm({ 
+          name: '', 
+          email: '', 
+          password: '', 
+          role: 'FieldStaff', 
+          status: 'Active', 
+          allowedPages: [],
+          isWorker: false,
+          worker_type: '',
+          region: '',
+          skills: [],
+          availability: 'Available',
+          worker_notes: '',
+        })
         setError(null)
         await fetchUsers()
       }
@@ -938,6 +1092,12 @@ export function Users() {
                             أنت
                           </Badge>
                         )}
+                        {workerProfiles.has(user.id) && (
+                          <Badge variant="secondary" className="ml-2 flex items-center gap-1">
+                            <Briefcase className="h-3 w-3" />
+                            {workerProfiles.get(user.id)?.worker_type || 'عامل'}
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>{user.email}</TableCell>
@@ -1012,8 +1172,22 @@ export function Users() {
         setDialogOpen(open)
         if (!open) {
           setError(null)
-          setForm({ name: '', email: '', password: '', role: 'FieldStaff', status: 'Active', allowedPages: [] })
+          setForm({ 
+            name: '', 
+            email: '', 
+            password: '', 
+            role: 'FieldStaff', 
+            status: 'Active', 
+            allowedPages: [],
+            isWorker: false,
+            worker_type: '',
+            region: '',
+            skills: [],
+            availability: 'Available',
+            worker_notes: '',
+          })
           setEditingUser(null)
+          setSkillInput('')
         }
       }}>
         <DialogContent className="w-[95vw] sm:max-w-lg max-h-[95vh] overflow-y-auto">
@@ -1186,6 +1360,123 @@ export function Users() {
                 </p>
               </div>
             )}
+
+            {/* Worker Profile Section */}
+            <div className="space-y-2 sm:space-y-3 border-t pt-3 sm:pt-4 mt-3 sm:mt-4">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="isWorker"
+                  checked={form.isWorker}
+                  onChange={(e) => setForm({ ...form, isWorker: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <Label htmlFor="isWorker" className="text-xs sm:text-sm font-semibold flex items-center gap-2">
+                  <Briefcase className="h-3 w-3 sm:h-4 sm:w-4" />
+                  هذا المستخدم هو عامل
+                </Label>
+              </div>
+
+              {form.isWorker && (
+                <div className="space-y-3 bg-muted/50 p-3 rounded-lg">
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <Label htmlFor="worker_type" className="text-xs sm:text-sm">نوع العامل *</Label>
+                    <select
+                      id="worker_type"
+                      value={form.worker_type}
+                      onChange={(e) => setForm({ ...form, worker_type: e.target.value })}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      disabled={saving}
+                    >
+                      <option value="">اختر نوع العامل</option>
+                      {WORKER_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <Label htmlFor="region" className="text-xs sm:text-sm">المنطقة / المحافظة</Label>
+                    <Input
+                      id="region"
+                      value={form.region}
+                      onChange={(e) => setForm({ ...form, region: e.target.value })}
+                      placeholder="مثال: تونس، أريانة..."
+                      disabled={saving}
+                      className="text-xs sm:text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <Label className="text-xs sm:text-sm">المهارات</Label>
+                    <div className="flex gap-2 mb-2">
+                      <Input
+                        value={skillInput}
+                        onChange={(e) => setSkillInput(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            addSkill()
+                          }
+                        }}
+                        placeholder="أضف مهارة واضغط Enter"
+                        disabled={saving}
+                        className="text-xs sm:text-sm"
+                      />
+                      <Button type="button" onClick={addSkill} size="sm" disabled={saving}>
+                        إضافة
+                      </Button>
+                    </div>
+                    {form.skills.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {form.skills.map((skill, idx) => (
+                          <Badge key={idx} variant="secondary" className="flex items-center gap-1">
+                            {skill}
+                            <button
+                              type="button"
+                              onClick={() => removeSkill(skill)}
+                              className="ml-1 hover:text-destructive"
+                              disabled={saving}
+                            >
+                              <XCircle className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <Label htmlFor="availability" className="text-xs sm:text-sm">الحالة</Label>
+                    <select
+                      id="availability"
+                      value={form.availability}
+                      onChange={(e) => setForm({ ...form, availability: e.target.value as WorkerAvailabilityStatus })}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      disabled={saving}
+                    >
+                      <option value="Available">متاح</option>
+                      <option value="Busy">مشغول</option>
+                      <option value="Unavailable">غير متاح</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <Label htmlFor="worker_notes" className="text-xs sm:text-sm">ملاحظات</Label>
+                    <textarea
+                      id="worker_notes"
+                      value={form.worker_notes}
+                      onChange={(e) => setForm({ ...form, worker_notes: e.target.value })}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[100px]"
+                      placeholder="ملاحظات إضافية..."
+                      disabled={saving}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter className="gap-2">
             <Button 
