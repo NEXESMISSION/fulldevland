@@ -117,13 +117,32 @@ function DialogOverlay({ className, ...props }: React.HTMLAttributes<HTMLDivElem
   const context = React.useContext(DialogContext)
   if (!context) throw new Error("DialogOverlay must be used within Dialog")
 
+  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Only close if clicking directly on the overlay, not on child elements
+    if (e.target === e.currentTarget) {
+      context.setOpen(false)
+    }
+  }
+
   return (
     <div
       className={cn(
         "fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         className
       )}
-      onClick={() => context.setOpen(false)}
+      onClick={handleOverlayClick}
+      onMouseDown={(e) => {
+        // Prevent any mouse events from propagating
+        if (e.target === e.currentTarget) {
+          e.stopPropagation()
+        }
+      }}
+      onTouchStart={(e) => {
+        // Prevent touch events from propagating
+        if (e.target === e.currentTarget) {
+          e.stopPropagation()
+        }
+      }}
       {...props}
     />
   )
@@ -141,12 +160,28 @@ const DialogContent = React.forwardRef<
   // Check if this is a notification dialog (has data-notification attribute)
   const isNotificationDialog = className?.includes('notification-dialog')
   
-  // Prevent click events from propagating to overlay (which would close the dialog)
+  // Prevent all events from propagating to overlay (which would close the dialog)
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation()
     if (onClick) {
       onClick(e)
     }
+  }
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+  }
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+  }
+
+  const handleMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation()
   }
 
   return (
@@ -163,6 +198,10 @@ const DialogContent = React.forwardRef<
           className
         )}
         onClick={handleClick}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
         {...props}
       >
           {/* Content with balanced padding - responsive for mobile */}
