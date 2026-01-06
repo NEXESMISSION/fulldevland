@@ -21,3 +21,14 @@ export function formatDate(date: string | Date): string {
   const year = dateObj.getFullYear()
   return `${day} ${month} ${year}`
 }
+
+export function formatDateTime(date: string | Date): string {
+  const dateObj = new Date(date)
+  const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+  const day = dateObj.getDate()
+  const month = months[dateObj.getMonth()]
+  const year = dateObj.getFullYear()
+  const hours = dateObj.getHours().toString().padStart(2, '0')
+  const minutes = dateObj.getMinutes().toString().padStart(2, '0')
+  return `${day} ${month} ${year} - ${hours}:${minutes}`
+}

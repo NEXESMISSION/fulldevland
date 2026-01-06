@@ -26,7 +26,7 @@ import {
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { sanitizeText, sanitizePhone, sanitizeCIN, sanitizeEmail, sanitizeNotes, validateLebanesePhone } from '@/lib/sanitize'
 import { debounce } from '@/lib/throttle'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { retryWithBackoff, isRetryableError } from '@/lib/retry'
 import { Plus, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, AlertCircle } from 'lucide-react'
 import type { Sale, Client, LandPiece, Installment } from '@/types/database'
@@ -47,6 +47,7 @@ interface PieceSale {
   profit: number
   saleDate: string
   createdAt: string // For secondary sorting (newest first)
+  updatedAt: string | null // When sale was last updated/completed
   deadlineDate: string | null // Deadline for completing procedures
   // Reservation (عربون) - paid on spot
   reservationAmount: number
@@ -144,6 +145,7 @@ export function SalesNew() {
   const [clientFilter, setClientFilter] = useState('')
   const [landBatchFilter, setLandBatchFilter] = useState<string>('all')
   const [landPieceSearch, setLandPieceSearch] = useState('')
+  const [timePeriodFilter, setTimePeriodFilter] = useState<'all' | 'day' | 'week' | 'month'>('all')
   const [sortBy, setSortBy] = useState<'date' | 'client' | 'price' | 'status'>('date')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
@@ -315,6 +317,7 @@ export function SalesNew() {
           profit: pricePerPiece - costPerPiece,
           saleDate: sale.sale_date,
           createdAt: sale.created_at,
+          updatedAt: sale.updated_at || null,
           deadlineDate: sale.deadline_date || null,
           reservationAmount: reservationPaidPerPiece > 0 ? reservationPaidPerPiece : (sale.small_advance_amount || 0) / sale.land_piece_ids.length,
           companyFeePercentage: sale.company_fee_percentage,
@@ -347,6 +350,67 @@ export function SalesNew() {
   const filteredAndSortedSales = useMemo(() => {
     let filtered = pieceSales.filter(s => s.status !== 'Cancelled')
 
+    // Apply time period filter
+    if (timePeriodFilter !== 'all') {
+      const now = new Date()
+      const filterDate = new Date()
+      
+      switch (timePeriodFilter) {
+        case 'day':
+          filterDate.setHours(0, 0, 0, 0)
+          break
+        case 'week':
+          filterDate.setDate(now.getDate() - 7)
+          filterDate.setHours(0, 0, 0, 0)
+          break
+        case 'month':
+          filterDate.setMonth(now.getMonth() - 1)
+          filterDate.setHours(0, 0, 0, 0)
+          break
+      }
+      
+      filtered = filtered.filter(sale => {
+        const saleDate = new Date(sale.createdAt || sale.saleDate)
+        return saleDate >= filterDate
+      })
+    }
+
+    // Apply other filters
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'Reserved') {
+        filtered = filtered.filter(s => s.status === 'Pending' && !(s as any).is_confirmed)
+      } else if (statusFilter === 'Installment') {
+        filtered = filtered.filter(s => s.paymentType === 'Installment' && s.status !== 'Completed')
+      } else if (statusFilter === 'Full') {
+        filtered = filtered.filter(s => s.paymentType === 'Full' && s.status !== 'Completed')
+      } else if (statusFilter === 'Completed') {
+        filtered = filtered.filter(s => s.status === 'Completed')
+      }
+    }
+
+    if (paymentTypeFilter !== 'all') {
+      filtered = filtered.filter(s => s.paymentType === paymentTypeFilter)
+    }
+
+    if (clientFilter) {
+      const searchLower = clientFilter.toLowerCase()
+      filtered = filtered.filter(s => 
+        s.clientName.toLowerCase().includes(searchLower)
+      )
+    }
+
+    if (landBatchFilter !== 'all') {
+      filtered = filtered.filter(s => s.batchName === landBatchFilter)
+    }
+
+    if (landPieceSearch) {
+      const searchLower = landPieceSearch.toLowerCase()
+      filtered = filtered.filter(s => 
+        s.pieceName.toLowerCase().includes(searchLower) ||
+        s.batchName.toLowerCase().includes(searchLower)
+      )
+    }
+
     // Sort - default to newest first (DESC by sale_date, then created_at)
     filtered = [...filtered].sort((a, b) => {
       let comparison = 0
@@ -373,7 +437,7 @@ export function SalesNew() {
     })
 
     return filtered
-  }, [pieceSales, sortBy, sortOrder])
+  }, [pieceSales, sortBy, sortOrder, timePeriodFilter, statusFilter, paymentTypeFilter, clientFilter, landBatchFilter, landPieceSearch])
 
 
   // Calculate monthly summary per client
@@ -1017,7 +1081,42 @@ export function SalesNew() {
 
       {/* Compact Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <h1 className="text-2xl sm:text-3xl font-bold">المبيعات</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold">السجل</h1>
+      </div>
+
+      {/* Time Period Filter */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Label className="text-sm font-medium">الفترة الزمنية:</Label>
+        <div className="flex gap-2">
+          <Button
+            variant={timePeriodFilter === 'all' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTimePeriodFilter('all')}
+          >
+            الكل
+          </Button>
+          <Button
+            variant={timePeriodFilter === 'day' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTimePeriodFilter('day')}
+          >
+            اليوم
+          </Button>
+          <Button
+            variant={timePeriodFilter === 'week' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTimePeriodFilter('week')}
+          >
+            الأسبوع
+          </Button>
+          <Button
+            variant={timePeriodFilter === 'month' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTimePeriodFilter('month')}
+          >
+            الشهر
+          </Button>
+        </div>
       </div>
 
       {/* Compact Stats - Inline */}
@@ -1146,6 +1245,12 @@ export function SalesNew() {
                           {confirmedByUser && <div className="text-green-600">أكد: {confirmedByUser.name}</div>}
                         </div>
                       )}
+                      
+                      {/* Date and Time */}
+                      <div className="text-xs text-muted-foreground pt-2 border-t">
+                        <div className="font-medium">تاريخ الإتمام:</div>
+                        <div>{formatDateTime(sale.updatedAt || sale.createdAt || sale.saleDate)}</div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -1168,6 +1273,7 @@ export function SalesNew() {
                     <TableHead className="w-[120px] text-right">الدفعة الأولى</TableHead>
                     <TableHead className="w-[100px] text-right">المتبقي</TableHead>
                     <TableHead className="w-[100px]">الحالة</TableHead>
+                    <TableHead className="w-[150px]">تاريخ الإتمام</TableHead>
                     {user?.role === 'Owner' && (
                       <TableHead className="w-[120px]">المستخدم</TableHead>
                     )}
@@ -1256,6 +1362,9 @@ export function SalesNew() {
                            sale.status === 'Pending' && !(sale as any).is_confirmed ? 'محجوز' :
                            'محجوز'}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {formatDateTime(sale.updatedAt || sale.createdAt || sale.saleDate)}
                       </TableCell>
                       {user?.role === 'Owner' && (() => {
                         const saleData = sales.find(s => s.id === sale.saleId)
