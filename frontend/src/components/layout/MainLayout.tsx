@@ -66,16 +66,16 @@ function MainLayout() {
       {/* Mobile header buttons */}
       <div className="fixed top-0 left-0 right-0 z-50 md:hidden bg-white border-b shadow-sm">
         <div className="px-2 py-2 flex items-center gap-2">
-          {/* Burger menu button */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
+        {/* Burger menu button */}
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
             className="bg-white shrink-0 h-9 w-9 border-gray-200"
-          >
-            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
-          
+        >
+          {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </Button>
+        
           {/* Spacer */}
           <div className="flex-1" />
           
@@ -86,17 +86,17 @@ function MainLayout() {
               <NotificationBell />
             </div>
           
-          {/* Go back button */}
-          {canGoBack && (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate(-1)}
+        {/* Go back button */}
+        {canGoBack && (
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => navigate(-1)}
               className="bg-white shrink-0 h-9 w-9 border-gray-200"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          )}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        )}
           </div>
         </div>
       </div>

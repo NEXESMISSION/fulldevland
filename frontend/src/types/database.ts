@@ -93,6 +93,7 @@ export interface PaymentOffer {
   advance_amount: number
   advance_is_percentage: boolean
   monthly_payment: number
+  number_of_months: number | null
   offer_name: string | null
   notes: string | null
   is_default: boolean

@@ -336,7 +336,7 @@ export function SaleConfirmation() {
     if (offer) {
       setCompanyFeePercentage(offer.company_fee_percentage.toString())
     } else {
-      setCompanyFeePercentage(sale.company_fee_percentage?.toString() || '2')
+    setCompanyFeePercentage(sale.company_fee_percentage?.toString() || '2')
     }
     
     // Calculate number of months from offer if available
@@ -353,7 +353,7 @@ export function SaleConfirmation() {
         : 12
       setNumberOfInstallments(numberOfMonths.toString())
     } else {
-      setNumberOfInstallments(sale.number_of_installments?.toString() || '12')
+    setNumberOfInstallments(sale.number_of_installments?.toString() || '12')
     }
     
     // Auto-fill received amount (advance) for installment from offer
@@ -560,11 +560,11 @@ export function SaleConfirmation() {
       
       // For full payment, check against remaining amount (not total)
       if (confirmationType === 'full') {
-        const remainingAmount = totalPayablePerPiece - reservationPerPiece
+      const remainingAmount = totalPayablePerPiece - reservationPerPiece
         if (received < remainingAmount) {
-          setError(`المبلغ المستلم (${formatCurrency(received)}) أقل من المبلغ المتبقي (${formatCurrency(remainingAmount)})`)
-          setConfirming(false)
-          return
+        setError(`المبلغ المستلم (${formatCurrency(received)}) أقل من المبلغ المتبقي (${formatCurrency(remainingAmount)})`)
+        setConfirming(false)
+        return
         }
       } else if (confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
         // For installment, use advance amount from offer
@@ -611,16 +611,16 @@ export function SaleConfirmation() {
               monthlyAmount = selectedOffer.monthly_payment
             } else {
               installments = parseInt(numberOfInstallments) || selectedSale.number_of_installments || 12
-              if (installments <= 0) {
-                setError('عدد الأشهر يجب أن يكون أكبر من صفر')
-                setConfirming(false)
-                return
-              }
+            if (installments <= 0) {
+              setError('عدد الأشهر يجب أن يكون أكبر من صفر')
+              setConfirming(false)
+              return
+            }
               const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - received
-              if (remainingAfterAdvance <= 0) {
+            if (remainingAfterAdvance <= 0) {
                 setError('المبلغ المتبقي بعد التسبقة والعربون يجب أن يكون أكبر من صفر')
-                setConfirming(false)
-                return
+              setConfirming(false)
+              return
               }
               monthlyAmount = remainingAfterAdvance / installments
             }
@@ -755,16 +755,16 @@ export function SaleConfirmation() {
               monthlyAmount = selectedOffer.monthly_payment
             } else {
               installments = parseInt(numberOfInstallments) || selectedSale.number_of_installments || 12
-              if (installments <= 0) {
-                setError('عدد الأشهر يجب أن يكون أكبر من صفر')
-                setConfirming(false)
-                return
-              }
+            if (installments <= 0) {
+              setError('عدد الأشهر يجب أن يكون أكبر من صفر')
+              setConfirming(false)
+              return
+            }
               const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - received
-              if (remainingAfterAdvance <= 0) {
+            if (remainingAfterAdvance <= 0) {
                 setError('المبلغ المتبقي بعد التسبقة والعربون يجب أن يكون أكبر من صفر')
-                setConfirming(false)
-                return
+              setConfirming(false)
+              return
               }
               monthlyAmount = remainingAfterAdvance / installments
             }
@@ -1001,19 +1001,19 @@ export function SaleConfirmation() {
             />
             {searchTerm && (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  {filteredSales.length} نتيجة من {sales.length}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
+              <span className="text-sm text-muted-foreground">
+                {filteredSales.length} نتيجة من {sales.length}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
                   onClick={() => setSearchTerm('')}
-                  className="text-xs"
-                >
+                className="text-xs"
+              >
                   مسح
-                </Button>
-              </div>
-            )}
+              </Button>
+            </div>
+          )}
           </div>
         </CardContent>
       </Card>
@@ -1251,7 +1251,7 @@ export function SaleConfirmation() {
             </DialogTitle>
           </DialogHeader>
           {selectedSale && selectedPiece && (() => {
-            const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(selectedSale, selectedPiece)
+                  const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(selectedSale, selectedPiece)
             
             // Calculate advance amount from offer if available
             let advanceAmount = 0
@@ -1273,7 +1273,7 @@ export function SaleConfirmation() {
               calculatedMonths = Math.ceil(remainingAfterAdvance / monthlyPaymentAmount)
             }
             
-            return (
+                  return (
               <div className="space-y-4 sm:space-y-5">
                 {/* Detailed Summary Box */}
                 <div className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-300 rounded-lg p-4 sm:p-5 space-y-3 shadow-sm">
@@ -1283,7 +1283,7 @@ export function SaleConfirmation() {
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
                       <span className="text-sm sm:text-base text-gray-700">سعر القطعة:</span>
                       <span className="text-sm sm:text-base font-semibold text-gray-900">{formatCurrency(pricePerPiece)}</span>
-                    </div>
+                      </div>
                     
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
                       <div className="flex items-center gap-2">
@@ -1295,17 +1295,17 @@ export function SaleConfirmation() {
                       <span className="text-sm sm:text-base font-semibold text-blue-700">
                         {selectedOffer ? selectedOffer.company_fee_percentage : companyFeePercentage}%
                       </span>
-                    </div>
+                      </div>
                     
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
                       <span className="text-sm sm:text-base text-gray-700">عمولة الشركة:</span>
                       <span className="text-sm sm:text-base font-semibold text-blue-600">{formatCurrency(companyFeePerPiece)}</span>
-                    </div>
+                      </div>
                     
                     <div className="flex justify-between items-center py-2 border-t-2 border-gray-300 mt-2">
                       <span className="text-base sm:text-lg font-bold text-gray-900">المبلغ الإجمالي المستحق:</span>
                       <span className="text-base sm:text-lg font-bold text-green-600">{formatCurrency(totalPayablePerPiece)}</span>
-                    </div>
+                      </div>
                     
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
                       <span className="text-sm sm:text-base text-gray-700">المدفوع مسبقاً (العربون):</span>
@@ -1338,9 +1338,9 @@ export function SaleConfirmation() {
                           <span className="text-sm sm:text-base text-gray-700">المبلغ الشهري:</span>
                           <span className="text-sm sm:text-base font-semibold text-blue-700">
                             {formatCurrency(monthlyPaymentAmount)}
-                          </span>
-                        </div>
-                      </>
+                        </span>
+                      </div>
+                    </>
                     )}
                     
                     <div className="flex justify-between items-center py-2 border-t-2 border-orange-300 mt-2 bg-orange-50 rounded px-2">
@@ -1351,8 +1351,8 @@ export function SaleConfirmation() {
                         {formatCurrency(confirmationType === 'full' ? totalPayablePerPiece - reservationPerPiece : remainingAfterAdvance)}
                       </span>
                     </div>
-                  </div>
-                  
+              </div>
+
                   {selectedOffer && (
                     <div className="mt-3 pt-3 border-t border-gray-300 bg-white rounded p-2">
                       <p className="text-xs text-gray-600 mb-1">معلومات العرض:</p>
@@ -1367,62 +1367,62 @@ export function SaleConfirmation() {
                 </div>
 
                 {/* Editable Fields */}
-                {confirmationType === 'bigAdvance' && selectedSale?.payment_type === 'Installment' && (
-                  <div className="space-y-3 sm:space-y-4 p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <p className="text-xs sm:text-sm font-medium text-blue-800 mb-2 sm:mb-3">إعدادات الأقساط</p>
-                    
-                    <div className="space-y-1.5 sm:space-y-2">
-                      <Label htmlFor="installmentStartDate" className="text-xs sm:text-sm">تاريخ بداية الأقساط *</Label>
-                      <Input
-                        id="installmentStartDate"
-                        type="date"
-                        value={installmentStartDate}
-                        onChange={e => setInstallmentStartDate(e.target.value)}
-                        min={new Date().toISOString().split('T')[0]}
-                        className="text-xs sm:text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        سيتم إنشاء جدول الأقساط تلقائياً بعد تأكيد الدفعة الكبيرة
-                      </p>
-                    </div>
+              {confirmationType === 'bigAdvance' && selectedSale?.payment_type === 'Installment' && (
+                <div className="space-y-3 sm:space-y-4 p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-xs sm:text-sm font-medium text-blue-800 mb-2 sm:mb-3">إعدادات الأقساط</p>
+                  
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <Label htmlFor="installmentStartDate" className="text-xs sm:text-sm">تاريخ بداية الأقساط *</Label>
+                    <Input
+                      id="installmentStartDate"
+                      type="date"
+                      value={installmentStartDate}
+                      onChange={e => setInstallmentStartDate(e.target.value)}
+                      min={new Date().toISOString().split('T')[0]}
+                      className="text-xs sm:text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      سيتم إنشاء جدول الأقساط تلقائياً بعد تأكيد الدفعة الكبيرة
+                    </p>
                   </div>
-                )}
-
-                <div className="space-y-1.5 sm:space-y-2">
-                  <Label htmlFor="paymentMethod" className="text-xs sm:text-sm">طريقة الدفع</Label>
-                  <Select
-                    id="paymentMethod"
-                    value={paymentMethod}
-                    onChange={e => setPaymentMethod(e.target.value)}
-                    className="text-xs sm:text-sm"
-                  >
-                    <option value="cash">نقدي</option>
-                    <option value="check">شيك</option>
-                    <option value="transfer">تحويل بنكي</option>
-                  </Select>
                 </div>
+              )}
 
-                <div className="space-y-1.5 sm:space-y-2">
-                  <Label htmlFor="confirmationNotes" className="text-xs sm:text-sm">ملاحظات</Label>
-                  <Textarea
-                    id="confirmationNotes"
-                    value={confirmationNotes}
-                    onChange={e => setConfirmationNotes(e.target.value)}
-                    placeholder="ملاحظات إضافية..."
-                    rows={3}
-                    className="text-xs sm:text-sm min-h-[80px] sm:min-h-[100px]"
-                  />
-                </div>
-
-                <DialogFooter className="gap-2">
-                  <Button variant="outline" onClick={() => setConfirmDialogOpen(false)} className="w-full sm:w-auto">
-                    إلغاء
-                  </Button>
-                  <Button onClick={handleConfirmation} disabled={confirming} className="w-full sm:w-auto">
-                    {confirming ? 'جاري التأكيد...' : 'اتمام البيع'}
-                  </Button>
-                </DialogFooter>
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label htmlFor="paymentMethod" className="text-xs sm:text-sm">طريقة الدفع</Label>
+                <Select
+                  id="paymentMethod"
+                  value={paymentMethod}
+                  onChange={e => setPaymentMethod(e.target.value)}
+                  className="text-xs sm:text-sm"
+                >
+                  <option value="cash">نقدي</option>
+                  <option value="check">شيك</option>
+                  <option value="transfer">تحويل بنكي</option>
+                </Select>
               </div>
+
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label htmlFor="confirmationNotes" className="text-xs sm:text-sm">ملاحظات</Label>
+                <Textarea
+                  id="confirmationNotes"
+                  value={confirmationNotes}
+                  onChange={e => setConfirmationNotes(e.target.value)}
+                  placeholder="ملاحظات إضافية..."
+                  rows={3}
+                  className="text-xs sm:text-sm min-h-[80px] sm:min-h-[100px]"
+                />
+              </div>
+
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setConfirmDialogOpen(false)} className="w-full sm:w-auto">
+                  إلغاء
+                </Button>
+                <Button onClick={handleConfirmation} disabled={confirming} className="w-full sm:w-auto">
+                    {confirming ? 'جاري التأكيد...' : 'اتمام البيع'}
+                </Button>
+              </DialogFooter>
+            </div>
             )
           })()}
         </DialogContent>

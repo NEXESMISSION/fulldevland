@@ -407,7 +407,7 @@ export function Users() {
       // For Owner, keep all pages but reset order
       setForm(prev => ({ ...prev, allowedPages: ALL_PAGES.map(p => p.id) }))
     } else {
-      setForm(prev => ({ ...prev, allowedPages: [] }))
+    setForm(prev => ({ ...prev, allowedPages: [] }))
     }
   }
 
@@ -468,9 +468,9 @@ export function Users() {
       if (editingUser) {
         // Update existing user
         const updateData: any = {
-          name: sanitizeText(form.name),
-          role: form.role,
-          allowed_pages: form.role === 'Owner' ? null : form.allowedPages,
+            name: sanitizeText(form.name),
+            role: form.role,
+            allowed_pages: form.role === 'Owner' ? null : form.allowedPages,
           page_order: form.allowedPages.length > 0 ? form.allowedPages : null,
           sidebar_order: form.sidebarOrder.length > 0 ? form.sidebarOrder : null,
         }
@@ -1344,40 +1344,40 @@ export function Users() {
             )}
 
             {/* Page Permissions Section - Show for all roles including Owner */}
-            <div className="space-y-2 sm:space-y-3 border-t pt-3 sm:pt-4 mt-3 sm:mt-4">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                <Label className="text-sm sm:text-base font-semibold flex items-center gap-2">
-                  <Lock className="h-3 w-3 sm:h-4 sm:w-4" />
-                  الصفحات المتاحة
-                </Label>
-                <div className="flex gap-2 w-full sm:w-auto">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm"
-                    onClick={selectAllPages}
-                    disabled={saving}
-                    className="flex-1 sm:flex-none text-xs"
-                  >
-                    <Eye className="h-3 w-3 mr-1" />
-                    تحديد الكل
-                  </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm"
-                    onClick={deselectAllPages}
-                    disabled={saving}
-                    className="flex-1 sm:flex-none text-xs"
-                  >
-                    <EyeOff className="h-3 w-3 mr-1" />
-                    إلغاء الكل
-                  </Button>
+              <div className="space-y-2 sm:space-y-3 border-t pt-3 sm:pt-4 mt-3 sm:mt-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                  <Label className="text-sm sm:text-base font-semibold flex items-center gap-2">
+                    <Lock className="h-3 w-3 sm:h-4 sm:w-4" />
+                    الصفحات المتاحة
+                  </Label>
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={selectAllPages}
+                      disabled={saving}
+                      className="flex-1 sm:flex-none text-xs"
+                    >
+                      <Eye className="h-3 w-3 mr-1" />
+                      تحديد الكل
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={deselectAllPages}
+                      disabled={saving}
+                      className="flex-1 sm:flex-none text-xs"
+                    >
+                      <EyeOff className="h-3 w-3 mr-1" />
+                      إلغاء الكل
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                 اختر الصفحات التي يمكن للمستخدم الوصول إليها. استخدم الأزرار لترتيب الصفحات.
-              </p>
+                </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-h-64 sm:max-h-80 overflow-y-auto p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
                 {(() => {
                   // Separate selected and unselected pages
@@ -1414,7 +1414,7 @@ export function Users() {
                         {displayNumber && (
                           <div className="absolute -top-2 -right-2 w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md z-10">
                             {displayNumber}
-                          </div>
+                        </div>
                         )}
                         
                         {/* Order Controls - Only for selected pages */}
@@ -1474,18 +1474,18 @@ export function Users() {
                     )
                   })
                 })()}
-              </div>
-              <p className="text-xs text-muted-foreground text-center">
-                {form.allowedPages?.length || 0} من {ALL_PAGES.length} صفحة محددة
-              </p>
-              {form.role === 'Owner' && (
+                </div>
+                <p className="text-xs text-muted-foreground text-center">
+                  {form.allowedPages?.length || 0} من {ALL_PAGES.length} صفحة محددة
+                </p>
+            {form.role === 'Owner' && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 sm:p-3">
                   <p className="text-xs sm:text-sm text-blue-800 flex items-center gap-2">
-                    <Shield className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <Shield className="h-3 w-3 sm:h-4 sm:w-4" />
                     المالك لديه صلاحية الوصول الكامل لجميع الصفحات. يمكنك إدارة ترتيب الصفحات أعلاه.
-                  </p>
-                </div>
-              )}
+                </p>
+              </div>
+            )}
             </div>
           </div>
           <DialogFooter className="gap-2">

@@ -72,27 +72,52 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   // Filter and sort navigation items based on user's custom order
   const getOrderedNavItems = () => {
-    // First, filter items based on permissions
-    const filteredItems = navItems.filter((item) => {
-      if (hasExplicitPageAccess) {
-        // Only check page access (allowed_pages), ignore role permissions
-        return hasPageAccess(item.pageId)
+    // For both Owner and Worker: use page_order to control which pages are shown and their order
+    let filteredItems: typeof navItems = []
+    
+    if (profile?.role === 'Owner') {
+      // Owner: if page_order exists, only show pages in page_order, otherwise show all pages
+      if (Array.isArray(pageOrder) && pageOrder.length > 0) {
+        // Only show pages that are in page_order
+        filteredItems = navItems.filter(item => pageOrder.includes(item.pageId))
+      } else {
+        // No page_order set, show all pages with permissions
+        filteredItems = navItems.filter((item) => {
+          if (item.permission && !hasPermission(item.permission)) return false
+          return true
+        })
+      }
+    } else {
+      // Worker: only show pages in allowed_pages (which should match page_order)
+      if (Array.isArray(allowedPages) && allowedPages.length > 0) {
+        // Use allowed_pages to filter (should match page_order)
+        filteredItems = navItems.filter(item => allowedPages.includes(item.pageId))
+      } else if (Array.isArray(pageOrder) && pageOrder.length > 0) {
+        // Fallback to page_order if allowed_pages is not set
+        filteredItems = navItems.filter(item => pageOrder.includes(item.pageId))
       } else {
         // No explicit page access configured - use role permissions
-        if (item.permission && !hasPermission(item.permission)) return false
-        return true
+        filteredItems = navItems.filter((item) => {
+          if (item.permission && !hasPermission(item.permission)) return false
+          return true
+        })
       }
-    })
+    }
 
-    // If user has custom order (page_order for Owner, sidebar_order for Worker), sort items accordingly
-    if (Array.isArray(customOrder) && customOrder.length > 0) {
+    // Sort items based on page_order (for both Owner and Worker)
+    // Use page_order if available, otherwise use allowed_pages order
+    const orderSource = Array.isArray(pageOrder) && pageOrder.length > 0 
+      ? pageOrder 
+      : (Array.isArray(allowedPages) && allowedPages.length > 0 ? allowedPages : null)
+    
+    if (orderSource) {
       // Create a map for quick lookup
       const orderMap: Record<string, number> = {}
-      customOrder.forEach((pageId, index) => {
+      orderSource.forEach((pageId, index) => {
         orderMap[pageId] = index
       })
 
-      // Sort items: items in custom order first (by their order), then items not in order
+      // Sort items: items in order first (by their order), then items not in order
       return filteredItems.sort((a, b) => {
         const aOrder = orderMap[a.pageId] !== undefined ? orderMap[a.pageId] : Infinity
         const bOrder = orderMap[b.pageId] !== undefined ? orderMap[b.pageId] : Infinity
@@ -104,13 +129,13 @@ export function Sidebar({ onClose }: SidebarProps) {
         } else if (bOrder !== Infinity) {
           return 1 // b comes first
         } else {
-          // Both not in custom order, maintain original order
+          // Both not in order, maintain original order
           return navItems.indexOf(a) - navItems.indexOf(b)
         }
       })
     }
 
-    // No custom order, return filtered items in original order
+    // No order specified, return filtered items in original order
     return filteredItems
   }
 
