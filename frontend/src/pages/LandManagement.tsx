@@ -863,8 +863,66 @@ export function LandManagement() {
   const saveBatchOffer = async () => {
     if (!editingBatch) return
 
-    if (!offerForm.monthly_payment) {
-      setError('يرجى إدخال المبلغ الشهري')
+    // Validate that either monthly_payment or number_of_months is provided
+    if (!offerForm.monthly_payment && !offerForm.number_of_months) {
+      setError('يرجى إدخال إما المبلغ الشهري أو عدد الأشهر')
+      return
+    }
+
+    // Calculate the missing value if needed
+    let finalMonthlyPayment = offerForm.monthly_payment ? parseFloat(offerForm.monthly_payment) : 0
+    let finalNumberOfMonths = offerForm.number_of_months ? parseFloat(offerForm.number_of_months) : null
+
+    // If monthly_payment is missing, calculate it from number_of_months
+    if (!offerForm.monthly_payment && offerForm.number_of_months) {
+      // Use a sample piece (100 m²) for calculation
+      const sampleSurface = 100
+      const pricePerM2 = parseFloat(offerForm.price_per_m2_installment) || 0
+      const companyFeePercentage = parseFloat(offerForm.company_fee_percentage) || 0
+      const advanceAmount = parseFloat(offerForm.advance_amount) || 0
+      const advanceIsPercentage = offerForm.advance_is_percentage
+      
+      if (pricePerM2 > 0 && finalNumberOfMonths && finalNumberOfMonths > 0) {
+        const piecePrice = sampleSurface * pricePerM2
+        const companyFee = (piecePrice * companyFeePercentage) / 100
+        const totalPayable = piecePrice + companyFee
+        const advance = advanceIsPercentage 
+          ? (piecePrice * advanceAmount) / 100
+          : advanceAmount
+        const remaining = totalPayable - advance
+        
+        if (remaining > 0) {
+          finalMonthlyPayment = remaining / finalNumberOfMonths
+        }
+      }
+    }
+
+    // If number_of_months is missing, calculate it from monthly_payment
+    if (!offerForm.number_of_months && offerForm.monthly_payment) {
+      // Use a sample piece (100 m²) for calculation
+      const sampleSurface = 100
+      const pricePerM2 = parseFloat(offerForm.price_per_m2_installment) || 0
+      const companyFeePercentage = parseFloat(offerForm.company_fee_percentage) || 0
+      const advanceAmount = parseFloat(offerForm.advance_amount) || 0
+      const advanceIsPercentage = offerForm.advance_is_percentage
+      
+      if (pricePerM2 > 0 && finalMonthlyPayment > 0) {
+        const piecePrice = sampleSurface * pricePerM2
+        const companyFee = (piecePrice * companyFeePercentage) / 100
+        const totalPayable = piecePrice + companyFee
+        const advance = advanceIsPercentage 
+          ? (piecePrice * advanceAmount) / 100
+          : advanceAmount
+        const remaining = totalPayable - advance
+        
+        if (remaining > 0) {
+          finalNumberOfMonths = Math.ceil(remaining / finalMonthlyPayment)
+        }
+      }
+    }
+
+    if (finalMonthlyPayment <= 0) {
+      setError('يرجى إدخال المبلغ الشهري أو عدد الأشهر')
       return
     }
 
@@ -875,7 +933,8 @@ export function LandManagement() {
         company_fee_percentage: offerForm.company_fee_percentage ? parseFloat(offerForm.company_fee_percentage) : 0,
         advance_amount: offerForm.advance_amount ? parseFloat(offerForm.advance_amount) : 0,
         advance_is_percentage: offerForm.advance_is_percentage,
-        monthly_payment: parseFloat(offerForm.monthly_payment),
+        monthly_payment: finalMonthlyPayment,
+        number_of_months: finalNumberOfMonths,
         offer_name: offerForm.offer_name.trim() || null,
         notes: offerForm.notes.trim() || null,
         is_default: offerForm.is_default,
@@ -2249,8 +2308,66 @@ export function LandManagement() {
   const savePieceOffer = async () => {
     if (!editingPiece) return
 
-    if (!offerForm.monthly_payment) {
-      setError('يرجى إدخال المبلغ الشهري')
+    // Validate that either monthly_payment or number_of_months is provided
+    if (!offerForm.monthly_payment && !offerForm.number_of_months) {
+      setError('يرجى إدخال إما المبلغ الشهري أو عدد الأشهر')
+      return
+    }
+
+    // Calculate the missing value if needed
+    let finalMonthlyPayment = offerForm.monthly_payment ? parseFloat(offerForm.monthly_payment) : 0
+    let finalNumberOfMonths = offerForm.number_of_months ? parseFloat(offerForm.number_of_months) : null
+
+    // If monthly_payment is missing, calculate it from number_of_months
+    if (!offerForm.monthly_payment && offerForm.number_of_months) {
+      // Use the actual piece surface area for calculation
+      const pieceSurface = editingPiece.surface_area || 100
+      const pricePerM2 = parseFloat(offerForm.price_per_m2_installment) || 0
+      const companyFeePercentage = parseFloat(offerForm.company_fee_percentage) || 0
+      const advanceAmount = parseFloat(offerForm.advance_amount) || 0
+      const advanceIsPercentage = offerForm.advance_is_percentage
+      
+      if (pricePerM2 > 0 && finalNumberOfMonths && finalNumberOfMonths > 0) {
+        const piecePrice = pieceSurface * pricePerM2
+        const companyFee = (piecePrice * companyFeePercentage) / 100
+        const totalPayable = piecePrice + companyFee
+        const advance = advanceIsPercentage 
+          ? (piecePrice * advanceAmount) / 100
+          : advanceAmount
+        const remaining = totalPayable - advance
+        
+        if (remaining > 0) {
+          finalMonthlyPayment = remaining / finalNumberOfMonths
+        }
+      }
+    }
+
+    // If number_of_months is missing, calculate it from monthly_payment
+    if (!offerForm.number_of_months && offerForm.monthly_payment) {
+      // Use the actual piece surface area for calculation
+      const pieceSurface = editingPiece.surface_area || 100
+      const pricePerM2 = parseFloat(offerForm.price_per_m2_installment) || 0
+      const companyFeePercentage = parseFloat(offerForm.company_fee_percentage) || 0
+      const advanceAmount = parseFloat(offerForm.advance_amount) || 0
+      const advanceIsPercentage = offerForm.advance_is_percentage
+      
+      if (pricePerM2 > 0 && finalMonthlyPayment > 0) {
+        const piecePrice = pieceSurface * pricePerM2
+        const companyFee = (piecePrice * companyFeePercentage) / 100
+        const totalPayable = piecePrice + companyFee
+        const advance = advanceIsPercentage 
+          ? (piecePrice * advanceAmount) / 100
+          : advanceAmount
+        const remaining = totalPayable - advance
+        
+        if (remaining > 0) {
+          finalNumberOfMonths = Math.ceil(remaining / finalMonthlyPayment)
+        }
+      }
+    }
+
+    if (finalMonthlyPayment <= 0) {
+      setError('يرجى إدخال المبلغ الشهري أو عدد الأشهر')
       return
     }
 
@@ -2261,7 +2378,8 @@ export function LandManagement() {
         company_fee_percentage: offerForm.company_fee_percentage ? parseFloat(offerForm.company_fee_percentage) : 0,
         advance_amount: offerForm.advance_amount ? parseFloat(offerForm.advance_amount) : 0,
         advance_is_percentage: offerForm.advance_is_percentage,
-        monthly_payment: parseFloat(offerForm.monthly_payment),
+        monthly_payment: finalMonthlyPayment,
+        number_of_months: finalNumberOfMonths,
         offer_name: offerForm.offer_name.trim() || null,
         notes: offerForm.notes.trim() || null,
         is_default: offerForm.is_default,
@@ -5290,7 +5408,8 @@ export function LandManagement() {
                   const totalReservation = piecesCalculations.reduce((sum, calc) => sum + calc.reservationPerPiece, 0)
                   const advanceAmount = piecesCalculations.reduce((sum, calc) => sum + calc.advancePerPiece, 0)
                   const remainingAfterPayments = piecesCalculations.reduce((sum, calc) => sum + calc.remainingPerPiece, 0)
-                  const monthlyAmount = selectedOffer.monthly_payment
+                  const monthlyAmountPerPiece = selectedOffer.monthly_payment
+                  const totalMonthlyAmount = monthlyAmountPerPiece * selectedPiecesData.length // Multiply by number of pieces
                   const maxMonths = Math.max(...piecesCalculations.map(calc => calc.monthsPerPiece), 0)
                   
                   return (
@@ -5315,7 +5434,7 @@ export function LandManagement() {
                                   <div className="text-green-700">العربون (مدفوع): {formatCurrency(calc.reservationPerPiece)}</div>
                                   <div>التسبقة (عند التأكيد): {formatCurrency(calc.advancePerPiece)}</div>
                                   <div>المتبقي للتقسيط: {formatCurrency(calc.remainingPerPiece)}</div>
-                                  <div>المبلغ الشهري: {formatCurrency(monthlyAmount)}</div>
+                                  <div>المبلغ الشهري (لكل قطعة): {formatCurrency(monthlyAmountPerPiece)}</div>
                                   {calc.monthsPerPiece > 0 && (
                                     <div className="font-medium text-blue-700">عدد الأشهر: {calc.monthsPerPiece} شهر</div>
                                   )}
@@ -5356,8 +5475,12 @@ export function LandManagement() {
                               {maxMonths > 0 && (
                                 <>
                                   <div className="flex justify-between">
-                                    <span>المبلغ الشهري:</span>
-                                    <span className="font-medium">{formatCurrency(monthlyAmount)}</span>
+                                    <span>المبلغ الشهري (لكل قطعة):</span>
+                                    <span className="font-medium">{formatCurrency(monthlyAmountPerPiece)}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span>المبلغ الشهري الإجمالي ({selectedPiecesData.length} قطع):</span>
+                                    <span className="font-semibold text-blue-800">{formatCurrency(totalMonthlyAmount)}</span>
                                   </div>
                                   <div className="flex justify-between border-t border-blue-100 pt-1 mt-1">
                                     <span className="font-medium">عدد الأشهر:</span>
@@ -5369,7 +5492,7 @@ export function LandManagement() {
                                 <p className="font-medium mb-1">ملاحظة:</p>
                                 <p>• العربون: مبلغ يتم دفعه عند إنشاء البيع (الحجز)</p>
                                 <p>• التسبقة: مبلغ يتم دفعه عند تأكيد البيع</p>
-                                <p>• المبلغ المتبقي: يتم تقسيطه على {maxMonths} شهر بمبلغ {formatCurrency(monthlyAmount)} شهرياً</p>
+                                <p>• المبلغ المتبقي: يتم تقسيطه على {maxMonths} شهر بمبلغ {formatCurrency(totalMonthlyAmount)} شهرياً ({formatCurrency(monthlyAmountPerPiece)} لكل قطعة × {selectedPiecesData.length} قطع)</p>
                               </div>
                             </div>
                           </div>
@@ -5601,10 +5724,15 @@ export function LandManagement() {
                     type="checkbox"
                     id="offer_advance_is_percentage"
                     checked={offerForm.advance_is_percentage}
-                    onChange={(e) => setOfferForm({ ...offerForm, advance_is_percentage: e.target.checked })}
-                    className="h-4 w-4"
+                    onChange={(e) => {
+                      const isPercentage = e.target.checked
+                      // Clear advance_amount when toggling percentage checkbox
+                      setOfferForm({ ...offerForm, advance_is_percentage: isPercentage, advance_amount: '' })
+                    }}
+                    className="h-4 w-4 rounded cursor-pointer touch-manipulation"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
                   />
-                  <Label htmlFor="offer_advance_is_percentage" className="text-xs">نسبة مئوية</Label>
+                  <Label htmlFor="offer_advance_is_percentage" className="text-xs cursor-pointer touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>نسبة مئوية</Label>
                 </div>
               </div>
             </div>
@@ -5618,12 +5746,35 @@ export function LandManagement() {
                   value={offerForm.monthly_payment}
                   onChange={(e) => {
                     const monthlyValue = e.target.value
-                    setOfferForm({ ...offerForm, monthly_payment: monthlyValue })
-                    // If monthly payment is entered and number of months is also entered, recalculate
-                    if (monthlyValue && offerForm.number_of_months) {
-                      // Keep number of months, recalculate monthly payment if needed
-                      // Actually, if user is typing monthly payment, we should clear number_of_months or recalculate
+                    // Calculate number_of_months if we have all required data
+                    let calculatedMonths = ''
+                    if (monthlyValue && parseFloat(monthlyValue) > 0) {
+                      // We need to calculate based on remaining amount after advance
+                      // For calculation, we'll use a sample piece (e.g., 100 m²) to estimate
+                      const sampleSurface = 100 // Sample surface area for calculation
+                      const pricePerM2 = parseFloat(offerForm.price_per_m2_installment) || 0
+                      const companyFeePercentage = parseFloat(offerForm.company_fee_percentage) || 0
+                      const advanceAmount = parseFloat(offerForm.advance_amount) || 0
+                      const advanceIsPercentage = offerForm.advance_is_percentage
+                      
+                      if (pricePerM2 > 0) {
+                        const piecePrice = sampleSurface * pricePerM2
+                        const companyFee = (piecePrice * companyFeePercentage) / 100
+                        const totalPayable = piecePrice + companyFee
+                        const advance = advanceIsPercentage 
+                          ? (piecePrice * advanceAmount) / 100
+                          : advanceAmount
+                        const remaining = totalPayable - advance
+                        
+                        if (remaining > 0) {
+                          const monthly = parseFloat(monthlyValue)
+                          if (monthly > 0) {
+                            calculatedMonths = Math.ceil(remaining / monthly).toString()
+                          }
+                        }
+                      }
                     }
+                    setOfferForm({ ...offerForm, monthly_payment: monthlyValue, number_of_months: calculatedMonths })
                   }}
                   placeholder="0.00"
                   min="0.01"
@@ -5638,19 +5789,42 @@ export function LandManagement() {
                   value={offerForm.number_of_months}
                   onChange={(e) => {
                     const monthsValue = e.target.value
-                    setOfferForm({ ...offerForm, number_of_months: monthsValue })
-                    // If number of months is entered and monthly payment is also entered, recalculate
-                    if (monthsValue && offerForm.monthly_payment) {
-                      // Keep monthly payment, recalculate number of months if needed
-                      // Actually, if user is typing number of months, we should clear monthly_payment or recalculate
+                    // Calculate monthly_payment if we have all required data
+                    let calculatedMonthly = ''
+                    if (monthsValue && parseFloat(monthsValue) > 0) {
+                      // We need to calculate based on remaining amount after advance
+                      // For calculation, we'll use a sample piece (e.g., 100 m²) to estimate
+                      const sampleSurface = 100 // Sample surface area for calculation
+                      const pricePerM2 = parseFloat(offerForm.price_per_m2_installment) || 0
+                      const companyFeePercentage = parseFloat(offerForm.company_fee_percentage) || 0
+                      const advanceAmount = parseFloat(offerForm.advance_amount) || 0
+                      const advanceIsPercentage = offerForm.advance_is_percentage
+                      
+                      if (pricePerM2 > 0) {
+                        const piecePrice = sampleSurface * pricePerM2
+                        const companyFee = (piecePrice * companyFeePercentage) / 100
+                        const totalPayable = piecePrice + companyFee
+                        const advance = advanceIsPercentage 
+                          ? (piecePrice * advanceAmount) / 100
+                          : advanceAmount
+                        const remaining = totalPayable - advance
+                        
+                        if (remaining > 0) {
+                          const months = parseFloat(monthsValue)
+                          if (months > 0) {
+                            calculatedMonthly = (remaining / months).toFixed(2)
+                          }
+                        }
+                      }
                     }
+                    setOfferForm({ ...offerForm, number_of_months: monthsValue, monthly_payment: calculatedMonthly })
                   }}
                   placeholder="12"
                   min="1"
                 />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">أدخل إما المبلغ الشهري أو عدد الأشهر، وسيتم حساب الآخر تلقائياً عند الحفظ</p>
+            <p className="text-xs text-muted-foreground">أدخل إما المبلغ الشهري أو عدد الأشهر، وسيتم حساب الآخر تلقائياً بناءً على المبلغ المتبقي بعد التسبقة</p>
             <div className="space-y-2">
               <Label htmlFor="offer_notes">ملاحظات (اختياري)</Label>
               <Textarea
@@ -5680,7 +5854,7 @@ export function LandManagement() {
             }}>
               إلغاء
             </Button>
-            <Button onClick={isBatchOffer ? saveBatchOffer : savePieceOffer} disabled={!offerForm.price_per_m2_installment || !offerForm.monthly_payment}>
+            <Button onClick={isBatchOffer ? saveBatchOffer : savePieceOffer} disabled={!offerForm.price_per_m2_installment || (!offerForm.monthly_payment && !offerForm.number_of_months)}>
               حفظ
             </Button>
           </DialogFooter>

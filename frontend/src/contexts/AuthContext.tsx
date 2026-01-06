@@ -13,6 +13,7 @@ interface AuthContextType {
   isReady: boolean         // True when auth AND profile are fully loaded
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
+  refreshProfile: () => Promise<void>  // Refresh profile from database
   hasPermission: (permission: string) => boolean
   hasPageAccess: (pageId: string) => boolean
   getPermissionDeniedMessage: (permission: string) => string
@@ -174,7 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // This is critical for page access control
           const { data, error } = await supabase
             .from('users')
-            .select('id, name, email, role, status, created_at, updated_at, allowed_pages')
+            .select('id, name, email, role, status, created_at, updated_at, allowed_pages, page_order, sidebar_order')
             .eq('id', userId)
             .limit(1)
       
@@ -682,6 +683,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return allowedPages.includes(pageId)
   }
 
+  const refreshProfile = async () => {
+    if (user?.id) {
+      fetchingRef.current = false  // Reset to allow re-fetch
+      await fetchProfile(user.id)
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -693,6 +701,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isReady,
         signIn,
         signOut,
+        refreshProfile,
         hasPermission,
         hasPageAccess,
         getPermissionDeniedMessage,

@@ -54,8 +54,12 @@ export function Sidebar({ onClose }: SidebarProps) {
   // Get allowed_pages from profile
   const allowedPages = (profile as any)?.allowed_pages as string[] | null | undefined
   
-  // Get sidebar_order from profile
+  // Get page_order (for Owner) or sidebar_order (for Worker) from profile
+  const pageOrder = (profile as any)?.page_order as string[] | null | undefined
   const sidebarOrder = (profile as any)?.sidebar_order as string[] | null | undefined
+  
+  // For Owner, use page_order; for Worker, use sidebar_order
+  const customOrder = profile?.role === 'Owner' ? pageOrder : sidebarOrder
   
   // Check if user has explicit allowed_pages configured (non-Owner with pages set)
   const hasExplicitPageAccess = profile?.role !== 'Owner' && 
@@ -80,11 +84,11 @@ export function Sidebar({ onClose }: SidebarProps) {
       }
     })
 
-    // If user has custom sidebar order, sort items accordingly
-    if (Array.isArray(sidebarOrder) && sidebarOrder.length > 0) {
+    // If user has custom order (page_order for Owner, sidebar_order for Worker), sort items accordingly
+    if (Array.isArray(customOrder) && customOrder.length > 0) {
       // Create a map for quick lookup
       const orderMap: Record<string, number> = {}
-      sidebarOrder.forEach((pageId, index) => {
+      customOrder.forEach((pageId, index) => {
         orderMap[pageId] = index
       })
 

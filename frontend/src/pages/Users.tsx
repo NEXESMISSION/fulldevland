@@ -46,7 +46,6 @@ const roleColors: Record<UserRole, 'default' | 'secondary' | 'destructive'> = {
 
 // All available pages in the system - IDs must match Sidebar.tsx pageId values
 const ALL_PAGES = [
-  { id: 'home', name: 'الرئيسية', icon: Home, description: 'الصفحة الرئيسية' },
   { id: 'land', name: 'إدارة الأراضي', icon: MapIcon, description: 'إدارة قطع الأراضي' },
   { id: 'clients', name: 'العملاء', icon: UsersIcon, description: 'إدارة العملاء' },
   { id: 'sales', name: 'المبيعات', icon: ShoppingCart, description: 'إدارة المبيعات' },
@@ -72,7 +71,7 @@ interface UserStats {
 }
 
 export function Users() {
-  const { hasPermission, profile } = useAuth()
+  const { hasPermission, profile, refreshProfile } = useAuth()
   const [users, setUsers] = useState<UserType[]>([])
   const [userStats, setUserStats] = useState<Map<string, UserStats>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -337,12 +336,27 @@ export function Users() {
     if (user) {
       setEditingUser(user)
       const workerProfile = workerProfiles.get(user.id)
+      
+      // For Owner: use page_order if exists, otherwise all pages
+      // For Worker: use page_order or allowed_pages
+      let pageOrder: string[] = []
+      if (user.role === 'Owner') {
+        pageOrder = (user as any).page_order || ALL_PAGES.map(p => p.id)
+      } else {
+        pageOrder = (user as any).page_order || (user as any).allowed_pages || []
+      }
+      
+      console.log('Opening dialog for user:', user.name, 'Role:', user.role)
+      console.log('User page_order:', (user as any).page_order)
+      console.log('User allowed_pages:', (user as any).allowed_pages)
+      console.log('Final allowedPages:', pageOrder)
+      
       setForm({
         name: user.name,
         email: user.email,
         password: '',
         role: user.role,
-        allowedPages: (user as any).page_order || (user as any).allowed_pages || [],
+        allowedPages: pageOrder,
         sidebarOrder: (user as any).sidebar_order || [],
         worker_type: workerProfile?.worker_type || '',
         region: workerProfile?.region || '',
@@ -352,7 +366,7 @@ export function Users() {
     } else {
       setEditingUser(null)
       // Default pages for new Worker
-      const defaultPages = ['home', 'land', 'clients', 'sales', 'installments']
+      const defaultPages = ['land', 'clients', 'sales', 'installments']
       setForm({
         name: '',
         email: '',
@@ -387,9 +401,14 @@ export function Users() {
     setForm(prev => ({ ...prev, allowedPages: ALL_PAGES.map(p => p.id) }))
   }
 
-  // Deselect all pages
+  // Deselect all pages (only for Worker, Owner should always have all pages)
   const deselectAllPages = () => {
-    setForm(prev => ({ ...prev, allowedPages: [] }))
+    if (form.role === 'Owner') {
+      // For Owner, keep all pages but reset order
+      setForm(prev => ({ ...prev, allowedPages: ALL_PAGES.map(p => p.id) }))
+    } else {
+      setForm(prev => ({ ...prev, allowedPages: [] }))
+    }
   }
 
   const addSkill = () => {
@@ -448,14 +467,20 @@ export function Users() {
 
       if (editingUser) {
         // Update existing user
+        const updateData: any = {
+          name: sanitizeText(form.name),
+          role: form.role,
+          allowed_pages: form.role === 'Owner' ? null : form.allowedPages,
+          page_order: form.allowedPages.length > 0 ? form.allowedPages : null,
+          sidebar_order: form.sidebarOrder.length > 0 ? form.sidebarOrder : null,
+        }
+        
+        console.log('Updating user with data:', updateData)
+        console.log('Form allowedPages:', form.allowedPages)
+        
         const { error } = await supabase
           .from('users')
-          .update({
-            name: sanitizeText(form.name),
-            role: form.role,
-            allowed_pages: form.role === 'Owner' ? null : form.allowedPages,
-            sidebar_order: form.sidebarOrder.length > 0 ? form.sidebarOrder : null,
-          })
+          .update(updateData)
           .eq('id', editingUser.id)
 
         if (error) {
@@ -516,6 +541,10 @@ export function Users() {
           worker_notes: '',
         })
         await fetchUsers()
+        // Refresh profile if we updated the current user
+        if (editingUser?.id === profile?.id) {
+          await refreshProfile()
+        }
       } else {
         // Create new user with Supabase Auth
         // Password is optional - will generate random password if not provided
@@ -1351,15 +1380,19 @@ export function Users() {
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-h-64 sm:max-h-80 overflow-y-auto p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
                 {(() => {
-                  // Sort pages by allowedPages order, then by ALL_PAGES order
-                  const sortedPages = [...ALL_PAGES].sort((a, b) => {
+                  // Separate selected and unselected pages
+                  const selectedPages = ALL_PAGES.filter(page => form.allowedPages?.includes(page.id))
+                  const unselectedPages = ALL_PAGES.filter(page => !form.allowedPages?.includes(page.id))
+                  
+                  // Sort selected pages by their order in allowedPages
+                  const sortedSelectedPages = [...selectedPages].sort((a, b) => {
                     const aIndex = form.allowedPages?.indexOf(a.id) ?? -1
                     const bIndex = form.allowedPages?.indexOf(b.id) ?? -1
-                    if (aIndex >= 0 && bIndex >= 0) return aIndex - bIndex
-                    if (aIndex >= 0) return -1
-                    if (bIndex >= 0) return 1
-                    return ALL_PAGES.indexOf(a) - ALL_PAGES.indexOf(b)
+                    return aIndex - bIndex
                   })
+                  
+                  // Combine: selected first (in order), then unselected
+                  const sortedPages = [...sortedSelectedPages, ...unselectedPages]
                   
                   return sortedPages.map((page, index) => {
                     const PageIcon = page.icon
