@@ -335,12 +335,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       setProfile(data)
         
-      // Fetch custom user permissions if not Owner
-      if (data.role !== 'Owner') {
-        await fetchUserPermissions(data.id)
-      } else {
-        // Owner has all permissions, no need to fetch
-        setUserPermissions({})
+        // Fetch custom user permissions if not Owner
+        if (data.role !== 'Owner') {
+          await fetchUserPermissions(data.id)
+        } else {
+          // Owner has all permissions, no need to fetch
+          setUserPermissions({})
       }
     } catch (error) {
       console.error('Failed to fetch profile:', error)

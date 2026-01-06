@@ -394,7 +394,7 @@ export function SaleConfirmation() {
       }
       setNumberOfInstallments(numberOfMonths.toString())
     } else {
-      setNumberOfInstallments(sale.number_of_installments?.toString() || '12')
+    setNumberOfInstallments(sale.number_of_installments?.toString() || '12')
     }
     
     // Auto-fill received amount (advance) for installment from offer
@@ -620,8 +620,23 @@ export function SaleConfirmation() {
   const handleConfirmation = async () => {
     if (!selectedSale || !selectedPiece) return
     
+    // Show pre-confirmation dialog first for installment sales
+    if (confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
+      // For installment, show confirmation dialog before proceeding
+      setConfirmBeforeConfirmOpen(true)
+      return
+    }
+    
+    // For full payment, proceed directly without pre-confirmation
+    await proceedWithConfirmation()
+  }
+
+  const proceedWithConfirmation = async () => {
+    if (!selectedSale || !selectedPiece) return
+    
     setConfirming(true)
     setError(null)
+    setConfirmBeforeConfirmOpen(false)
     
     try {
       const pieceCount = selectedSale.land_piece_ids.length
@@ -692,8 +707,8 @@ export function SaleConfirmation() {
               installments = parseInt(numberOfInstallments) || selectedSale.number_of_installments || 12
               if (installments <= 0) {
                 setError('عدد الأشهر يجب أن يكون أكبر من صفر')
-                setConfirming(false)
-                return
+              setConfirming(false)
+              return
               }
               monthlyAmount = remainingAfterAdvance / installments
             }
@@ -849,8 +864,8 @@ export function SaleConfirmation() {
               installments = parseInt(numberOfInstallments) || selectedSale.number_of_installments || 12
               if (installments <= 0) {
                 setError('عدد الأشهر يجب أن يكون أكبر من صفر')
-                setConfirming(false)
-                return
+              setConfirming(false)
+              return
               }
               monthlyAmount = remainingAfterAdvance / installments
             }
@@ -1167,14 +1182,14 @@ export function SaleConfirmation() {
                           countdownText = `⏰ متبقي: ${daysUntil} ${daysUntil === 1 ? 'يوم' : 'أيام'} و ${hoursUntil} ${hoursUntil === 1 ? 'ساعة' : 'ساعات'}`
                         }
                         
-                        return (
+                          return (
                           <Badge 
                             variant={isOverdue ? "destructive" : isToday || isClose ? "warning" : "default"} 
                             className="text-xs font-medium"
                           >
                             {countdownText}
-                          </Badge>
-                        )
+                            </Badge>
+                          )
                       })()}
                       <Badge variant={sale.status === 'Pending' ? 'warning' : 'secondary'} className="text-xs">
                         {sale.status === 'Pending' ? 'محجوز' : 'قيد الدفع'}
@@ -1248,7 +1263,7 @@ export function SaleConfirmation() {
                                       setSelectedSale(sale)
                                       setSelectedPiece(piece)
                                       setPendingConfirmationType('full')
-                                      setConfirmBeforeConfirmOpen(true)
+                                      openConfirmDialog(sale, piece, 'full')
                                     }}
                                     className="bg-green-600 hover:bg-green-700 text-xs h-8 flex-1"
                                     size="sm"
@@ -1263,7 +1278,7 @@ export function SaleConfirmation() {
                                       setSelectedSale(sale)
                                       setSelectedPiece(piece)
                                       setPendingConfirmationType('bigAdvance')
-                                      setConfirmBeforeConfirmOpen(true)
+                                      openConfirmDialog(sale, piece, 'bigAdvance')
                                     }}
                                     className="bg-blue-600 hover:bg-blue-700 text-xs h-8 flex-1"
                                     size="sm"
@@ -1326,7 +1341,7 @@ export function SaleConfirmation() {
                                         setSelectedSale(sale)
                                         setSelectedPiece(piece)
                                         setPendingConfirmationType('full')
-                                        setConfirmBeforeConfirmOpen(true)
+                                        openConfirmDialog(sale, piece, 'full')
                                       }}
                                       className="bg-green-600 hover:bg-green-700 text-xs px-2 h-7"
                                       size="sm"
@@ -1342,7 +1357,7 @@ export function SaleConfirmation() {
                                           setSelectedSale(sale)
                                           setSelectedPiece(piece)
                                           setPendingConfirmationType('bigAdvance')
-                                          setConfirmBeforeConfirmOpen(true)
+                                          openConfirmDialog(sale, piece, 'bigAdvance')
                                         }}
                                         className="bg-blue-600 hover:bg-blue-700 text-xs px-2 h-7"
                                         size="sm"
@@ -1645,14 +1660,14 @@ export function SaleConfirmation() {
         </DialogContent>
       </Dialog>
 
-      {/* Pre-Confirmation Dialog */}
+      {/* Pre-Confirmation Dialog - Shows after clicking اتمام البيع */}
       <ConfirmDialog
         open={confirmBeforeConfirmOpen}
         onOpenChange={setConfirmBeforeConfirmOpen}
         onConfirm={() => {
           if (selectedSale && selectedPiece && pendingConfirmationType) {
             setConfirmBeforeConfirmOpen(false)
-            openConfirmDialog(selectedSale, selectedPiece, pendingConfirmationType)
+            proceedWithConfirmation()
           }
         }}
         title={pendingConfirmationType === 'full' ? 'تأكيد البيع بالحاضر' : 'تأكيد البيع بالتقسيط'}

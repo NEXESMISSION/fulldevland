@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -20,7 +21,7 @@ import {
 } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { retryWithBackoff, isRetryableError } from '@/lib/retry'
-import { DollarSign, CreditCard, TrendingUp, X, ChevronDown, ChevronUp } from 'lucide-react'
+import { DollarSign, CreditCard, TrendingUp, X, ChevronDown, ChevronUp, Calendar } from 'lucide-react'
 import type { Sale, Client, Payment, LandPiece, LandBatch } from '@/types/database'
 
 interface SaleWithClient extends Sale {
@@ -94,7 +95,7 @@ interface CompanyFeeByLand {
   sales: SaleWithClient[]
 }
 
-type DateFilter = 'today' | 'week' | 'month' | 'all'
+type DateFilter = 'today' | 'week' | 'month' | 'all' | 'custom'
 type PaymentTypeFilter = 'Installment' | 'SmallAdvance' | 'Full' | 'BigAdvance' | null
 
 export function Financial() {
@@ -104,6 +105,7 @@ export function Financial() {
   const [landPieces, setLandPieces] = useState<Array<LandPiece & { land_batch?: LandBatch }>>([])
   const [loading, setLoading] = useState(true)
   const [dateFilter, setDateFilter] = useState<DateFilter>('today')
+  const [selectedDate, setSelectedDate] = useState<string>('')
   const [expandedPaymentType, setExpandedPaymentType] = useState<PaymentTypeFilter | null>(null)
   const [expandedLandGroups, setExpandedLandGroups] = useState<Set<string>>(new Set())
   const [expandedPieceGroups, setExpandedPieceGroups] = useState<Set<string>>(new Set())
@@ -177,6 +179,16 @@ export function Financial() {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     today.setHours(0, 0, 0, 0)
     
+    // Custom date filter
+    if (selectedDate) {
+      const filterDate = new Date(selectedDate)
+      filterDate.setHours(0, 0, 0, 0)
+      const nextDay = new Date(filterDate)
+      nextDay.setDate(nextDay.getDate() + 1)
+      nextDay.setHours(23, 59, 59, 999)
+      return { start: filterDate, end: nextDay }
+    }
+    
     switch (filter) {
       case 'today':
         const todayEnd = new Date(today)
@@ -192,6 +204,8 @@ export function Financial() {
         monthStart.setHours(0, 0, 0, 0)
         return { start: monthStart, end: null }
       case 'all':
+        return { start: new Date(0), end: null }
+      default:
         return { start: new Date(0), end: null }
     }
   }
@@ -222,6 +236,9 @@ export function Financial() {
     // Exclude refunds from payments completely
     const filteredPayments = payments
       .filter(p => {
+        if (selectedDate) {
+          return isDateInRange(p.payment_date, startDate, endDate)
+        }
         return isDateInRange(p.payment_date, startDate, endDate)
       })
       .filter(p => p.payment_type !== 'Refund')
@@ -673,6 +690,7 @@ export function Financial() {
     week: 'هذا الأسبوع',
     month: 'هذا الشهر',
     all: 'الكل',
+    custom: 'تاريخ محدد',
   }
 
   const paymentTypeLabels: Record<Exclude<PaymentTypeFilter, null>, string> = {
@@ -703,14 +721,44 @@ export function Financial() {
           {(['today', 'week', 'month', 'all'] as DateFilter[]).map(filter => (
             <Button
               key={filter}
-              variant={dateFilter === filter ? 'default' : 'outline'}
+              variant={dateFilter === filter && !selectedDate ? 'default' : 'outline'}
               size="sm"
-              onClick={() => setDateFilter(filter)}
+              onClick={() => {
+                setDateFilter(filter)
+                setSelectedDate('')
+              }}
               className="flex-1 sm:flex-none text-xs sm:text-sm"
             >
               {filterLabels[filter]}
             </Button>
           ))}
+          <div className="flex items-center gap-2 border rounded-md px-2">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <Input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => {
+                setSelectedDate(e.target.value)
+                if (e.target.value) {
+                  setDateFilter('custom')
+                }
+              }}
+              className="h-8 w-auto text-xs border-0 focus-visible:ring-0 p-0"
+            />
+            {selectedDate && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectedDate('')
+                  setDateFilter('today')
+                }}
+                className="h-6 w-6 p-0"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 

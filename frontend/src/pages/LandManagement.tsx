@@ -71,210 +71,138 @@ const statusColors: Record<LandStatus, 'success' | 'warning' | 'default' | 'seco
   Cancelled: 'secondary',
 }
 
-// Image Zoom Viewer Component (Mobile only)
+// Simple and Robust Image Zoom Viewer (Mobile only)
 function ImageZoomViewer({ src, alt, onError }: { src: string; alt: string; onError: (e: React.SyntheticEvent<HTMLImageElement>) => void }) {
-  const [scale, setScale] = useState(1)
-  const [position, setPosition] = useState({ x: 0, y: 0 })
-  const [isDragging, setIsDragging] = useState(false)
-  const [lastTouch, setLastTouch] = useState<{ x: number; y: number } | null>(null)
-  const [lastDistance, setLastDistance] = useState<number | null>(null)
-  const [initialScale, setInitialScale] = useState(1)
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [isZoomed, setIsZoomed] = useState(false)
   const imageRef = useRef<HTMLImageElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
-  const animationFrameRef = useRef<number | null>(null)
+  const touchStartRef = useRef<{ x: number; y: number; distance: number; zoom: number } | null>(null)
 
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768)
-    }
-    window.addEventListener('resize', handleResize)
-    return () => {
-      window.removeEventListener('resize', handleResize)
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current)
+  const isMobile = window.innerWidth < 768
+
+  const reset = () => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+    setIsZoomed(false)
+    touchStartRef.current = null
+  }
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLImageElement>) => {
+    if (!isMobile) return
+    
+    if (e.touches.length === 2) {
+      // Pinch to zoom
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const distance = Math.sqrt(
+        Math.pow(touch2.clientX - touch1.clientX, 2) + 
+        Math.pow(touch2.clientY - touch1.clientY, 2)
+      )
+      touchStartRef.current = {
+        x: 0,
+        y: 0,
+        distance,
+        zoom
       }
-    }
-  }, [])
-
-  // Constrain position to keep image within bounds
-  const constrainPosition = (newX: number, newY: number, currentScale: number) => {
-    if (!imageRef.current || !containerRef.current) return { x: newX, y: newY }
-    
-    const img = imageRef.current
-    const container = containerRef.current
-    const imgRect = img.getBoundingClientRect()
-    const containerRect = container.getBoundingClientRect()
-    
-    const scaledWidth = imgRect.width * currentScale
-    const scaledHeight = imgRect.height * currentScale
-    
-    const maxX = Math.max(0, (scaledWidth - containerRect.width) / 2)
-    const maxY = Math.max(0, (scaledHeight - containerRect.height) / 2)
-    
-    return {
-      x: Math.max(-maxX, Math.min(maxX, newX)),
-      y: Math.max(-maxY, Math.min(maxY, newY))
+      e.preventDefault()
+    } else if (e.touches.length === 1 && isZoomed) {
+      // Pan when zoomed
+      const touch = e.touches[0]
+      touchStartRef.current = {
+        x: touch.clientX - pan.x,
+        y: touch.clientY - pan.y,
+        distance: 0,
+        zoom
+      }
+      e.preventDefault()
     }
   }
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (!isMobile) return
+  const handleTouchMove = (e: React.TouchEvent<HTMLImageElement>) => {
+    if (!isMobile || !touchStartRef.current) return
     
     if (e.touches.length === 2) {
       // Pinch zoom
       const touch1 = e.touches[0]
       const touch2 = e.touches[1]
-      const distance = Math.hypot(
-        touch2.clientX - touch1.clientX,
-        touch2.clientY - touch1.clientY
+      const distance = Math.sqrt(
+        Math.pow(touch2.clientX - touch1.clientX, 2) + 
+        Math.pow(touch2.clientY - touch1.clientY, 2)
       )
-      setLastDistance(distance)
-      setInitialScale(scale)
-      setLastTouch(null)
-      setIsDragging(false)
-    } else if (e.touches.length === 1) {
-      // Single touch - prepare for pan
+      
+      const scaleChange = distance / touchStartRef.current.distance
+      const newZoom = Math.max(1, Math.min(touchStartRef.current.zoom * scaleChange, 5))
+      setZoom(newZoom)
+      setIsZoomed(newZoom > 1)
+      e.preventDefault()
+    } else if (e.touches.length === 1 && isZoomed && touchStartRef.current.distance === 0) {
+      // Pan
       const touch = e.touches[0]
-      setLastTouch({ x: touch.clientX, y: touch.clientY })
-      setIsDragging(true)
-    }
-  }
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isMobile) return
-    
-    // Prevent default immediately for touch events to allow zoom/pan
-    if (e.touches.length === 2 || (e.touches.length === 1 && isDragging && scale > 1)) {
+      const newX = touch.clientX - touchStartRef.current.x
+      const newY = touch.clientY - touchStartRef.current.y
+      
+      // Simple bounds checking
+      if (imageRef.current && containerRef.current) {
+        const img = imageRef.current
+        const container = containerRef.current
+        const maxX = (img.offsetWidth * zoom - container.offsetWidth) / 2
+        const maxY = (img.offsetHeight * zoom - container.offsetHeight) / 2
+        
+        setPan({
+          x: Math.max(-maxX, Math.min(maxX, newX)),
+          y: Math.max(-maxY, Math.min(maxY, newY))
+        })
+      }
       e.preventDefault()
     }
-    
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current)
-    }
-    
-    animationFrameRef.current = requestAnimationFrame(() => {
-      if (e.touches.length === 2 && lastDistance !== null) {
-        // Pinch zoom - smoother calculation
-        const touch1 = e.touches[0]
-        const touch2 = e.touches[1]
-        const distance = Math.hypot(
-          touch2.clientX - touch1.clientX,
-          touch2.clientY - touch1.clientY
-        )
-        
-        const scaleChange = distance / lastDistance
-        const newScale = Math.max(1, Math.min(initialScale * scaleChange, 10))
-        setScale(newScale)
-        setLastDistance(distance)
-        
-        // Constrain position when zooming
-        if (newScale > 1) {
-          const constrained = constrainPosition(position.x, position.y, newScale)
-          setPosition(constrained)
-        } else {
-          setPosition({ x: 0, y: 0 })
-        }
-      } else if (e.touches.length === 1 && isDragging && lastTouch && scale > 1) {
-        // Pan - smoother movement
-        const touch = e.touches[0]
-        const deltaX = touch.clientX - lastTouch.x
-        const deltaY = touch.clientY - lastTouch.y
-        
-        const newX = position.x + deltaX
-        const newY = position.y + deltaY
-        const constrained = constrainPosition(newX, newY, scale)
-        
-        setPosition(constrained)
-        setLastTouch({ x: touch.clientX, y: touch.clientY })
-      }
-    })
   }
 
   const handleTouchEnd = () => {
-    if (!isMobile) return
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current)
-    }
-    setIsDragging(false)
-    setLastTouch(null)
-    setLastDistance(null)
-    setInitialScale(scale)
+    touchStartRef.current = null
   }
 
   const handleDoubleClick = () => {
     if (!isMobile) return
-    if (scale > 1) {
-      // Reset zoom
-      resetZoom()
+    if (isZoomed) {
+      reset()
     } else {
-      // Zoom in
-      setScale(3)
+      setZoom(2.5)
+      setIsZoomed(true)
     }
-  }
-
-  const resetZoom = () => {
-    setScale(1)
-    setPosition({ x: 0, y: 0 })
-    setInitialScale(1)
   }
 
   return (
     <div 
       ref={containerRef}
-      data-zoom-viewer="true"
       className="w-full h-full flex items-center justify-center overflow-hidden relative"
-      style={{ 
-        touchAction: isMobile ? 'none' : 'auto',
-        pointerEvents: 'auto'
-      }}
-      onTouchStart={(e) => {
-        // Allow touch events to propagate to image
-        if (e.target === containerRef.current) {
-          e.stopPropagation()
-        }
-      }}
+      style={{ touchAction: isMobile ? 'none' : 'auto' }}
     >
       <img
         ref={imageRef}
         src={src}
         alt={alt}
         onError={onError}
-        className={`max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg ${
-          isMobile ? 'select-none' : ''
-        }`}
+        className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg select-none"
         style={{
-          transform: isMobile ? `translate(${position.x}px, ${position.y}px) scale(${scale})` : undefined,
+          transform: isMobile ? `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` : undefined,
           transformOrigin: 'center center',
           touchAction: isMobile ? 'none' : 'auto',
-          pointerEvents: 'auto',
-          transition: isMobile && scale === 1 && position.x === 0 && position.y === 0 ? 'transform 0.3s ease-out' : 'none',
-          willChange: isMobile ? 'transform' : 'auto',
-          userSelect: 'none',
-          WebkitUserSelect: 'none',
+          transition: isMobile && !isZoomed ? 'transform 0.2s ease-out' : 'none',
         }}
-        onTouchStart={(e) => {
-          handleTouchStart(e)
-          e.stopPropagation()
-        }}
-        onTouchMove={(e) => {
-          handleTouchMove(e)
-          e.stopPropagation()
-        }}
-        onTouchEnd={(e) => {
-          handleTouchEnd()
-          e.stopPropagation()
-        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         onDoubleClick={handleDoubleClick}
         draggable={false}
       />
-      {isMobile && (scale > 1 || position.x !== 0 || position.y !== 0) && (
+      {isMobile && isZoomed && (
         <Button
-          onClick={resetZoom}
+          onClick={reset}
           size="sm"
           variant="secondary"
-          className="absolute top-4 left-4 z-10 shadow-lg bg-white/90 hover:bg-white backdrop-blur-sm"
-          aria-label="إعادة تعيين التكبير"
+          className="absolute top-4 left-4 z-10 shadow-lg bg-white/90 hover:bg-white"
         >
           <RotateCcw className="h-4 w-4 ml-1" />
           إعادة تعيين
@@ -5249,16 +5177,7 @@ export function LandManagement() {
           <DialogHeader className="px-6 py-4 border-b">
             <DialogTitle>{viewingImageName}</DialogTitle>
           </DialogHeader>
-          <div 
-            className="p-6 flex items-center justify-center bg-gray-50 min-h-[400px] overflow-hidden relative"
-            style={{ touchAction: 'none', pointerEvents: 'auto' }}
-            onTouchStart={(e) => {
-              // Don't prevent default on container, let image handle it
-              if (!(e.target as HTMLElement).closest('[data-zoom-viewer]')) {
-                e.stopPropagation()
-              }
-            }}
-          >
+          <div className="p-6 flex items-center justify-center bg-gray-50 min-h-[400px] overflow-hidden relative">
             {viewingImageUrl && (
               <ImageZoomViewer 
                 src={viewingImageUrl} 

@@ -85,7 +85,7 @@ function MainLayout() {
             <div className="bg-white border border-gray-200 rounded-md">
               <NotificationBell />
             </div>
-          
+        
         {/* Go back button */}
         {canGoBack && (
           <Button
