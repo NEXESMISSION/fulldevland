@@ -6010,3 +6010,5 @@ export function LandManagement() {
     </div>
   )
 }
+
+export default LandManagement
