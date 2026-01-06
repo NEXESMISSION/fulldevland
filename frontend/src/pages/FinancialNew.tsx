@@ -425,16 +425,129 @@ export function Financial() {
     }
   }, [sales, payments, landPieces, dateFilter, selectedDate])
 
+  // Get small advance (reservation) from sales table grouped by land
+  const getSmallAdvanceByLand = (): PaymentByLand[] => {
+    // Get filtered sales with small_advance_amount
+    const salesWithAdvance = filteredData.sales
+      .filter(s => s.status !== 'Cancelled' && s.small_advance_amount && s.small_advance_amount > 0)
+    
+    // Group by land batch
+    const landGroups = new Map<string, PaymentByLand>()
+    
+    salesWithAdvance.forEach(sale => {
+      const pieceIds = sale.land_piece_ids || []
+      const pieces = landPieces.filter(p => pieceIds.includes(p.id))
+      
+      if (pieces.length === 0) {
+        const key = 'غير محدد'
+        if (!landGroups.has(key)) {
+          landGroups.set(key, {
+            landBatchName: 'غير محدد',
+            location: null,
+            totalAmount: 0,
+            percentage: 0,
+            paymentCount: 0,
+            pieces: [],
+            payments: [],
+          })
+        }
+        const group = landGroups.get(key)!
+        group.totalAmount += sale.small_advance_amount || 0
+        group.paymentCount += 1
+      } else {
+        // Group by land batch - each sale contributes to one or more batches
+        const batchGroups = new Map<string, { batchName: string; location: string | null; pieces: typeof pieces }>()
+        
+        pieces.forEach(piece => {
+          const batchName = piece.land_batch?.name || 'غير محدد'
+          const location = piece.land_batch?.location || null
+          const batchKey = `${batchName}-${location || 'no-location'}`
+          
+          if (!batchGroups.has(batchKey)) {
+            batchGroups.set(batchKey, {
+              batchName,
+              location,
+              pieces: [],
+            })
+          }
+          batchGroups.get(batchKey)!.pieces.push(piece)
+        })
+        
+        // For each batch, distribute the sale's advance
+        batchGroups.forEach((batchInfo, batchKey) => {
+          if (!landGroups.has(batchKey)) {
+            landGroups.set(batchKey, {
+              landBatchName: batchInfo.batchName,
+              location: batchInfo.location,
+              totalAmount: 0,
+              percentage: 0,
+              paymentCount: 0,
+              pieces: [],
+              payments: [],
+            })
+          }
+          const group = landGroups.get(batchKey)!
+          
+          // Calculate advance for pieces in this batch
+          const piecesInBatch = batchInfo.pieces.length
+          const advanceForBatch = (sale.small_advance_amount || 0) * (piecesInBatch / pieceIds.length)
+          
+          // Add pieces to group
+          batchInfo.pieces.forEach(piece => {
+            const advancePerPiece = (sale.small_advance_amount || 0) / pieceIds.length
+            
+            let pieceGroup = group.pieces.find(p => p.pieceId === piece.id)
+            if (!pieceGroup) {
+              pieceGroup = {
+                pieceId: piece.id,
+                pieceNumber: piece.piece_number,
+                landBatchName: batchInfo.batchName,
+                location: batchInfo.location,
+                totalAmount: 0,
+                installmentCount: 0,
+                payments: [],
+                recordedByUsers: new Set(),
+                soldByUsers: new Set(),
+              }
+              group.pieces.push(pieceGroup)
+            }
+            
+            pieceGroup.totalAmount += advancePerPiece
+            
+            // Track users
+            if ((sale as any).created_by_user?.name) {
+              pieceGroup.soldByUsers.add((sale as any).created_by_user.name)
+            }
+          })
+          
+          // Add to batch totals (only once per sale)
+          group.totalAmount += advanceForBatch
+          group.paymentCount += 1
+        })
+      }
+    })
+    
+    const totalAmount = Array.from(landGroups.values()).reduce((sum, g) => sum + g.totalAmount, 0)
+    
+    return Array.from(landGroups.values()).map(group => ({
+      ...group,
+      percentage: totalAmount > 0 ? (group.totalAmount / totalAmount) * 100 : 0,
+    })).sort((a, b) => b.totalAmount - a.totalAmount)
+  }
+
   // Group payments by land batch and piece - don't repeat installments for same piece
   // This function uses filteredData which already has date filtering and excludes cancelled sales
   const getPaymentsByLand = (paymentType: PaymentTypeFilter): PaymentByLand[] => {
+    // Special handling for SmallAdvance - get from sales table
+    if (paymentType === 'SmallAdvance') {
+      return getSmallAdvanceByLand()
+    }
+    
     // Get the appropriate payment list from filteredData based on type
     let filteredPayments: PaymentWithDetails[] = []
     
     if (paymentType === 'Installment') {
       filteredPayments = filteredData.installmentPaymentsList
-    } else if (paymentType === 'SmallAdvance') {
-      filteredPayments = filteredData.smallAdvancePaymentsList
     } else if (paymentType === 'Full') {
       filteredPayments = filteredData.fullPaymentsList
     } else if (paymentType === 'BigAdvance') {
@@ -859,6 +972,11 @@ export function Financial() {
                     ]
                   })()}
                   
+                  {/* Separator */}
+                  <TableRow className="h-2 bg-transparent">
+                    <TableCell colSpan={6} className="p-0"></TableCell>
+                  </TableRow>
+                  
                   {/* العربون */}
                   {(() => {
                     const data = getPaymentsByLand('SmallAdvance')
@@ -913,6 +1031,11 @@ export function Financial() {
                       )
                     ]
                   })()}
+                  
+                  {/* Separator */}
+                  <TableRow className="h-2 bg-transparent">
+                    <TableCell colSpan={6} className="p-0"></TableCell>
+                  </TableRow>
                   
                   {/* الدفع الكامل */}
                   {(() => {
@@ -969,6 +1092,11 @@ export function Financial() {
                     ]
                   })()}
                   
+                  {/* Separator */}
+                  <TableRow className="h-2 bg-transparent">
+                    <TableCell colSpan={6} className="p-0"></TableCell>
+                  </TableRow>
+                  
                   {/* الدفعة الأولى */}
                   {(() => {
                     const data = getPaymentsByLand('BigAdvance')
@@ -1023,6 +1151,11 @@ export function Financial() {
                       )
                     ]
                   })()}
+                  
+                  {/* Separator */}
+                  <TableRow className="h-2 bg-transparent">
+                    <TableCell colSpan={6} className="p-0"></TableCell>
+                  </TableRow>
                   
                   {/* العمولة */}
                   {(() => {
