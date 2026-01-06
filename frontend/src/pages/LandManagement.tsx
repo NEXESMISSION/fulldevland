@@ -3427,10 +3427,10 @@ export function LandManagement() {
 
       {/* Mobile: Combined Header with Search Bar */}
       <div className="md:hidden">
-        {/* Mobile Header Container - Fixed at top with white background */}
-        <div className="fixed top-0 left-0 right-0 z-50 bg-white border-b shadow-sm">
-          {/* Search Bar - Below header buttons */}
-          <div className="px-3 py-2.5 border-t border-gray-100">
+        {/* Mobile Header Container - Fixed at top with white background, below MainLayout header */}
+        <div className="fixed top-[50px] left-0 right-0 z-40 bg-white border-b shadow-sm">
+          {/* Search Bar */}
+          <div className="px-3 py-2.5">
             <Input
               placeholder="بحث في الأراضي..."
               value={searchTerm}
@@ -3445,7 +3445,7 @@ export function LandManagement() {
         </div>
         
         {/* Header - Below search bar */}
-        <div className="flex flex-col gap-3 mb-3 pt-24">
+        <div className="flex flex-col gap-3 mb-3 pt-28">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-bold">الأراضي</h1>
             <div className="flex items-center gap-2">

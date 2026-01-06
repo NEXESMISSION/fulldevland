@@ -122,7 +122,7 @@ export function Users() {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, name, email, role, created_at, updated_at, allowed_pages, sidebar_order')
+        .select('id, name, email, role, created_at, updated_at, allowed_pages, sidebar_order, page_order')
         .order('name', { ascending: true })
 
       if (error) {
@@ -342,7 +342,7 @@ export function Users() {
         email: user.email,
         password: '',
         role: user.role,
-        allowedPages: (user as any).allowed_pages || [],
+        allowedPages: (user as any).page_order || (user as any).allowed_pages || [],
         sidebarOrder: (user as any).sidebar_order || [],
         worker_type: workerProfile?.worker_type || '',
         region: workerProfile?.region || '',
@@ -697,6 +697,7 @@ export function Users() {
               email: cleanEmail,
             role: form.role,
             allowed_pages: form.role === 'Owner' ? null : form.allowedPages,
+            page_order: form.allowedPages.length > 0 ? form.allowedPages : null,
             sidebar_order: form.sidebarOrder.length > 0 ? form.sidebarOrder : null,
           },
         ])
@@ -1313,56 +1314,116 @@ export function Users() {
               </div>
             )}
 
-            {/* Page Permissions Section - Only show for non-Owner roles */}
-            {form.role !== 'Owner' && (
-              <div className="space-y-2 sm:space-y-3 border-t pt-3 sm:pt-4 mt-3 sm:mt-4">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                  <Label className="text-sm sm:text-base font-semibold flex items-center gap-2">
-                    <Lock className="h-3 w-3 sm:h-4 sm:w-4" />
-                    الصفحات المتاحة
-                  </Label>
-                  <div className="flex gap-2 w-full sm:w-auto">
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm"
-                      onClick={selectAllPages}
-                      disabled={saving}
-                      className="flex-1 sm:flex-none text-xs"
-                    >
-                      <Eye className="h-3 w-3 mr-1" />
-                      تحديد الكل
-                    </Button>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm"
-                      onClick={deselectAllPages}
-                      disabled={saving}
-                      className="flex-1 sm:flex-none text-xs"
-                    >
-                      <EyeOff className="h-3 w-3 mr-1" />
-                      إلغاء الكل
-                    </Button>
-                  </div>
+            {/* Page Permissions Section - Show for all roles including Owner */}
+            <div className="space-y-2 sm:space-y-3 border-t pt-3 sm:pt-4 mt-3 sm:mt-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <Label className="text-sm sm:text-base font-semibold flex items-center gap-2">
+                  <Lock className="h-3 w-3 sm:h-4 sm:w-4" />
+                  الصفحات المتاحة
+                </Label>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    onClick={selectAllPages}
+                    disabled={saving}
+                    className="flex-1 sm:flex-none text-xs"
+                  >
+                    <Eye className="h-3 w-3 mr-1" />
+                    تحديد الكل
+                  </Button>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    onClick={deselectAllPages}
+                    disabled={saving}
+                    className="flex-1 sm:flex-none text-xs"
+                  >
+                    <EyeOff className="h-3 w-3 mr-1" />
+                    إلغاء الكل
+                  </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  اختر الصفحات التي يمكن للمستخدم الوصول إليها
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-h-64 sm:max-h-80 overflow-y-auto p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  {ALL_PAGES.map(page => {
+              </div>
+              <p className="text-xs text-muted-foreground">
+                اختر الصفحات التي يمكن للمستخدم الوصول إليها. استخدم الأزرار لترتيب الصفحات.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-h-64 sm:max-h-80 overflow-y-auto p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
+                {(() => {
+                  // Sort pages by allowedPages order, then by ALL_PAGES order
+                  const sortedPages = [...ALL_PAGES].sort((a, b) => {
+                    const aIndex = form.allowedPages?.indexOf(a.id) ?? -1
+                    const bIndex = form.allowedPages?.indexOf(b.id) ?? -1
+                    if (aIndex >= 0 && bIndex >= 0) return aIndex - bIndex
+                    if (aIndex >= 0) return -1
+                    if (bIndex >= 0) return 1
+                    return ALL_PAGES.indexOf(a) - ALL_PAGES.indexOf(b)
+                  })
+                  
+                  return sortedPages.map((page, index) => {
                     const PageIcon = page.icon
                     const isSelected = form.allowedPages?.includes(page.id) || false
+                    const pageOrder = form.allowedPages?.indexOf(page.id) ?? -1
+                    const displayNumber = pageOrder >= 0 ? pageOrder + 1 : null
+                    
                     return (
                       <div
                         key={page.id}
-                        className={`flex flex-col items-center gap-2 p-3 sm:p-4 rounded-lg cursor-pointer transition-all min-h-[100px] ${
+                        className={`relative flex flex-col items-center gap-2 p-3 sm:p-4 rounded-lg cursor-pointer transition-all min-h-[100px] ${
                           isSelected 
                             ? 'bg-primary/10 border-2 border-primary shadow-md' 
                             : 'bg-white border-2 border-gray-200 hover:border-gray-300 hover:shadow-sm'
                         }`}
                         onClick={() => !saving && togglePageAccess(page.id)}
                       >
+                        {/* Page Number Badge */}
+                        {displayNumber && (
+                          <div className="absolute -top-2 -right-2 w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md z-10">
+                            {displayNumber}
+                          </div>
+                        )}
+                        
+                        {/* Order Controls - Only for selected pages */}
+                        {isSelected && (
+                          <div className="absolute top-1 left-1 flex flex-col gap-1 z-10" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 bg-white/90 hover:bg-white border border-gray-300 shadow-sm"
+                              onClick={() => {
+                                const currentOrder = [...(form.allowedPages || [])]
+                                const currentIndex = currentOrder.indexOf(page.id)
+                                if (currentIndex > 0) {
+                                  [currentOrder[currentIndex], currentOrder[currentIndex - 1]] = [currentOrder[currentIndex - 1], currentOrder[currentIndex]]
+                                  setForm({ ...form, allowedPages: currentOrder })
+                                }
+                              }}
+                              disabled={saving || (form.allowedPages?.indexOf(page.id) ?? -1) === 0}
+                            >
+                              <ArrowUp className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 bg-white/90 hover:bg-white border border-gray-300 shadow-sm"
+                              onClick={() => {
+                                const currentOrder = [...(form.allowedPages || [])]
+                                const currentIndex = currentOrder.indexOf(page.id)
+                                if (currentIndex >= 0 && currentIndex < currentOrder.length - 1) {
+                                  [currentOrder[currentIndex], currentOrder[currentIndex + 1]] = [currentOrder[currentIndex + 1], currentOrder[currentIndex]]
+                                  setForm({ ...form, allowedPages: currentOrder })
+                                }
+                              }}
+                              disabled={saving || (form.allowedPages?.indexOf(page.id) ?? -1) === (form.allowedPages?.length ?? 0) - 1}
+                            >
+                              <ArrowDown className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                        
                         <div className={`p-2 sm:p-2.5 rounded-lg ${isSelected ? 'bg-primary text-white' : 'bg-gray-100'}`}>
                           <PageIcon className="h-5 w-5 sm:h-6 sm:w-6" />
                         </div>
@@ -1378,22 +1439,21 @@ export function Users() {
                         </div>
                       </div>
                     )
-                  })}
+                  })
+                })()}
+              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                {form.allowedPages?.length || 0} من {ALL_PAGES.length} صفحة محددة
+              </p>
+              {form.role === 'Owner' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 sm:p-3">
+                  <p className="text-xs sm:text-sm text-blue-800 flex items-center gap-2">
+                    <Shield className="h-3 w-3 sm:h-4 sm:w-4" />
+                    المالك لديه صلاحية الوصول الكامل لجميع الصفحات. يمكنك إدارة ترتيب الصفحات أعلاه.
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground text-center">
-                  {form.allowedPages?.length || 0} من {ALL_PAGES.length} صفحة محددة
-                </p>
-              </div>
-            )}
-
-            {form.role === 'Owner' && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-2.5 sm:p-3 mt-3 sm:mt-4">
-                <p className="text-xs sm:text-sm text-green-800 flex items-center gap-2">
-                  <Shield className="h-3 w-3 sm:h-4 sm:w-4" />
-                  المالك لديه صلاحية الوصول الكامل لجميع الصفحات
-                </p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
           <DialogFooter className="gap-2">
             <Button 
