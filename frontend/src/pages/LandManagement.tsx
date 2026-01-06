@@ -4495,25 +4495,54 @@ export function LandManagement() {
                             )}
                           </div>
                           <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => editPieceOffer(offer)}
-                              className={isSelected ? 'text-blue-700 hover:bg-blue-100' : ''}
-                            >
-                              <Edit className="h-3.5 w-3.5" />
-                            </Button>
-                            {!isReserved || !isSelected ? (
+                            {isReserved && isSelected && user?.role === 'Owner' && (
                               <Button
                                 type="button"
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => deletePieceOffer(offer.id)}
+                                onClick={() => editPieceOffer(offer)}
+                                className="text-blue-700 hover:bg-blue-100"
+                                title="تغيير العرض (للمالك فقط)"
                               >
-                                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                                <Edit className="h-3.5 w-3.5" />
                               </Button>
-                            ) : null}
+                            )}
+                            {isReserved && !isSelected && user?.role === 'Owner' && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleSelectOfferForPiece(offer.id)
+                                }}
+                                className="text-blue-700 hover:bg-blue-100 border-blue-300"
+                                title="تغيير العرض (للمالك فقط)"
+                              >
+                                <Edit className="h-3.5 w-3.5 ml-1" />
+                                تغيير العرض
+                              </Button>
+                            )}
+                            {!isReserved && (
+                              <>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => editPieceOffer(offer)}
+                                >
+                                  <Edit className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => deletePieceOffer(offer.id)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </div>
                       )
@@ -4573,7 +4602,7 @@ export function LandManagement() {
                               )}
                             </div>
                             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                              {isReserved && isSelected && (
+                              {isReserved && isSelected && user?.role === 'Owner' && (
                                 <Button
                                   type="button"
                                   size="sm"
@@ -4583,8 +4612,25 @@ export function LandManagement() {
                                     editPieceOffer(offer)
                                   }}
                                   className="text-blue-700 hover:bg-blue-100"
+                                  title="تغيير العرض (للمالك فقط)"
                                 >
                                   <Edit className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                              {isReserved && !isSelected && user?.role === 'Owner' && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleSelectOfferForPiece(offer.id)
+                                  }}
+                                  className="text-blue-700 hover:bg-blue-100 border-blue-300"
+                                  title="تغيير العرض (للمالك فقط)"
+                                >
+                                  <Edit className="h-3.5 w-3.5 ml-1" />
+                                  تغيير العرض
                                 </Button>
                               )}
                               {!isReserved && (

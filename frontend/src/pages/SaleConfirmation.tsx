@@ -230,7 +230,7 @@ export function SaleConfirmation() {
           if (allPieceIds.size > 0) {
             const { data: piecesData, error: piecesError } = await supabase
               .from('land_pieces')
-              .select('*, land_batch:land_batches(name)')
+              .select('*, land_batch:land_batches(name, company_fee_percentage_full)')
               .in('id', Array.from(allPieceIds))
             
             if (piecesError) {
@@ -365,15 +365,29 @@ export function SaleConfirmation() {
         : offer.advance_amount
       setReceivedAmount(advanceAmount.toFixed(2))
     } else if (type === 'full') {
-      // For full payment, calculate remaining amount
+      // For full payment, calculate remaining amount using company_fee_percentage_full from batch
       const pieceCount = sale.land_piece_ids.length
-      const pricePerPiece = sale.total_selling_price / pieceCount
+      // Use actual piece price if available
+      let pricePerPiece = piece.selling_price_full || 0
+      if (pricePerPiece === 0) {
+        pricePerPiece = sale.total_selling_price / pieceCount
+      }
       const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
-      const feePercentage = parseFloat(offer?.company_fee_percentage?.toString() || sale.company_fee_percentage?.toString() || '2') || 2
+      
+      // Get company fee from batch for full payment
+      const batch = (piece as any).land_batch
+      const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || parseFloat(companyFeePercentage) || 0
       const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
       const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
       const remainingAmount = totalPayablePerPiece - reservationPerPiece
       setReceivedAmount(remainingAmount.toFixed(2))
+      
+      // Set company fee percentage for display
+      if (batch?.company_fee_percentage_full) {
+        setCompanyFeePercentage(batch.company_fee_percentage_full.toString())
+      } else if (sale.company_fee_percentage) {
+        setCompanyFeePercentage(sale.company_fee_percentage.toString())
+      }
     } else {
       setReceivedAmount('')
     }
@@ -396,7 +410,12 @@ export function SaleConfirmation() {
     if (sale.payment_type === 'Full') {
       pricePerPiece = piece.selling_price_full || 0
     } else {
-      pricePerPiece = piece.selling_price_installment || piece.selling_price_full || 0
+      // For installment, use offer price if available, otherwise piece price
+      if (selectedOffer && selectedOffer.price_per_m2_installment) {
+        pricePerPiece = (piece.surface_area * selectedOffer.price_per_m2_installment)
+      } else {
+        pricePerPiece = piece.selling_price_installment || piece.selling_price_full || 0
+      }
     }
     
     // If piece price is not available, fall back to dividing total
@@ -406,10 +425,18 @@ export function SaleConfirmation() {
     
     const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
     
-    // Use company fee from selected offer if available, otherwise from form
-    const feePercentage = selectedOffer 
-      ? (selectedOffer.company_fee_percentage || 0)
-      : (parseFloat(companyFeePercentage) || 0)
+    // Use company fee based on payment type
+    let feePercentage = 0
+    if (sale.payment_type === 'Full') {
+      // For Full payment, use company_fee_percentage_full from batch
+      const batch = (piece as any).land_batch
+      feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || parseFloat(companyFeePercentage) || 0
+    } else {
+      // For Installment, use company fee from selected offer if available, otherwise from sale or form
+      feePercentage = selectedOffer 
+        ? (selectedOffer.company_fee_percentage || 0)
+        : (sale.company_fee_percentage || parseFloat(companyFeePercentage) || 0)
+    }
     
     const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
     const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
@@ -582,9 +609,10 @@ export function SaleConfirmation() {
 
       if (pieceCount === 1) {
         // Single piece - update the sale directly
+        const { feePercentage } = calculatePieceValues(selectedSale, selectedPiece)
         const updates: any = {
-          company_fee_percentage: parseFloat(companyFeePercentage) || null,
-          company_fee_amount: companyFeePerPiece > 0 ? companyFeePerPiece : null,
+          company_fee_percentage: feePercentage > 0 ? feePercentage : null,
+          company_fee_amount: companyFeePerPiece > 0 ? parseFloat(companyFeePerPiece.toFixed(2)) : null,
         }
 
         if (confirmationType === 'full') {
@@ -600,27 +628,28 @@ export function SaleConfirmation() {
             let installments = 0
             let monthlyAmount = 0
             
-            if (selectedOffer && selectedOffer.monthly_payment > 0) {
-              const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - received
-              if (remainingAfterAdvance <= 0) {
-                setError('المبلغ المتبقي بعد التسبقة والعربون يجب أن يكون أكبر من صفر')
-                setConfirming(false)
-                return
-              }
-              installments = Math.ceil(remainingAfterAdvance / selectedOffer.monthly_payment)
-              monthlyAmount = selectedOffer.monthly_payment
-            } else {
-              installments = parseInt(numberOfInstallments) || selectedSale.number_of_installments || 12
-            if (installments <= 0) {
-              setError('عدد الأشهر يجب أن يكون أكبر من صفر')
+            const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - received
+            if (remainingAfterAdvance <= 0) {
+              setError('المبلغ المتبقي بعد التسبقة والعربون يجب أن يكون أكبر من صفر')
               setConfirming(false)
               return
             }
-              const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - received
-            if (remainingAfterAdvance <= 0) {
-                setError('المبلغ المتبقي بعد التسبقة والعربون يجب أن يكون أكبر من صفر')
-              setConfirming(false)
-              return
+            
+            if (selectedOffer && selectedOffer.monthly_payment && selectedOffer.monthly_payment > 0) {
+              // Offer has monthly_payment - calculate number of months
+              installments = Math.ceil(remainingAfterAdvance / selectedOffer.monthly_payment)
+              monthlyAmount = selectedOffer.monthly_payment
+            } else if (selectedOffer && selectedOffer.number_of_months && selectedOffer.number_of_months > 0) {
+              // Offer has number_of_months - calculate monthly payment
+              installments = selectedOffer.number_of_months
+              monthlyAmount = remainingAfterAdvance / selectedOffer.number_of_months
+            } else {
+              // No offer or offer doesn't have payment info - use form values
+              installments = parseInt(numberOfInstallments) || selectedSale.number_of_installments || 12
+              if (installments <= 0) {
+                setError('عدد الأشهر يجب أن يكون أكبر من صفر')
+                setConfirming(false)
+                return
               }
               monthlyAmount = remainingAfterAdvance / installments
             }
@@ -710,6 +739,7 @@ export function SaleConfirmation() {
         // Multiple pieces - split the sale
         const costPerPiece = selectedSale.total_purchase_cost / pieceCount
         const profitPerPiece = selectedSale.profit_margin / pieceCount
+        const { feePercentage: calculatedFeePercentage } = calculatePieceValues(selectedSale, selectedPiece)
         
         // Create a new sale for this piece
         const newSaleData: any = {
@@ -720,8 +750,8 @@ export function SaleConfirmation() {
           total_selling_price: pricePerPiece,
           profit_margin: profitPerPiece,
           small_advance_amount: reservationPerPiece,
-          company_fee_percentage: parseFloat(companyFeePercentage) || null,
-          company_fee_amount: companyFeePerPiece > 0 ? companyFeePerPiece : null,
+          company_fee_percentage: calculatedFeePercentage > 0 ? calculatedFeePercentage : null,
+          company_fee_amount: companyFeePerPiece > 0 ? parseFloat(companyFeePerPiece.toFixed(2)) : null,
           big_advance_amount: 0,
           number_of_installments: null,
           monthly_installment_amount: null,
@@ -744,27 +774,28 @@ export function SaleConfirmation() {
             let installments = 0
             let monthlyAmount = 0
             
-            if (selectedOffer && selectedOffer.monthly_payment > 0) {
-              const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - received
-              if (remainingAfterAdvance <= 0) {
-                setError('المبلغ المتبقي بعد التسبقة والعربون يجب أن يكون أكبر من صفر')
-                setConfirming(false)
-                return
-              }
-              installments = Math.ceil(remainingAfterAdvance / selectedOffer.monthly_payment)
-              monthlyAmount = selectedOffer.monthly_payment
-            } else {
-              installments = parseInt(numberOfInstallments) || selectedSale.number_of_installments || 12
-            if (installments <= 0) {
-              setError('عدد الأشهر يجب أن يكون أكبر من صفر')
+            const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - received
+            if (remainingAfterAdvance <= 0) {
+              setError('المبلغ المتبقي بعد التسبقة والعربون يجب أن يكون أكبر من صفر')
               setConfirming(false)
               return
             }
-              const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - received
-            if (remainingAfterAdvance <= 0) {
-                setError('المبلغ المتبقي بعد التسبقة والعربون يجب أن يكون أكبر من صفر')
-              setConfirming(false)
-              return
+            
+            if (selectedOffer && selectedOffer.monthly_payment && selectedOffer.monthly_payment > 0) {
+              // Offer has monthly_payment - calculate number of months
+              installments = Math.ceil(remainingAfterAdvance / selectedOffer.monthly_payment)
+              monthlyAmount = selectedOffer.monthly_payment
+            } else if (selectedOffer && selectedOffer.number_of_months && selectedOffer.number_of_months > 0) {
+              // Offer has number_of_months - calculate monthly payment
+              installments = selectedOffer.number_of_months
+              monthlyAmount = remainingAfterAdvance / selectedOffer.number_of_months
+            } else {
+              // No offer or offer doesn't have payment info - use form values
+              installments = parseInt(numberOfInstallments) || selectedSale.number_of_installments || 12
+              if (installments <= 0) {
+                setError('عدد الأشهر يجب أن يكون أكبر من صفر')
+                setConfirming(false)
+                return
               }
               monthlyAmount = remainingAfterAdvance / installments
             }
