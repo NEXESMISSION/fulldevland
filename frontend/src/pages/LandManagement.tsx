@@ -5050,6 +5050,23 @@ export function LandManagement() {
                 </div>
               </div>
 
+              {/* Reservation Amount Field - Show before payment type and offers */}
+              <div className="space-y-2">
+                <Label htmlFor="reservationAmountGlobal">العربون (مبلغ الحجز) *</Label>
+                <Input
+                  id="reservationAmountGlobal"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={saleForm.reservation_amount}
+                  onChange={(e) => setSaleForm({ ...saleForm, reservation_amount: e.target.value })}
+                  placeholder="أدخل مبلغ العربون"
+                />
+                <p className="text-xs text-muted-foreground">
+                  دفعة صغيرة للحجز حتى يأتي العميل لتأكيد البيع. سيتم احتسابها كمدفوع مسبقاً عند التأكيد.
+                </p>
+              </div>
+
               {/* Available Offers - Show only for Installment payment */}
               {saleForm.payment_type === 'Installment' && availableOffers.length > 0 && (
                 <div className="space-y-2">
@@ -5155,42 +5172,6 @@ export function LandManagement() {
                   <p className="text-xs text-muted-foreground">
                     اختر عرضاً لملء الحقول تلقائياً، أو املأها يدوياً
                   </p>
-                  
-                  {/* Reservation Amount Field - Only for Installment */}
-                  <div className="space-y-2 mt-3">
-                    <Label htmlFor="reservationAmount">العربون (مبلغ الحجز) *</Label>
-                    <Input
-                      id="reservationAmount"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={saleForm.reservation_amount}
-                      onChange={(e) => setSaleForm({ ...saleForm, reservation_amount: e.target.value })}
-                      placeholder="أدخل مبلغ العربون"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      دفعة صغيرة للحجز حتى يأتي العميل لتأكيد البيع. سيتم احتسابها كمدفوع مسبقاً عند التأكيد.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Reservation Amount Field - Show for Installment even if no offers */}
-              {saleForm.payment_type === 'Installment' && availableOffers.length === 0 && (
-                <div className="space-y-2">
-                  <Label htmlFor="reservationAmountInstallment">العربون (مبلغ الحجز) *</Label>
-                  <Input
-                    id="reservationAmountInstallment"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={saleForm.reservation_amount}
-                    onChange={(e) => setSaleForm({ ...saleForm, reservation_amount: e.target.value })}
-                    placeholder="أدخل مبلغ العربون"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    دفعة صغيرة للحجز حتى يأتي العميل لتأكيد البيع. سيتم احتسابها كمدفوع مسبقاً عند التأكيد.
-                  </p>
                 </div>
               )}
 
@@ -5215,25 +5196,6 @@ export function LandManagement() {
                   <option value="Installment">بالتقسيط</option>
                 </Select>
               </div>
-
-              {/* Reservation Amount Field - Show for Full Payment */}
-              {saleForm.payment_type === 'Full' && (
-                <div className="space-y-2">
-                  <Label htmlFor="reservationAmountFull">العربون (مبلغ الحجز) *</Label>
-                  <Input
-                    id="reservationAmountFull"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={saleForm.reservation_amount}
-                    onChange={(e) => setSaleForm({ ...saleForm, reservation_amount: e.target.value })}
-                    placeholder="أدخل مبلغ العربون"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    دفعة صغيرة للحجز حتى يأتي العميل لتأكيد البيع. سيتم احتسابها كمدفوع مسبقاً عند التأكيد.
-                  </p>
-                </div>
-              )}
 
               {/* Sale Details Summary - Different for Full vs Installment */}
               {(() => {
