@@ -278,26 +278,46 @@ export function SaleConfirmation() {
     setSelectedPiece(piece)
     setConfirmationType(type)
     
-    // Load payment offer for this piece (from batch or piece)
+    // Load payment offer for this piece
+    // If sale has selected_offer_id (reserved sale), use that offer
+    // Otherwise, try to get offer from piece or batch
     let offer: PaymentOffer | null = null
     try {
-      // First try to get offer from piece
-      const { data: pieceOffers } = await supabase
-        .from('payment_offers')
-        .select('*')
-        .eq('land_piece_id', piece.id)
-        .order('is_default', { ascending: false })
-        .order('created_at', { ascending: true })
-        .limit(1)
+      // First, if sale has selected_offer_id, use that offer
+      if (sale.selected_offer_id) {
+        const { data: selectedOfferData } = await supabase
+          .from('payment_offers')
+          .select('*')
+          .eq('id', sale.selected_offer_id)
+          .single()
+        
+        if (selectedOfferData) {
+          offer = selectedOfferData as PaymentOffer
+        }
+      }
       
-      if (pieceOffers && pieceOffers.length > 0) {
-        offer = pieceOffers[0] as PaymentOffer
-      } else {
-        // Try to get offer from batch
+      // If no selected offer, try to get offer from piece
+      if (!offer) {
+        const { data: pieceOffers } = await supabase
+          .from('payment_offers')
+          .select('*')
+          .eq('land_piece_id', piece.id)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: true })
+          .limit(1)
+        
+        if (pieceOffers && pieceOffers.length > 0) {
+          offer = pieceOffers[0] as PaymentOffer
+        }
+      }
+      
+      // If still no offer, try to get offer from batch
+      if (!offer) {
         const { data: batchOffers } = await supabase
           .from('payment_offers')
           .select('*')
           .eq('land_batch_id', piece.land_batch_id)
+          .is('land_piece_id', null) // Only batch offers
           .order('is_default', { ascending: false })
           .order('created_at', { ascending: true })
           .limit(1)

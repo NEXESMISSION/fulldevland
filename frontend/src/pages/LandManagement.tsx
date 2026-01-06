@@ -372,6 +372,7 @@ export function LandManagement() {
     advance_amount: '',
     advance_is_percentage: false,
     monthly_payment: '',
+    number_of_months: '',
     offer_name: '',
     notes: '',
     is_default: false,
@@ -484,10 +485,17 @@ export function LandManagement() {
             payment_offers: pieceOffers as PaymentOffer[]
           }
         })
+        
+        // Calculate total_surface from pieces if not set or is 0
+        const calculatedTotalSurface = pieces.reduce((sum: number, piece: any) => {
+          return sum + (piece.surface_area || 0)
+        }, 0)
+        
         return {
           ...batch,
           payment_offers: batchOffers,
-          land_pieces: pieces
+          land_pieces: pieces,
+          total_surface: (batch.total_surface && batch.total_surface > 0) ? batch.total_surface : calculatedTotalSurface
         }
       }) as LandBatchWithPieces[]
       
@@ -621,30 +629,41 @@ export function LandManagement() {
         return
       }
       
-      // Calculate total price per piece
+      // Calculate values per piece (each piece has its own price)
       const pieceCount = pieceIds.length
-      const totalPrice = selectedSaleForOfferChange.total_selling_price
-      const pricePerPiece = totalPrice / pieceCount
       const reservationPerPiece = (selectedSaleForOfferChange.small_advance_amount || 0) / pieceCount
       
-      // Calculate advance amount from new offer
-      const advanceAmount = selectedNewOffer.advance_is_percentage
-        ? (pricePerPiece * selectedNewOffer.advance_amount) / 100
-        : selectedNewOffer.advance_amount
+      // Use the first piece's price as reference (or calculate average if pieces have different prices)
+      // In practice, if pieces have different prices, we should calculate per piece
+      // For now, we'll use the average price per piece
+      const totalPrice = selectedSaleForOfferChange.total_selling_price
+      const averagePricePerPiece = totalPrice / pieceCount
       
-      // Calculate remaining amount after advance and reservation
-      const companyFeePercentage = selectedNewOffer.company_fee_percentage || 0
-      const companyFeePerPiece = (pricePerPiece * companyFeePercentage) / 100
-      const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
-      const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - advanceAmount
-      
-      // Calculate number of months and monthly payment
-      let numberOfMonths = 0
+      // But if we have pieces data, use the actual piece prices
+      let totalCompanyFee = 0
+      let maxMonths = 0
       let monthlyAmount = selectedNewOffer.monthly_payment
+      const companyFeePercentage = selectedNewOffer.company_fee_percentage || 0
       
-      if (monthlyAmount > 0 && remainingAfterAdvance > 0) {
-        numberOfMonths = Math.ceil(remainingAfterAdvance / monthlyAmount)
+      // Calculate for each piece separately
+      for (const piece of piecesData) {
+        const pricePerPiece = piece.selling_price_installment || piece.selling_price_full || averagePricePerPiece
+        const companyFeePerPiece = (pricePerPiece * companyFeePercentage) / 100
+        const advanceAmount = selectedNewOffer.advance_is_percentage
+          ? (pricePerPiece * selectedNewOffer.advance_amount) / 100
+          : selectedNewOffer.advance_amount
+        const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
+        const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - advanceAmount
+        
+        totalCompanyFee += companyFeePerPiece
+        
+        if (monthlyAmount > 0 && remainingAfterAdvance > 0) {
+          const monthsForPiece = Math.ceil(remainingAfterAdvance / monthlyAmount)
+          maxMonths = Math.max(maxMonths, monthsForPiece)
+        }
       }
+      
+      const numberOfMonths = maxMonths
       
       // Update sale with new offer
       const { error: updateError } = await supabase
@@ -652,7 +671,7 @@ export function LandManagement() {
         .update({
           selected_offer_id: selectedNewOffer.id,
           company_fee_percentage: companyFeePercentage,
-          company_fee_amount: companyFeePerPiece * pieceCount,
+          company_fee_amount: totalCompanyFee,
           number_of_installments: numberOfMonths,
           monthly_installment_amount: monthlyAmount,
         } as any)
@@ -816,6 +835,7 @@ export function LandManagement() {
       advance_amount: '',
       advance_is_percentage: false,
       monthly_payment: '',
+      number_of_months: '',
       offer_name: '',
       notes: '',
       is_default: false,
@@ -832,6 +852,7 @@ export function LandManagement() {
       advance_amount: offer.advance_amount?.toString() || '',
       advance_is_percentage: offer.advance_is_percentage || false,
       monthly_payment: offer.monthly_payment?.toString() || '',
+      number_of_months: '', // Will be calculated when used
       offer_name: offer.offer_name || '',
       notes: offer.notes || '',
       is_default: offer.is_default || false,
@@ -891,6 +912,7 @@ export function LandManagement() {
         advance_amount: '',
         advance_is_percentage: false,
         monthly_payment: '',
+        number_of_months: '',
         offer_name: '',
         notes: '',
         is_default: false,
@@ -2035,10 +2057,10 @@ export function LandManagement() {
         notes: piece.notes || '',
       })
       
-      // Load offers for this piece - try both from piece and batch
+      // Load offers for this piece - combine piece-specific and batch offers
       let offers: PaymentOffer[] = []
       
-      // First, try to get offers from piece
+      // Get piece-specific offers
       const { data: pieceOffers, error: pieceOffersError } = await supabase
         .from('payment_offers')
         .select('*')
@@ -2053,25 +2075,53 @@ export function LandManagement() {
         console.log('Loaded piece offers from piece:', offers)
       }
       
-      // If no piece offers, try to get offers from batch
-      if (offers.length === 0 && piece.land_batch_id) {
+      // Also get batch offers to show all available options
+      if (piece.land_batch_id) {
         const { data: batchOffers, error: batchOffersError } = await supabase
           .from('payment_offers')
           .select('*')
           .eq('land_batch_id', piece.land_batch_id)
+          .is('land_piece_id', null) // Only batch offers, not piece-specific
           .order('is_default', { ascending: false })
           .order('created_at', { ascending: true })
         
         if (batchOffersError) {
           console.error('Error loading batch offers for piece:', batchOffersError)
         } else if (batchOffers && batchOffers.length > 0) {
-          offers = batchOffers as PaymentOffer[]
-          console.log('Loaded piece offers from batch:', offers)
+          offers.push(...(batchOffers as PaymentOffer[]))
+          console.log('Loaded batch offers for piece:', batchOffers)
         }
       }
       
       setPieceOffers(offers)
       console.log('Final piece offers set:', offers.length, offers)
+      
+      // If piece is reserved, load the selected offer ID from the sale
+      if (piece.status === 'Reserved') {
+        try {
+          const { data: allSales } = await supabase
+            .from('sales')
+            .select('id, land_piece_ids, selected_offer_id, payment_type, status')
+            .eq('status', 'Pending')
+            .limit(100)
+          
+          const sale = allSales?.find((s: any) => {
+            const pieceIds = s.land_piece_ids || []
+            return Array.isArray(pieceIds) && pieceIds.includes(piece.id) && s.payment_type === 'Installment'
+          })
+          
+          if (sale && (sale as any).selected_offer_id) {
+            setSelectedPieceOfferId((sale as any).selected_offer_id)
+          } else {
+            setSelectedPieceOfferId(null)
+          }
+        } catch (error) {
+          console.error('Error loading selected offer ID:', error)
+          setSelectedPieceOfferId(null)
+        }
+      } else {
+        setSelectedPieceOfferId(null)
+      }
     } else {
       setEditingPiece(null)
       // Get next piece number - support alphanumeric patterns (B1, R1, P001, 1, etc.)
@@ -2171,6 +2221,7 @@ export function LandManagement() {
       advance_amount: '',
       advance_is_percentage: false,
       monthly_payment: '',
+      number_of_months: '',
       offer_name: '',
       notes: '',
       is_default: false,
@@ -2187,6 +2238,7 @@ export function LandManagement() {
       advance_amount: offer.advance_amount?.toString() || '',
       advance_is_percentage: offer.advance_is_percentage || false,
       monthly_payment: offer.monthly_payment?.toString() || '',
+      number_of_months: '', // Will be calculated when used
       offer_name: offer.offer_name || '',
       notes: offer.notes || '',
       is_default: offer.is_default || false,
@@ -2234,20 +2286,27 @@ export function LandManagement() {
           
           // If this offer is selected for a reserved sale, update the sale
           if (selectedPieceOfferId === editingOffer.id) {
-            const { data: saleData } = await supabase
+            const { data: allSales } = await supabase
               .from('sales')
               .select('id, land_piece_ids, total_selling_price, small_advance_amount')
-              .contains('land_piece_ids', [editingPiece.id])
               .eq('status', 'Pending')
               .eq('payment_type', 'Installment')
-              .limit(1)
-              .single()
+              .limit(100)
+            
+            const saleData = allSales?.find((s: any) => {
+              const pieceIds = s.land_piece_ids || []
+              return Array.isArray(pieceIds) && pieceIds.includes(editingPiece.id)
+            })
             
             if (saleData) {
-              // Recalculate sale values based on updated offer
+              // Use the piece's actual selling price (per piece, not divided by count)
+              const pricePerPiece = editingPiece.selling_price_installment || editingPiece.selling_price_full || 0
+              
+              // Find the reservation amount for this specific piece
               const pieceCount = (saleData as any).land_piece_ids?.length || 1
-              const pricePerPiece = (saleData as any).total_selling_price / pieceCount
               const reservationPerPiece = ((saleData as any).small_advance_amount || 0) / pieceCount
+              
+              // Calculate values per piece based on the updated offer
               const companyFeePercentage = offerData.company_fee_percentage || 0
               const companyFeePerPiece = (pricePerPiece * companyFeePercentage) / 100
               const advanceAmount = offerData.advance_is_percentage
@@ -2264,9 +2323,9 @@ export function LandManagement() {
                 .update({
                   selected_offer_id: editingOffer.id,
                   company_fee_percentage: companyFeePercentage,
-                  company_fee_amount: companyFeePerPiece * pieceCount,
+                  company_fee_amount: companyFeePerPiece * pieceCount, // Total for all pieces
                   number_of_installments: numberOfMonths,
-                  monthly_installment_amount: monthlyAmount,
+                  monthly_installment_amount: monthlyAmount, // Per piece
                 } as any)
                 .eq('id', (saleData as any).id)
             }
@@ -2283,20 +2342,27 @@ export function LandManagement() {
         
         // Auto-select the new offer if piece is reserved
         if (editingPiece.status === 'Reserved' && newOffer) {
-          const { data: saleData } = await supabase
+          const { data: allSales } = await supabase
             .from('sales')
             .select('id, land_piece_ids, total_selling_price, small_advance_amount')
-            .contains('land_piece_ids', [editingPiece.id])
             .eq('status', 'Pending')
             .eq('payment_type', 'Installment')
-            .limit(1)
-            .single()
+            .limit(100)
+          
+          const saleData = allSales?.find((s: any) => {
+            const pieceIds = s.land_piece_ids || []
+            return Array.isArray(pieceIds) && pieceIds.includes(editingPiece.id)
+          })
           
           if (saleData) {
-            // Update sale with new offer
+            // Use the piece's actual selling price (per piece, not divided by count)
+            const pricePerPiece = editingPiece.selling_price_installment || editingPiece.selling_price_full || 0
+            
+            // Find the reservation amount for this specific piece
             const pieceCount = (saleData as any).land_piece_ids?.length || 1
-            const pricePerPiece = (saleData as any).total_selling_price / pieceCount
             const reservationPerPiece = ((saleData as any).small_advance_amount || 0) / pieceCount
+            
+            // Calculate values per piece based on the new offer
             const companyFeePercentage = offerData.company_fee_percentage || 0
             const companyFeePerPiece = (pricePerPiece * companyFeePercentage) / 100
             const advanceAmount = offerData.advance_is_percentage
@@ -2313,9 +2379,9 @@ export function LandManagement() {
               .update({
                 selected_offer_id: newOffer.id,
                 company_fee_percentage: companyFeePercentage,
-                company_fee_amount: companyFeePerPiece * pieceCount,
+                company_fee_amount: companyFeePerPiece * pieceCount, // Total for all pieces
                 number_of_installments: numberOfMonths,
-                monthly_installment_amount: monthlyAmount,
+                monthly_installment_amount: monthlyAmount, // Per piece
               } as any)
               .eq('id', (saleData as any).id)
             
@@ -2369,6 +2435,7 @@ export function LandManagement() {
         advance_amount: '',
         advance_is_percentage: false,
         monthly_payment: '',
+        number_of_months: '',
         offer_name: '',
         notes: '',
         is_default: false,
@@ -2378,20 +2445,93 @@ export function LandManagement() {
     }
   }
 
+  const handleSelectOfferForPiece = async (offerId: string) => {
+    if (!editingPiece || editingPiece.status !== 'Reserved') return
+    
+    try {
+      // Find the selected offer
+      const selectedOffer = pieceOffers.find(o => o.id === offerId)
+      if (!selectedOffer) return
+      
+      // Find the sale for this piece
+      const { data: allSales } = await supabase
+        .from('sales')
+        .select('id, land_piece_ids, total_selling_price, small_advance_amount')
+        .eq('status', 'Pending')
+        .eq('payment_type', 'Installment')
+        .limit(100)
+      
+      const saleData = allSales?.find((s: any) => {
+        const pieceIds = s.land_piece_ids || []
+        return Array.isArray(pieceIds) && pieceIds.includes(editingPiece.id)
+      })
+      
+      if (!saleData) return
+      
+      // Use the piece's actual selling price (per piece, not divided by count)
+      const pricePerPiece = editingPiece.selling_price_installment || editingPiece.selling_price_full || 0
+      
+      // Find the reservation amount for this specific piece
+      const pieceCount = (saleData as any).land_piece_ids?.length || 1
+      const reservationPerPiece = ((saleData as any).small_advance_amount || 0) / pieceCount
+      
+      // Calculate values per piece based on the selected offer
+      const companyFeePercentage = selectedOffer.company_fee_percentage || 0
+      const companyFeePerPiece = (pricePerPiece * companyFeePercentage) / 100
+      const advanceAmount = selectedOffer.advance_is_percentage
+        ? (pricePerPiece * selectedOffer.advance_amount) / 100
+        : selectedOffer.advance_amount
+      const remainingAfterAdvance = (pricePerPiece + companyFeePerPiece) - reservationPerPiece - advanceAmount
+      const monthlyAmount = selectedOffer.monthly_payment
+      const numberOfMonths = monthlyAmount > 0 && remainingAfterAdvance > 0
+        ? Math.ceil(remainingAfterAdvance / monthlyAmount)
+        : 0
+      
+      // Update the sale with the selected offer (values are per piece)
+      const { error: updateError } = await supabase
+        .from('sales')
+        .update({
+          selected_offer_id: offerId,
+          company_fee_percentage: companyFeePercentage,
+          company_fee_amount: companyFeePerPiece * pieceCount, // Total for all pieces
+          number_of_installments: numberOfMonths,
+          monthly_installment_amount: monthlyAmount, // Per piece
+        } as any)
+        .eq('id', (saleData as any).id)
+      
+      if (updateError) throw updateError
+      
+      // Update local state
+      setSelectedPieceOfferId(offerId)
+      
+      // Show success notification
+      showNotification('تم تحديث العرض المختار للبيع بنجاح', 'success')
+    } catch (err: any) {
+      setError(err.message || 'خطأ في اختيار العرض')
+    }
+  }
+
   const deletePieceOffer = async (offerId: string) => {
     if (!editingPiece) return
+    
+    // Don't allow deleting if it's the selected offer for a reserved piece
+    if (editingPiece.status === 'Reserved' && selectedPieceOfferId === offerId) {
+      setError('لا يمكن حذف العرض المختار للبيع. يرجى اختيار عرض آخر أولاً.')
+      return
+    }
     
     try {
       const { error } = await supabase
         .from('payment_offers')
         .delete()
         .eq('id', offerId)
+        .eq('land_piece_id', editingPiece.id) // Only delete piece-specific offers
       if (error) throw error
 
-      // Reload offers - try both from piece and batch
+      // Reload offers - combine piece-specific and batch offers
       let reloadedOffers: PaymentOffer[] = []
       
-      // First, try to get offers from piece
+      // Get piece-specific offers
       const { data: pieceOffers } = await supabase
         .from('payment_offers')
         .select('*')
@@ -2401,17 +2541,20 @@ export function LandManagement() {
       
       if (pieceOffers && pieceOffers.length > 0) {
         reloadedOffers = pieceOffers as PaymentOffer[]
-      } else if (editingPiece.land_batch_id) {
-        // If no piece offers, try to get offers from batch
+      }
+      
+      // Also get batch offers
+      if (editingPiece.land_batch_id) {
         const { data: batchOffers } = await supabase
           .from('payment_offers')
           .select('*')
           .eq('land_batch_id', editingPiece.land_batch_id)
+          .is('land_piece_id', null) // Only batch offers
           .order('is_default', { ascending: false })
           .order('created_at', { ascending: true })
         
         if (batchOffers && batchOffers.length > 0) {
-          reloadedOffers = batchOffers as PaymentOffer[]
+          reloadedOffers.push(...(batchOffers as PaymentOffer[]))
         }
       }
       
@@ -2514,39 +2657,8 @@ export function LandManagement() {
         notes: pieceForm.notes ? sanitizeNotes(pieceForm.notes) : null,
       }
 
-      // Add price per m², company fee, received amount, and number of months
-      const pricePerM2Full = pieceForm.price_per_m2_full && pieceForm.price_per_m2_full.trim()
-        ? parseFloat(pieceForm.price_per_m2_full)
-        : null
-      const pricePerM2Installment = pieceForm.price_per_m2_installment && pieceForm.price_per_m2_installment.trim()
-        ? parseFloat(pieceForm.price_per_m2_installment)
-        : null
-      const companyFeePercentage = pieceForm.company_fee_percentage && pieceForm.company_fee_percentage.trim()
-        ? parseFloat(pieceForm.company_fee_percentage)
-        : null
-      const receivedAmount = pieceForm.received_amount && pieceForm.received_amount.trim()
-        ? parseFloat(pieceForm.received_amount)
-        : null
-      const numberOfMonths = pieceForm.number_of_months && pieceForm.number_of_months.trim()
-        ? parseInt(pieceForm.number_of_months, 10)
-        : null
-      
-      // Add these fields to pieceData (even if null)
-      if (pricePerM2Full !== null && !isNaN(pricePerM2Full)) {
-        pieceData.price_per_m2_full = pricePerM2Full
-      }
-      if (pricePerM2Installment !== null && !isNaN(pricePerM2Installment)) {
-        pieceData.price_per_m2_installment = pricePerM2Installment
-      }
-      if (companyFeePercentage !== null && !isNaN(companyFeePercentage)) {
-        pieceData.company_fee_percentage = companyFeePercentage
-      }
-      if (receivedAmount !== null && !isNaN(receivedAmount)) {
-        pieceData.received_amount = receivedAmount
-      }
-      if (numberOfMonths !== null && !isNaN(numberOfMonths)) {
-        pieceData.number_of_months = numberOfMonths
-      }
+      // Note: price_per_m2_full, price_per_m2_installment, company_fee_percentage, received_amount, number_of_months
+      // are stored in payment_offers table, not in land_pieces table
 
       if (editingPiece) {
         const { error } = await supabase
@@ -3080,7 +3192,12 @@ export function LandManagement() {
         if (saleForm.payment_type === 'Full') {
           return sum + (parseFloat(p.selling_price_full) || 0)
         } else {
-          return sum + (parseFloat(p.selling_price_installment) || 0)
+          // For installment, use selected offer price if available
+          if (selectedOffer && selectedOffer.price_per_m2_installment) {
+            return sum + (p.surface_area * selectedOffer.price_per_m2_installment)
+          } else {
+            return sum + (parseFloat(p.selling_price_installment) || parseFloat(p.selling_price_full) || 0)
+          }
         }
       }, 0).toFixed(2))
       
@@ -3117,6 +3234,53 @@ export function LandManagement() {
         status: 'Pending',
         sale_date: new Date().toISOString().split('T')[0],
         created_by: user?.id || null,
+      }
+      
+      // Add selected_offer_id if an offer was selected and payment type is Installment
+      if (saleForm.payment_type === 'Installment' && selectedOffer?.id) {
+        saleData.selected_offer_id = selectedOffer.id
+        
+        // Calculate per piece
+        const pieceCount = selectedPieceObjects.length
+        const reservationPerPiece = reservation / pieceCount
+        
+        const piecesCalculations = selectedPieceObjects.map(p => {
+          const piecePrice = selectedOffer.price_per_m2_installment 
+            ? (p.surface_area * selectedOffer.price_per_m2_installment)
+            : (parseFloat(p.selling_price_installment) || parseFloat(p.selling_price_full) || 0)
+          
+          const companyFeePercentage = selectedOffer.company_fee_percentage || 0
+          const companyFeePerPiece = (piecePrice * companyFeePercentage) / 100
+          const totalPayablePerPiece = piecePrice + companyFeePerPiece
+          
+          const advancePerPiece = selectedOffer.advance_is_percentage
+            ? (piecePrice * selectedOffer.advance_amount) / 100
+            : selectedOffer.advance_amount
+          
+          const remainingPerPiece = totalPayablePerPiece - reservationPerPiece - advancePerPiece
+          const monthsPerPiece = selectedOffer.monthly_payment > 0 && remainingPerPiece > 0
+            ? Math.ceil(remainingPerPiece / selectedOffer.monthly_payment)
+            : 0
+          
+          return {
+            companyFeePerPiece,
+            advancePerPiece,
+            remainingPerPiece,
+            monthsPerPiece
+          }
+        })
+        
+        // Sum up totals
+        const companyFeePercentage = selectedOffer.company_fee_percentage || 0
+        const companyFeeAmount = piecesCalculations.reduce((sum, calc) => sum + calc.companyFeePerPiece, 0)
+        const advanceAmount = piecesCalculations.reduce((sum, calc) => sum + calc.advancePerPiece, 0)
+        const maxMonths = Math.max(...piecesCalculations.map(calc => calc.monthsPerPiece), 0)
+        const monthlyAmount = selectedOffer.monthly_payment
+        
+        saleData.company_fee_percentage = companyFeePercentage
+        saleData.company_fee_amount = companyFeeAmount
+        saleData.number_of_installments = maxMonths
+        saleData.monthly_installment_amount = monthlyAmount
       }
       
       if (saleForm.deadline_date && saleForm.deadline_date.trim() !== '') {
@@ -3580,7 +3744,7 @@ export function LandManagement() {
                                   <div className="font-medium text-blue-800 mb-1">
                                     {sale.client?.name || 'عميل'}
                                   </div>
-                                  {hasPermission('edit_sales') && (
+                                  {hasPermission('edit_sales') && user?.role === 'Owner' && (
                             <Button
                               size="sm"
                                       variant="outline"
@@ -4113,65 +4277,219 @@ export function LandManagement() {
             )}
             
             {/* Payment Offers Management - show when editing */}
-            {editingPiece && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-green-800">عروض التقسيط</p>
-                  <Button type="button" size="sm" onClick={addPieceOffer} variant="outline">
-                    <Plus className="h-4 w-4 ml-1" />
-                    إضافة عرض
-                  </Button>
-                </div>
-                
-                {/* Offers List */}
-                {pieceOffers.length > 0 ? (
-                  <div className="space-y-2">
-                    {pieceOffers.map((offer) => (
-                      <div key={offer.id} className="bg-white border border-green-200 rounded-lg p-3 flex items-center justify-between">
+            {editingPiece && (() => {
+              const isReserved = editingPiece.status === 'Reserved'
+              const pieceSpecificOffers = pieceOffers.filter(o => o.land_piece_id === editingPiece.id)
+              const batchOffers = pieceOffers.filter(o => o.land_batch_id === editingPiece.land_batch_id && !o.land_piece_id)
+              
+              return (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-green-800">عروض التقسيط</p>
+                    <Button type="button" size="sm" onClick={addPieceOffer} variant="outline">
+                      <Plus className="h-4 w-4 ml-1" />
+                      إضافة عرض
+                    </Button>
+                  </div>
+                  
+                  {isReserved && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            {offer.is_default && (
-                              <Badge variant="default" className="text-xs">افتراضي</Badge>
-                            )}
-                            {offer.offer_name && (
-                              <span className="font-medium text-sm">{offer.offer_name}</span>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {offer.price_per_m2_installment && `السعر/م²: ${offer.price_per_m2_installment} | `}
-                            عمولة: {offer.company_fee_percentage}% | 
-                            التسبقة: {offer.advance_is_percentage ? `${offer.advance_amount}%` : formatCurrency(offer.advance_amount)} | 
-                            الشهري: {formatCurrency(offer.monthly_payment)}
-                          </div>
-                        </div>
-                        <div className="flex gap-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => editPieceOffer(offer)}
-                          >
-                            <Edit className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => deletePieceOffer(offer.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                          </Button>
+                          <p className="text-xs font-medium text-blue-900 mb-1">
+                            هذه القطعة محجوزة
+                          </p>
+                          {selectedPieceOfferId ? (
+                            <p className="text-xs text-blue-800">
+                              العرض المختار للبيع موضح أدناه بعلامة "مختار للبيع". يمكنك تغيير العرض المختار أو تعديله.
+                            </p>
+                          ) : (
+                            <p className="text-xs text-blue-800">
+                              لم يتم اختيار عرض للبيع بعد. يرجى اختيار عرض من القائمة أدناه.
+                            </p>
+                          )}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground text-center py-2">
-                    لا توجد عروض. اضغط "إضافة عرض" لإضافة عرض جديد.
-                  </p>
-                )}
-              </div>
-            )}
+                    </div>
+                  )}
+                  
+                  {/* Piece-specific offers (for both available and reserved pieces) */}
+                  {pieceSpecificOffers.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-gray-700">
+                        {isReserved ? 'عروض هذه القطعة (العرض المختار موضح أدناه):' : 'عروض هذه القطعة:'}
+                      </p>
+                      {pieceSpecificOffers.map((offer) => {
+                        const isSelected = isReserved && selectedPieceOfferId === offer.id
+                        return (
+                        <div 
+                          key={offer.id} 
+                          className={`bg-white border rounded-lg p-3 flex items-center justify-between ${
+                            isSelected 
+                              ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500 shadow-sm' 
+                              : 'border-green-300'
+                          } ${isReserved ? 'cursor-pointer hover:bg-green-50 transition-colors' : ''}`}
+                          onClick={isReserved ? () => handleSelectOfferForPiece(offer.id) : undefined}
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {isSelected && (
+                                <Badge variant="default" className="text-xs bg-blue-600 text-white font-semibold">
+                                  ✓ مختار للبيع (يستخدم حالياً)
+                                </Badge>
+                              )}
+                              {offer.is_default && !isSelected && (
+                                <Badge variant="default" className="text-xs">افتراضي</Badge>
+                              )}
+                              {offer.offer_name && (
+                                <span className={`font-medium text-sm ${isSelected ? 'text-blue-900' : ''}`}>
+                                  {offer.offer_name}
+                                </span>
+                              )}
+                              <Badge variant="outline" className="text-xs">خاص بالقطعة</Badge>
+                            </div>
+                            <div className={`text-xs mt-1 ${isSelected ? 'text-blue-800 font-medium' : 'text-muted-foreground'}`}>
+                              {offer.price_per_m2_installment && `السعر/م²: ${offer.price_per_m2_installment} | `}
+                              عمولة: {offer.company_fee_percentage}% | 
+                              التسبقة: {offer.advance_is_percentage ? `${offer.advance_amount}%` : formatCurrency(offer.advance_amount)} | 
+                              الشهري: {formatCurrency(offer.monthly_payment)}
+                            </div>
+                            {isSelected && isReserved && (
+                              <div className="mt-2 pt-2 border-t border-blue-200">
+                                <p className="text-xs text-blue-700 font-medium">
+                                  هذا هو العرض المستخدم حالياً للبيع. سيتم استخدامه عند تأكيد البيع.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => editPieceOffer(offer)}
+                              className={isSelected ? 'text-blue-700 hover:bg-blue-100' : ''}
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            {!isReserved || !isSelected ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => deletePieceOffer(offer.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      )
+                      })}
+                    </div>
+                  )}
+                  
+                  {/* Batch offers (for both available and reserved) */}
+                  {batchOffers.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-gray-700">
+                        {isReserved ? 'عروض الدفعة (العرض المختار موضح أدناه):' : 'عروض الدفعة:'}
+                      </p>
+                      {batchOffers.map((offer) => {
+                        const isSelected = isReserved && selectedPieceOfferId === offer.id
+                        return (
+                          <div 
+                            key={offer.id} 
+                            className={`bg-white border rounded-lg p-3 flex items-center justify-between ${
+                              isSelected 
+                                ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500 shadow-sm' 
+                                : 'border-green-200'
+                            } ${isReserved ? 'cursor-pointer hover:bg-green-50 transition-colors' : ''}`}
+                            onClick={isReserved ? () => handleSelectOfferForPiece(offer.id) : undefined}
+                          >
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {isSelected && (
+                                  <Badge variant="default" className="text-xs bg-blue-600 text-white font-semibold">
+                                    ✓ مختار للبيع (يستخدم حالياً)
+                                  </Badge>
+                                )}
+                                {offer.is_default && !isSelected && (
+                                  <Badge variant="default" className="text-xs">افتراضي</Badge>
+                                )}
+                                {offer.offer_name && (
+                                  <span className={`font-medium text-sm ${isSelected ? 'text-blue-900' : ''}`}>
+                                    {offer.offer_name}
+                                  </span>
+                                )}
+                                {!isReserved && (
+                                  <Badge variant="outline" className="text-xs">من الدفعة</Badge>
+                                )}
+                              </div>
+                              <div className={`text-xs mt-1 ${isSelected ? 'text-blue-800 font-medium' : 'text-muted-foreground'}`}>
+                                {offer.price_per_m2_installment && `السعر/م²: ${offer.price_per_m2_installment} | `}
+                                عمولة: {offer.company_fee_percentage}% | 
+                                التسبقة: {offer.advance_is_percentage ? `${offer.advance_amount}%` : formatCurrency(offer.advance_amount)} | 
+                                الشهري: {formatCurrency(offer.monthly_payment)}
+                              </div>
+                              {isSelected && isReserved && (
+                                <div className="mt-2 pt-2 border-t border-blue-200">
+                                  <p className="text-xs text-blue-700 font-medium">
+                                    هذا هو العرض المستخدم حالياً للبيع. سيتم استخدامه عند تأكيد البيع.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                              {isReserved && isSelected && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    // Edit the selected offer - create a piece-specific copy
+                                    editPieceOffer(offer)
+                                  }}
+                                  className="text-blue-700 hover:bg-blue-100"
+                                >
+                                  <Edit className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                              {!isReserved && (
+                                <>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      // Create a piece-specific copy of batch offer
+                                      editPieceOffer(offer)
+                                    }}
+                                  >
+                                    <Edit className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  
+                  {/* No offers message */}
+                  {pieceOffers.length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center py-2">
+                      {isReserved 
+                        ? 'لا توجد عروض متاحة. يرجى إضافة عرض في تفاصيل الدفعة.'
+                        : 'لا توجد عروض. اضغط "إضافة عرض" لإضافة عرض جديد لهذه القطعة.'}
+                    </p>
+                  )}
+                  
+                </div>
+              )
+            })()}
             
             <div className="space-y-2">
               <Label htmlFor="piece_notes">ملاحظات (اختياري)</Label>
@@ -4711,13 +5029,6 @@ export function LandManagement() {
                       <div key={pieceId} className="flex items-center justify-between text-sm py-1.5 px-2 bg-white rounded border border-gray-200 hover:bg-gray-50 transition-colors">
                         <div className="flex-1 min-w-0">
                           <div className="font-medium truncate">{batch?.name || 'دفعة'} - #{piece.piece_number} ({piece.surface_area} م²)</div>
-                          {piecePrice > 0 && (
-                            <div className={`font-semibold text-xs mt-0.5 ${
-                              saleForm.payment_type === 'Full' ? 'text-green-600' : 'text-blue-600'
-                            }`}>
-                              {formatCurrency(piecePrice)}
-                            </div>
-                          )}
                         </div>
                         <Button
                           variant="ghost"
@@ -4748,21 +5059,40 @@ export function LandManagement() {
                     {availableOffers.map((offer) => {
                       const selectedPieceIds = Array.from(selectedPieces)
                       const selectedPiecesData = batches.flatMap(b => b.land_pieces).filter(p => selectedPieceIds.includes(p.id))
-                      const totalPrice = selectedPiecesData.reduce((sum, p) => {
-                        const price = offer.price_per_m2_installment 
+                      
+                      // Calculate per piece
+                      const piecesCalculations = selectedPiecesData.map(p => {
+                        const piecePrice = offer.price_per_m2_installment 
                           ? (p.surface_area * offer.price_per_m2_installment)
                           : (p.selling_price_installment || p.selling_price_full || 0)
-                        return sum + price
-                      }, 0)
+                        
+                        const companyFeePercentage = offer.company_fee_percentage || 0
+                        const companyFeePerPiece = (piecePrice * companyFeePercentage) / 100
+                        const totalPayablePerPiece = piecePrice + companyFeePerPiece
+                        
+                        const advancePerPiece = offer.advance_is_percentage
+                          ? (piecePrice * offer.advance_amount) / 100
+                          : offer.advance_amount
+                        
+                        const remainingPerPiece = totalPayablePerPiece - advancePerPiece
+                        const monthsPerPiece = offer.monthly_payment > 0 && remainingPerPiece > 0
+                          ? Math.ceil(remainingPerPiece / offer.monthly_payment)
+                          : 0
+                        
+                        return {
+                          piecePrice,
+                          companyFeePerPiece,
+                          totalPayablePerPiece,
+                          advancePerPiece,
+                          remainingPerPiece,
+                          monthsPerPiece
+                        }
+                      })
                       
-                      const advanceAmount = offer.advance_is_percentage
-                        ? (totalPrice * offer.advance_amount) / 100
-                        : offer.advance_amount
-                      
-                      const remainingAmount = totalPrice - advanceAmount
-                      const numberOfMonths = offer.monthly_payment > 0 
-                        ? Math.ceil(remainingAmount / offer.monthly_payment)
-                        : 0
+                      // Sum up totals
+                      const totalPrice = piecesCalculations.reduce((sum, calc) => sum + calc.piecePrice, 0)
+                      const totalAdvance = piecesCalculations.reduce((sum, calc) => sum + calc.advancePerPiece, 0)
+                      const maxMonths = Math.max(...piecesCalculations.map(calc => calc.monthsPerPiece), 0)
 
                       const isSelected = selectedOffer?.id === offer.id
 
@@ -4796,13 +5126,13 @@ export function LandManagement() {
                                 <div>عمولة الشركة: {offer.company_fee_percentage}%</div>
                                 <div>
                                   التسبقة: {offer.advance_is_percentage 
-                                    ? `${offer.advance_amount}% (${formatCurrency(advanceAmount)})`
-                                    : formatCurrency(offer.advance_amount)}
+                                    ? `${offer.advance_amount}% (${formatCurrency(totalAdvance)})`
+                                    : `${formatCurrency(offer.advance_amount)} لكل قطعة (${formatCurrency(totalAdvance)} إجمالي)`}
                                 </div>
                                 <div>المبلغ الشهري: {formatCurrency(offer.monthly_payment)}</div>
-                                {numberOfMonths > 0 && (
+                                {maxMonths > 0 && (
                                   <div className="font-medium text-green-700 mt-1">
-                                    عدد الأشهر: {numberOfMonths} شهر
+                                    عدد الأشهر: {maxMonths} شهر
                                   </div>
                                 )}
                               </div>
@@ -4851,31 +5181,163 @@ export function LandManagement() {
                 </Select>
               </div>
 
-              {selectedOffer && saleForm.payment_type === 'Installment' && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                  <p className="text-xs text-green-700 font-medium mb-1">
-                    التسبقة من العرض المختار (سيتم دفعها عند التأكيد):
-                  </p>
-                  <p className="text-sm font-semibold text-green-800">
-                    {(() => {
-                      const selectedPieceIds = Array.from(selectedPieces)
-                      const selectedPiecesData = batches.flatMap(b => b.land_pieces).filter(p => selectedPieceIds.includes(p.id))
-                      const totalPrice = selectedPiecesData.reduce((sum, p) => {
-                        const price = selectedOffer.price_per_m2_installment 
-                          ? (p.surface_area * selectedOffer.price_per_m2_installment)
-                          : (p.selling_price_installment || p.selling_price_full || 0)
-                        return sum + price
-                      }, 0)
-                      
-                      const advanceAmount = selectedOffer.advance_is_percentage
-                        ? (totalPrice * selectedOffer.advance_amount) / 100
-                        : selectedOffer.advance_amount
-                      
-                      return formatCurrency(advanceAmount)
-                    })()}
-                  </p>
-                </div>
-              )}
+              {/* Sale Details Summary - Different for Full vs Installment */}
+              {(() => {
+                const selectedPieceIds = Array.from(selectedPieces)
+                const selectedPiecesData = batches.flatMap(b => b.land_pieces).filter(p => selectedPieceIds.includes(p.id))
+                
+                if (saleForm.payment_type === 'Full') {
+                  // Full Payment Details
+                  const totalPrice = selectedPiecesData.reduce((sum, p) => sum + (p.selling_price_full || 0), 0)
+                  
+                  return (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-3">
+                      <p className="font-semibold text-green-800 text-sm mb-2">تفاصيل البيع (بالحاضر):</p>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">عدد القطع:</span>
+                          <span className="font-medium">{selectedPiecesData.length}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">السعر الإجمالي:</span>
+                          <span className="font-semibold text-green-700">{formatCurrency(totalPrice)}</span>
+                        </div>
+                        {selectedPiecesData.map((piece, idx) => {
+                          const batch = batches.find(b => b.id === piece.land_batch_id)
+                          return (
+                            <div key={piece.id} className="bg-white rounded p-2 border border-green-100">
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                  <p className="font-medium text-xs">{batch?.name || 'دفعة'} - #{piece.piece_number}</p>
+                                  <p className="text-xs text-muted-foreground">{piece.surface_area} م²</p>
+                                </div>
+                                <p className="font-semibold text-green-700 text-sm">{formatCurrency(piece.selling_price_full || 0)}</p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                } else {
+                  // Installment Payment Details
+                  if (!selectedOffer) {
+                    return (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <p className="text-xs text-yellow-800">يرجى اختيار عرض الدفع لعرض التفاصيل</p>
+                      </div>
+                    )
+                  }
+                  
+                  // Calculate per piece
+                  const piecesCalculations = selectedPiecesData.map(p => {
+                    const piecePrice = selectedOffer.price_per_m2_installment 
+                      ? (p.surface_area * selectedOffer.price_per_m2_installment)
+                      : (p.selling_price_installment || p.selling_price_full || 0)
+                    
+                    const companyFeePercentage = selectedOffer.company_fee_percentage || 0
+                    const companyFeePerPiece = (piecePrice * companyFeePercentage) / 100
+                    const totalPayablePerPiece = piecePrice + companyFeePerPiece
+                    
+                    const advancePerPiece = selectedOffer.advance_is_percentage
+                      ? (piecePrice * selectedOffer.advance_amount) / 100
+                      : selectedOffer.advance_amount
+                    
+                    const remainingPerPiece = totalPayablePerPiece - advancePerPiece
+                    const monthsPerPiece = selectedOffer.monthly_payment > 0 && remainingPerPiece > 0
+                      ? Math.ceil(remainingPerPiece / selectedOffer.monthly_payment)
+                      : 0
+                    
+                    return {
+                      piece: p,
+                      piecePrice,
+                      companyFeePerPiece,
+                      totalPayablePerPiece,
+                      advancePerPiece,
+                      remainingPerPiece,
+                      monthsPerPiece
+                    }
+                  })
+                  
+                  // Sum up totals
+                  const totalPrice = piecesCalculations.reduce((sum, calc) => sum + calc.piecePrice, 0)
+                  const companyFeePercentage = selectedOffer.company_fee_percentage || 0
+                  const companyFeeAmount = piecesCalculations.reduce((sum, calc) => sum + calc.companyFeePerPiece, 0)
+                  const totalPayable = piecesCalculations.reduce((sum, calc) => sum + calc.totalPayablePerPiece, 0)
+                  const advanceAmount = piecesCalculations.reduce((sum, calc) => sum + calc.advancePerPiece, 0)
+                  const remainingAfterAdvance = piecesCalculations.reduce((sum, calc) => sum + calc.remainingPerPiece, 0)
+                  const monthlyAmount = selectedOffer.monthly_payment
+                  const maxMonths = Math.max(...piecesCalculations.map(calc => calc.monthsPerPiece), 0)
+                  
+                  return (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                      {selectedPiecesData.length > 0 && (
+                        <div className="bg-white rounded p-2 border border-blue-100 space-y-1">
+                          <p className="text-xs font-medium text-muted-foreground mb-2">تفاصيل القطع:</p>
+                          {piecesCalculations.map((calc) => {
+                            const batch = batches.find(b => b.id === calc.piece.land_batch_id)
+                            return (
+                              <div key={calc.piece.id} className="border-b border-blue-50 last:border-0 pb-1.5 last:pb-0 mb-1.5 last:mb-0">
+                                <div className="flex justify-between items-start mb-1">
+                                  <div>
+                                    <p className="font-medium text-xs">{batch?.name || 'دفعة'} - #{calc.piece.piece_number}</p>
+                                    <p className="text-muted-foreground text-xs">{calc.piece.surface_area} م²</p>
+                                  </div>
+                                  <p className="font-semibold text-blue-700 text-xs">{formatCurrency(calc.piecePrice)}</p>
+                                </div>
+                                <div className="text-xs text-muted-foreground space-y-0.5 pl-2">
+                                  <div>عمولة ({companyFeePercentage}%): {formatCurrency(calc.companyFeePerPiece)}</div>
+                                  <div>المستحق: {formatCurrency(calc.totalPayablePerPiece)}</div>
+                                  <div>التسبقة: {formatCurrency(calc.advancePerPiece)}</div>
+                                  <div>المتبقي: {formatCurrency(calc.remainingPerPiece)}</div>
+                                  <div>المبلغ الشهري: {formatCurrency(monthlyAmount)}</div>
+                                  {calc.monthsPerPiece > 0 && (
+                                    <div className="font-medium text-blue-700">عدد الأشهر: {calc.monthsPerPiece} شهر</div>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                          {/* Total Summary */}
+                          <div className="border-t border-blue-200 pt-2 mt-2 space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-semibold text-blue-800">الإجمالي:</span>
+                            </div>
+                            <div className="text-xs text-muted-foreground space-y-0.5 pl-2">
+                              <div className="flex justify-between">
+                                <span>السعر الإجمالي:</span>
+                                <span className="font-medium">{formatCurrency(totalPrice)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>عمولة الشركة ({companyFeePercentage}%):</span>
+                                <span className="font-medium">{formatCurrency(companyFeeAmount)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>المبلغ الإجمالي المستحق:</span>
+                                <span className="font-medium">{formatCurrency(totalPayable)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>التسبقة:</span>
+                                <span className="font-medium">{formatCurrency(advanceAmount)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>المبلغ المتبقي بعد التسبقة:</span>
+                                <span className="font-medium">{formatCurrency(remainingAfterAdvance)}</span>
+                              </div>
+                              {maxMonths > 0 && (
+                                <div className="flex justify-between">
+                                  <span>عدد الأشهر:</span>
+                                  <span className="font-medium">{maxMonths} شهر</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
+              })()}
 
               <div className="space-y-2">
                 <Label htmlFor="reservationAmount">العربون (مبلغ الحجز) *</Label>
@@ -5121,19 +5583,49 @@ export function LandManagement() {
                 </div>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="offer_monthly_payment">المبلغ الشهري *</Label>
-              <Input
-                id="offer_monthly_payment"
-                type="number"
-                step="0.01"
-                value={offerForm.monthly_payment}
-                onChange={(e) => setOfferForm({ ...offerForm, monthly_payment: e.target.value })}
-                placeholder="0.00"
-                min="0.01"
-              />
-              <p className="text-xs text-muted-foreground">سيتم حساب عدد الأشهر تلقائياً بناءً على المبلغ المتبقي بعد التسبقة</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="offer_monthly_payment">المبلغ الشهري *</Label>
+                <Input
+                  id="offer_monthly_payment"
+                  type="number"
+                  step="0.01"
+                  value={offerForm.monthly_payment}
+                  onChange={(e) => {
+                    const monthlyValue = e.target.value
+                    setOfferForm({ ...offerForm, monthly_payment: monthlyValue })
+                    // If monthly payment is entered and number of months is also entered, recalculate
+                    if (monthlyValue && offerForm.number_of_months) {
+                      // Keep number of months, recalculate monthly payment if needed
+                      // Actually, if user is typing monthly payment, we should clear number_of_months or recalculate
+                    }
+                  }}
+                  placeholder="0.00"
+                  min="0.01"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="offer_number_of_months">عدد الأشهر *</Label>
+                <Input
+                  id="offer_number_of_months"
+                  type="number"
+                  step="1"
+                  value={offerForm.number_of_months}
+                  onChange={(e) => {
+                    const monthsValue = e.target.value
+                    setOfferForm({ ...offerForm, number_of_months: monthsValue })
+                    // If number of months is entered and monthly payment is also entered, recalculate
+                    if (monthsValue && offerForm.monthly_payment) {
+                      // Keep monthly payment, recalculate number of months if needed
+                      // Actually, if user is typing number of months, we should clear monthly_payment or recalculate
+                    }
+                  }}
+                  placeholder="12"
+                  min="1"
+                />
+              </div>
             </div>
+            <p className="text-xs text-muted-foreground">أدخل إما المبلغ الشهري أو عدد الأشهر، وسيتم حساب الآخر تلقائياً عند الحفظ</p>
             <div className="space-y-2">
               <Label htmlFor="offer_notes">ملاحظات (اختياري)</Label>
               <Textarea
@@ -5143,16 +5635,6 @@ export function LandManagement() {
                 placeholder="ملاحظات إضافية..."
                 rows={2}
               />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="offer_is_default"
-                checked={offerForm.is_default}
-                onChange={(e) => setOfferForm({ ...offerForm, is_default: e.target.checked })}
-                className="h-4 w-4"
-              />
-              <Label htmlFor="offer_is_default" className="text-sm">تعيين كعرض افتراضي</Label>
             </div>
           </div>
           <DialogFooter>
@@ -5165,6 +5647,7 @@ export function LandManagement() {
                 advance_amount: '',
                 advance_is_percentage: false,
                 monthly_payment: '',
+                number_of_months: '',
                 offer_name: '',
                 notes: '',
                 is_default: false,
