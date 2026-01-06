@@ -2104,7 +2104,7 @@ export function LandManagement() {
               <Button 
                 onClick={() => setClientDialogOpen(true)} 
                 size="sm"
-                className="bg-green-600 hover:bg-green-700"
+                className="bg-green-600 hover:bg-green-700 hidden md:flex"
               >
                 <ShoppingCart className="ml-1 h-4 w-4" />
                 بيع ({selectedPieces.size})
@@ -2279,6 +2279,7 @@ export function LandManagement() {
                                   type="checkbox"
                                   checked={selectedPieces.has(piece.id)}
                                   onChange={(e) => {
+                                    e.stopPropagation()
                                     const newSelected = new Set(selectedPieces)
                                     if (e.target.checked) {
                                       newSelected.add(piece.id)
@@ -2287,7 +2288,9 @@ export function LandManagement() {
                                     }
                                     setSelectedPieces(newSelected)
                                   }}
-                                  className="h-4 w-4 text-green-600 rounded"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-5 w-5 text-green-600 rounded cursor-pointer touch-manipulation"
+                                  style={{ WebkitTapHighlightColor: 'transparent' }}
                                 />
                               )}
                               <span className="font-bold">{piece.piece_number}</span>
@@ -2301,13 +2304,32 @@ export function LandManagement() {
                           <div className="text-muted-foreground">{piece.surface_area} م²</div>
                           <div className="font-semibold text-green-600 mt-1">{formatCurrency(piece.selling_price_full || 0)}</div>
                           
+                          {/* Sell Button for Available */}
+                          {piece.status === 'Available' && hasPermission('create_sales') && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedPieces(new Set([piece.id]))
+                                setClientDialogOpen(true)
+                              }}
+                              className="w-full mt-2 h-7 text-xs bg-green-600 hover:bg-green-700"
+                            >
+                              <ShoppingCart className="h-3 w-3 ml-1" />
+                              بيع
+                            </Button>
+                          )}
+                          
                           {/* Edit buttons */}
                           {hasPermission('edit_land') && (
                             <div className="flex gap-1 mt-1">
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => openPieceDialog(batch.id, piece)}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  openPieceDialog(batch.id, piece)
+                                }}
                                 className="flex-1 h-6 text-xs"
                               >
                                 <Edit className="h-3 w-3" />
@@ -2316,7 +2338,10 @@ export function LandManagement() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => openPriceEditDialog(batch.id, piece)}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    openPriceEditDialog(batch.id, piece)
+                                  }}
                                   className="h-6 text-xs text-blue-600"
                                 >
                                   <DollarSign className="h-3 w-3" />
@@ -2325,7 +2350,10 @@ export function LandManagement() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => deletePiece(piece, batch.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  deletePiece(piece, batch.id)
+                                }}
                                 className="h-6 text-xs text-red-600 hover:bg-red-50"
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -2373,7 +2401,7 @@ export function LandManagement() {
                                         }
                                         setSelectedPieces(newSelected)
                                       }}
-                                      className="h-4 w-4 text-green-600 rounded"
+                                      className="h-5 w-5 text-green-600 rounded cursor-pointer"
                                     />
                                   ) : null}
                                 </TableCell>
@@ -2391,6 +2419,19 @@ export function LandManagement() {
                           </TableCell>
                               <TableCell className="py-2">
                                 <div className="flex items-center gap-0.5">
+                                  {piece.status === 'Available' && hasPermission('create_sales') && (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        setSelectedPieces(new Set([piece.id]))
+                                        setClientDialogOpen(true)
+                                      }}
+                                      className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                                    >
+                                      <ShoppingCart className="h-3 w-3 ml-1" />
+                                      بيع
+                                    </Button>
+                                  )}
                           {hasPermission('edit_land') && (
                               <>
                               <Button
@@ -3219,6 +3260,19 @@ export function LandManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Floating Sell Button for Mobile */}
+      {selectedPieces.size > 0 && hasPermission('create_sales') && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden p-4 bg-white border-t shadow-lg">
+          <Button 
+            onClick={() => setClientDialogOpen(true)} 
+            size="lg"
+            className="w-full bg-green-600 hover:bg-green-700 h-12 text-base font-semibold"
+          >
+            <ShoppingCart className="ml-2 h-5 w-5" />
+            بيع ({selectedPieces.size} قطعة)
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
