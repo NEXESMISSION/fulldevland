@@ -1,5 +1,20 @@
 import { useNavigate } from 'react-router-dom'
-import { Map, TrendingDown, Building2, Users, ShoppingCart, DollarSign, Settings, Shield, ChevronLeft, Receipt } from 'lucide-react'
+import { 
+  Map, 
+  TrendingDown, 
+  Building2, 
+  Users, 
+  ShoppingCart, 
+  DollarSign, 
+  Settings, 
+  Shield, 
+  ChevronLeft, 
+  Receipt,
+  CreditCard,
+  CheckCircle2,
+  MessageSquare,
+  UserCog
+} from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 
 export function Home() {
@@ -19,28 +34,12 @@ export function Home() {
 
   const allItems = [
     {
-      title: 'الأراضي',
+      title: 'إدارة الأراضي',
       icon: Map,
       color: 'bg-blue-500',
       route: '/land',
       permission: 'view_land',
       pageId: 'land',
-    },
-    {
-      title: 'العقارات',
-      icon: Building2,
-      color: 'bg-teal-500',
-      route: '/real-estate-buildings',
-      permission: null,
-      pageId: 'real-estate',
-    },
-    {
-      title: 'الديون',
-      icon: TrendingDown,
-      color: 'bg-red-500',
-      route: '/debts',
-      permission: null,
-      pageId: 'debts',
     },
     {
       title: 'العملاء',
@@ -51,12 +50,28 @@ export function Home() {
       pageId: 'clients',
     },
     {
-      title: 'المبيعات',
+      title: 'السجل',
       icon: ShoppingCart,
       color: 'bg-green-500',
       route: '/sales',
       permission: 'view_sales',
       pageId: 'sales',
+    },
+    {
+      title: 'تأكيد المبيعات',
+      icon: CheckCircle2,
+      color: 'bg-emerald-500',
+      route: '/sale-confirmation',
+      permission: 'edit_sales',
+      pageId: 'confirm-sales',
+    },
+    {
+      title: 'الأقساط',
+      icon: CreditCard,
+      color: 'bg-indigo-500',
+      route: '/installments',
+      permission: 'view_installments',
+      pageId: 'installments',
     },
     {
       title: 'المالية',
@@ -67,20 +82,44 @@ export function Home() {
       pageId: 'finance',
     },
     {
-      title: 'الأقساط',
-      icon: Receipt,
-      color: 'bg-indigo-500',
-      route: '/installments',
-      permission: 'view_financial',
-      pageId: 'installments',
-    },
-    {
       title: 'المصاريف',
-      icon: TrendingDown,
+      icon: Receipt,
       color: 'bg-rose-500',
       route: '/expenses',
       permission: 'view_financial',
       pageId: 'expenses',
+    },
+    {
+      title: 'الديون',
+      icon: TrendingDown,
+      color: 'bg-red-500',
+      route: '/debts',
+      permission: null,
+      pageId: 'debts',
+    },
+    {
+      title: 'التطوير والبناء',
+      icon: Building2,
+      color: 'bg-teal-500',
+      route: '/real-estate-buildings',
+      permission: null,
+      pageId: 'real-estate',
+    },
+    {
+      title: 'الرسائل',
+      icon: MessageSquare,
+      color: 'bg-cyan-500',
+      route: '/messages',
+      permission: 'view_messages',
+      pageId: 'messages',
+    },
+    {
+      title: 'العمال',
+      icon: UserCog,
+      color: 'bg-violet-500',
+      route: '/workers',
+      permission: 'view_workers',
+      pageId: 'workers',
     },
     {
       title: 'المستخدمين',

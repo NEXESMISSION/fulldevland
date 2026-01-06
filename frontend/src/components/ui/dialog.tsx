@@ -172,15 +172,7 @@ const DialogContent = React.forwardRef<
     e.stopPropagation()
   }
 
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    e.stopPropagation()
-  }
-
   const handleMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.stopPropagation()
-  }
-
-  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
     e.stopPropagation()
   }
 
@@ -200,8 +192,6 @@ const DialogContent = React.forwardRef<
         onClick={handleClick}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
         {...props}
       >
           {/* Content with balanced padding - responsive for mobile */}

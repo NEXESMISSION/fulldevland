@@ -219,6 +219,7 @@ function ImageZoomViewer({ src, alt, onError }: { src: string; alt: string; onEr
   return (
     <div 
       ref={containerRef}
+      data-zoom-viewer="true"
       className="w-full h-full flex items-center justify-center overflow-hidden relative"
       style={{ touchAction: isMobile ? 'none' : 'auto' }}
     >

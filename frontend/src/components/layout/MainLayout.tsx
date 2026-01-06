@@ -103,7 +103,7 @@ function MainLayout() {
 
       {/* Sidebar - hidden on mobile, shown when sidebarOpen is true */}
       <div className={`
-        fixed md:sticky md:top-0 inset-y-0 left-0 z-40 md:h-screen
+        fixed md:sticky md:top-0 inset-y-0 left-0 z-[60] md:h-screen
         transition-transform duration-300 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
@@ -113,7 +113,7 @@ function MainLayout() {
       {/* Overlay for mobile */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          className="fixed inset-0 bg-black/50 z-[55] md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
