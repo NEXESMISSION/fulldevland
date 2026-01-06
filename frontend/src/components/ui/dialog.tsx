@@ -132,7 +132,7 @@ function DialogOverlay({ className, ...props }: React.HTMLAttributes<HTMLDivElem
 const DialogContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
->(({ className, children, ...props }, ref) => {
+>(({ className, children, onClick, ...props }, ref) => {
   const context = React.useContext(DialogContext)
   if (!context) throw new Error("DialogContent must be used within Dialog")
 
@@ -140,6 +140,14 @@ const DialogContent = React.forwardRef<
 
   // Check if this is a notification dialog (has data-notification attribute)
   const isNotificationDialog = className?.includes('notification-dialog')
+  
+  // Prevent click events from propagating to overlay (which would close the dialog)
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    if (onClick) {
+      onClick(e)
+    }
+  }
   
   return (
     <DialogPortal>
@@ -154,6 +162,7 @@ const DialogContent = React.forwardRef<
             "relative w-full max-w-[95vw] sm:max-w-lg md:max-w-2xl lg:max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden border bg-background shadow-lg duration-200 rounded-lg flex flex-col",
           className
         )}
+        onClick={handleClick}
         {...props}
       >
           {/* Content with balanced padding - responsive for mobile */}

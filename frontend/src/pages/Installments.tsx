@@ -60,6 +60,78 @@ const statusColors: Record<InstallmentStatus, 'success' | 'warning' | 'destructi
   Partial: 'secondary',
 }
 
+// Deadline Countdown Component
+function DeadlineCountdown({ deadlineDate }: { deadlineDate: string }) {
+  const [countdown, setCountdown] = useState<{
+    days: number
+    hours: number
+    minutes: number
+    isOverdue: boolean
+  } | null>(null)
+  
+  useEffect(() => {
+    const updateCountdown = () => {
+      const deadline = new Date(deadlineDate)
+      const now = new Date()
+      deadline.setHours(23, 59, 59, 999)
+      
+      const diffMs = deadline.getTime() - now.getTime()
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+      const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+      const isOverdue = diffMs < 0
+      
+      setCountdown({ days: Math.abs(days), hours: Math.abs(hours), minutes: Math.abs(minutes), isOverdue })
+    }
+    
+    updateCountdown()
+    const interval = setInterval(updateCountdown, 60000) // Update every minute
+    
+    return () => clearInterval(interval)
+  }, [deadlineDate])
+  
+  if (!countdown) return null
+  
+  const isToday = countdown.days === 0 && !countdown.isOverdue
+  const isClose = countdown.days > 0 && countdown.days <= 3 && !countdown.isOverdue
+  
+  let countdownText = ''
+  if (countdown.isOverdue) {
+    countdownText = `⚠ تجاوز الموعد بـ ${countdown.days} ${countdown.days === 1 ? 'يوم' : 'أيام'}`
+    if (countdown.hours > 0) {
+      countdownText += ` و ${countdown.hours} ${countdown.hours === 1 ? 'ساعة' : 'ساعات'}`
+    }
+  } else if (isToday) {
+    if (countdown.hours > 0) {
+      countdownText = `⚠ متبقي: ${countdown.hours} ${countdown.hours === 1 ? 'ساعة' : 'ساعات'} و ${countdown.minutes} ${countdown.minutes === 1 ? 'دقيقة' : 'دقائق'}`
+    } else if (countdown.minutes > 0) {
+      countdownText = `⚠ متبقي: ${countdown.minutes} ${countdown.minutes === 1 ? 'دقيقة' : 'دقائق'}`
+    } else {
+      countdownText = '⚠ الموعد النهائي اليوم'
+    }
+  } else {
+    countdownText = `⏰ متبقي: ${countdown.days} ${countdown.days === 1 ? 'يوم' : 'أيام'}`
+    if (countdown.hours > 0) {
+      countdownText += ` و ${countdown.hours} ${countdown.hours === 1 ? 'ساعة' : 'ساعات'}`
+    }
+  }
+  
+  return (
+    <div className="sm:col-span-2">
+      <p className="text-xs sm:text-sm text-muted-foreground mb-1">آخر أجل لإتمام الإجراءات</p>
+      <Badge 
+        variant={countdown.isOverdue ? "destructive" : isToday || isClose ? "warning" : "default"} 
+        className="text-xs sm:text-sm font-medium"
+      >
+        {countdownText}
+      </Badge>
+      <p className="text-xs text-muted-foreground mt-1">
+        {formatDate(deadlineDate)}
+      </p>
+    </div>
+  )
+}
+
 export function Installments() {
   const { hasPermission, user } = useAuth()
   const [installments, setInstallments] = useState<InstallmentWithRelations[]>([])
@@ -82,6 +154,7 @@ export function Installments() {
     clientName: string
     clientCin?: string
     saleDate: string
+    deadlineDate?: string | null
     installments: InstallmentWithRelations[]
     totalDue: number
     totalPaid: number
@@ -255,6 +328,7 @@ export function Installments() {
             clientName: selectedSaleForDetails.clientName,
             clientCin: selectedSaleForDetails.clientCin,
             saleDate: selectedSaleForDetails.saleDate,
+            deadlineDate: selectedSaleForDetails.deadlineDate,
             installments: [...freshInstallments].sort((a, b) => a.installment_number - b.installment_number),
             totalDue,
             totalPaid,
@@ -1171,6 +1245,7 @@ export function Installments() {
       clientName: string
       clientCin?: string
       saleDate: string
+      deadlineDate?: string | null
       landPieces: string
       totalInstallments: number
       paidInstallments: number
@@ -1218,12 +1293,15 @@ export function Installments() {
         const landPieces = (nextInst.sale as any)?._landPieces || []
         const pieceNumbers = landPieces.map((p: any) => p?.piece_number).filter(Boolean).join('، ')
         
+        const deadlineDate = nextInst.sale?.deadline_date || null
+        
         deals.push({
           saleId: sale.saleId,
           clientId: group.clientId,
           clientName: group.clientName,
           clientCin: group.sales[0]?.installments[0]?.sale?.client?.cin,
           saleDate: sale.saleDate,
+          deadlineDate,
           landPieces: pieceNumbers || '-',
           totalInstallments: sale.installments.length,
           paidInstallments: sale.installments.filter(i => getRemainingAmount(i) <= 0.01).length,
@@ -1336,6 +1414,7 @@ export function Installments() {
       clientName: deal.clientName,
       clientCin: deal.clientCin,
       saleDate: deal.saleDate,
+      deadlineDate: deal.deadlineDate,
       installments: deal.installments,
       totalDue: deal.totalDue,
       totalPaid: deal.totalPaid,
@@ -2924,6 +3003,7 @@ export function Installments() {
                           clientName: firstInst.sale?.client?.name || selectedSaleForDetails.clientName,
                           clientCin: firstInst.sale?.client?.cin || selectedSaleForDetails.clientCin,
                           saleDate: firstInst.sale?.sale_date || selectedSaleForDetails.saleDate,
+                          deadlineDate: firstInst.sale?.deadline_date || selectedSaleForDetails.deadlineDate,
                           installments: freshInstallments,
                           totalDue,
                           totalPaid,
@@ -2976,6 +3056,7 @@ export function Installments() {
                     <p className="text-xs sm:text-sm text-muted-foreground mb-1">المتبقي</p>
                     <p className="font-semibold text-sm sm:text-base text-red-600">{formatCurrency(selectedSaleForDetails.totalUnpaid)}</p>
                   </div>
+                  {selectedSaleForDetails.deadlineDate && <DeadlineCountdown deadlineDate={selectedSaleForDetails.deadlineDate} />}
                 </div>
                 <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
                   <div className="flex items-center justify-between text-xs sm:text-sm">

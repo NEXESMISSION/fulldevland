@@ -129,12 +129,13 @@ export function SaleConfirmation() {
     
     try {
       const { data: salesData, error: salesError } = await retryWithBackoff(async () => {
-        // First get sales
+        // First get sales with selected offer
         const res = await supabase
           .from('sales')
           .select(`
             *,
-            client:clients(*)
+            client:clients(*),
+            selected_offer:payment_offers!selected_offer_id(*)
           `)
           .eq('status', 'Pending')
           .order('sale_date', { ascending: false })
@@ -339,29 +340,64 @@ export function SaleConfirmation() {
     setCompanyFeePercentage(sale.company_fee_percentage?.toString() || '2')
     }
     
+    // Calculate values using the offer - need to calculate pricePerPiece first
+    let calculatedPricePerPiece = 0
+    if (sale.payment_type === 'Installment' && offer && offer.price_per_m2_installment) {
+      // Use offer price per m²
+      calculatedPricePerPiece = piece.surface_area * offer.price_per_m2_installment
+    } else if (sale.payment_type === 'Installment') {
+      calculatedPricePerPiece = piece.selling_price_installment || piece.selling_price_full || 0
+    } else {
+      calculatedPricePerPiece = piece.selling_price_full || 0
+    }
+    
+    // If still 0, fall back to dividing total
+    if (calculatedPricePerPiece === 0) {
+      const pieceCount = sale.land_piece_ids.length
+      calculatedPricePerPiece = sale.total_selling_price / pieceCount
+    }
+    
+    const pieceCount = sale.land_piece_ids.length
+    const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
+    
+    // Calculate company fee
+    let companyFeePercentage = 0
+    if (sale.payment_type === 'Installment' && offer) {
+      companyFeePercentage = offer.company_fee_percentage || 0
+    } else if (sale.payment_type === 'Full') {
+      const batch = (piece as any).land_batch
+      companyFeePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || 0
+    } else {
+      companyFeePercentage = sale.company_fee_percentage || 0
+    }
+    
+    const companyFeePerPiece = (calculatedPricePerPiece * companyFeePercentage) / 100
+    const totalPayablePerPiece = calculatedPricePerPiece + companyFeePerPiece
+    
     // Calculate number of months from offer if available
     if (offer && type === 'bigAdvance' && sale.payment_type === 'Installment') {
-      const pieceCount = sale.land_piece_ids.length
-      const pricePerPiece = sale.total_selling_price / pieceCount
-      const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
       const advanceAmount = offer.advance_is_percentage
-        ? (pricePerPiece * offer.advance_amount) / 100
+        ? (calculatedPricePerPiece * offer.advance_amount) / 100
         : offer.advance_amount
-      const remainingAmount = pricePerPiece - reservationPerPiece - advanceAmount
-      const numberOfMonths = offer.monthly_payment > 0 
-        ? Math.ceil(remainingAmount / offer.monthly_payment)
-        : 12
+      const remainingAmount = totalPayablePerPiece - reservationPerPiece - advanceAmount
+      
+      let numberOfMonths = 0
+      if (offer.monthly_payment && offer.monthly_payment > 0) {
+        numberOfMonths = remainingAmount > 0 ? Math.ceil(remainingAmount / offer.monthly_payment) : 0
+      } else if (offer.number_of_months && offer.number_of_months > 0) {
+        numberOfMonths = offer.number_of_months
+      } else {
+        numberOfMonths = 12
+      }
       setNumberOfInstallments(numberOfMonths.toString())
     } else {
-    setNumberOfInstallments(sale.number_of_installments?.toString() || '12')
+      setNumberOfInstallments(sale.number_of_installments?.toString() || '12')
     }
     
     // Auto-fill received amount (advance) for installment from offer
     if (type === 'bigAdvance' && sale.payment_type === 'Installment' && offer) {
-      const pieceCount = sale.land_piece_ids.length
-      const pricePerPiece = sale.total_selling_price / pieceCount
       const advanceAmount = offer.advance_is_percentage
-        ? (pricePerPiece * offer.advance_amount) / 100
+        ? (calculatedPricePerPiece * offer.advance_amount) / 100
         : offer.advance_amount
       setReceivedAmount(advanceAmount.toFixed(2))
     } else if (type === 'full') {
@@ -376,7 +412,7 @@ export function SaleConfirmation() {
       
       // Get company fee from batch for full payment
       const batch = (piece as any).land_batch
-      const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || parseFloat(companyFeePercentage) || 0
+      const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || (companyFeePercentage ? parseFloat(String(companyFeePercentage)) : 0) || 0
       const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
       const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
       const remainingAmount = totalPayablePerPiece - reservationPerPiece
@@ -401,8 +437,11 @@ export function SaleConfirmation() {
   }
 
   // Calculate per-piece values
-  const calculatePieceValues = (sale: SaleWithDetails, piece: LandPiece) => {
+  const calculatePieceValues = (sale: SaleWithDetails, piece: LandPiece, offer?: PaymentOffer | null) => {
     const pieceCount = sale.land_piece_ids.length
+    
+    // Get the offer to use - prioritize passed offer, then selectedOffer state, then sale's selected_offer
+    const offerToUse = offer || selectedOffer || ((sale as any).selected_offer as PaymentOffer | null)
     
     // Use actual piece price instead of dividing total by count
     // This ensures correct calculation when pieces have different prices
@@ -411,8 +450,8 @@ export function SaleConfirmation() {
       pricePerPiece = piece.selling_price_full || 0
     } else {
       // For installment, use offer price if available, otherwise piece price
-      if (selectedOffer && selectedOffer.price_per_m2_installment) {
-        pricePerPiece = (piece.surface_area * selectedOffer.price_per_m2_installment)
+      if (offerToUse && offerToUse.price_per_m2_installment) {
+        pricePerPiece = (piece.surface_area * offerToUse.price_per_m2_installment)
       } else {
         pricePerPiece = piece.selling_price_installment || piece.selling_price_full || 0
       }
@@ -432,9 +471,9 @@ export function SaleConfirmation() {
       const batch = (piece as any).land_batch
       feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || parseFloat(companyFeePercentage) || 0
     } else {
-      // For Installment, use company fee from selected offer if available, otherwise from sale or form
-      feePercentage = selectedOffer 
-        ? (selectedOffer.company_fee_percentage || 0)
+      // For Installment, use company fee from offer if available, otherwise from sale or form
+      feePercentage = offerToUse 
+        ? (offerToUse.company_fee_percentage || 0)
         : (sale.company_fee_percentage || parseFloat(companyFeePercentage) || 0)
     }
     
@@ -446,7 +485,8 @@ export function SaleConfirmation() {
       reservationPerPiece,
       companyFeePerPiece,
       totalPayablePerPiece,
-      feePercentage
+      feePercentage,
+      offer: offerToUse
     }
   }
 
@@ -609,7 +649,8 @@ export function SaleConfirmation() {
 
       if (pieceCount === 1) {
         // Single piece - update the sale directly
-        const { feePercentage } = calculatePieceValues(selectedSale, selectedPiece)
+        const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
+        const { feePercentage } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
         const updates: any = {
           company_fee_percentage: feePercentage > 0 ? feePercentage : null,
           company_fee_amount: companyFeePerPiece > 0 ? parseFloat(companyFeePerPiece.toFixed(2)) : null,
@@ -657,6 +698,17 @@ export function SaleConfirmation() {
             updates.number_of_installments = installments
             updates.monthly_installment_amount = parseFloat(monthlyAmount.toFixed(2))
             updates.installment_start_date = installmentStartDate || new Date().toISOString().split('T')[0]
+            
+            // Delete existing installments for this sale to avoid duplicates
+            const { error: deleteError } = await supabase
+              .from('installments')
+              .delete()
+              .eq('sale_id', selectedSale.id)
+            
+            if (deleteError) {
+              console.warn('Error deleting existing installments:', deleteError)
+              // Continue anyway - might be first time creating installments
+            }
             
             // Create installments schedule
             const installmentsToCreate = []
@@ -1230,7 +1282,7 @@ export function SaleConfirmation() {
                       </TableHeader>
                       <TableBody>
                         {pieces.map((piece: any) => {
-                          const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(sale, piece)
+                          const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(sale, piece, (sale as any).selected_offer)
                           
                           return (
                             <TableRow key={piece.id} className="hover:bg-gray-50">
@@ -1303,14 +1355,16 @@ export function SaleConfirmation() {
             </DialogTitle>
           </DialogHeader>
           {selectedSale && selectedPiece && (() => {
-                  const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(selectedSale, selectedPiece)
+                  // Get the offer to use - prioritize selectedOffer state, then sale's selected_offer
+                  const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
+                  const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece, offer: calculatedOffer } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
             
             // Calculate advance amount from offer if available
             let advanceAmount = 0
-            if (selectedOffer && confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
-              advanceAmount = selectedOffer.advance_is_percentage
-                ? (pricePerPiece * selectedOffer.advance_amount) / 100
-                : selectedOffer.advance_amount
+            if (calculatedOffer && confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
+              advanceAmount = calculatedOffer.advance_is_percentage
+                ? (pricePerPiece * calculatedOffer.advance_amount) / 100
+                : calculatedOffer.advance_amount
             } else if (confirmationType === 'full') {
               advanceAmount = totalPayablePerPiece - reservationPerPiece
             }
@@ -1318,11 +1372,19 @@ export function SaleConfirmation() {
             // Calculate remaining amount after advance
             const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - advanceAmount
             
-            // Calculate number of months from offer
+            // Calculate number of months and monthly payment from offer
             let calculatedMonths = 0
-            const monthlyPaymentAmount = selectedOffer?.monthly_payment || 0
-            if (selectedOffer && monthlyPaymentAmount > 0 && remainingAfterAdvance > 0) {
-              calculatedMonths = Math.ceil(remainingAfterAdvance / monthlyPaymentAmount)
+            let monthlyPaymentAmount = 0
+            if (calculatedOffer && confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
+              if (calculatedOffer.monthly_payment && calculatedOffer.monthly_payment > 0) {
+                // Offer has monthly_payment - calculate number of months
+                monthlyPaymentAmount = calculatedOffer.monthly_payment
+                calculatedMonths = remainingAfterAdvance > 0 ? Math.ceil(remainingAfterAdvance / monthlyPaymentAmount) : 0
+              } else if (calculatedOffer.number_of_months && calculatedOffer.number_of_months > 0) {
+                // Offer has number_of_months - calculate monthly payment
+                calculatedMonths = calculatedOffer.number_of_months
+                monthlyPaymentAmount = remainingAfterAdvance > 0 ? remainingAfterAdvance / calculatedOffer.number_of_months : 0
+              }
             }
             
                   return (
@@ -1340,12 +1402,12 @@ export function SaleConfirmation() {
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
                       <div className="flex items-center gap-2">
                         <span className="text-sm sm:text-base text-gray-700">عمولة الشركة (%):</span>
-                        {selectedOffer && (
+                        {calculatedOffer && (
                           <Badge variant="default" className="text-xs">من العرض</Badge>
                         )}
                       </div>
                       <span className="text-sm sm:text-base font-semibold text-blue-700">
-                        {selectedOffer ? selectedOffer.company_fee_percentage : companyFeePercentage}%
+                        {calculatedOffer ? calculatedOffer.company_fee_percentage : companyFeePercentage}%
                       </span>
                       </div>
                     
@@ -1364,7 +1426,7 @@ export function SaleConfirmation() {
                       <span className="text-sm sm:text-base font-semibold text-green-600">{formatCurrency(reservationPerPiece)}</span>
                     </div>
                     
-                    {confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment' && selectedOffer && (
+                    {confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment' && calculatedOffer && (
                       <>
                         <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
                           <div className="flex items-center gap-2">
@@ -1372,8 +1434,8 @@ export function SaleConfirmation() {
                             <Badge variant="default" className="text-xs">من العرض</Badge>
                           </div>
                           <span className="text-sm sm:text-base font-semibold text-purple-600">
-                            {selectedOffer.advance_is_percentage 
-                              ? `${selectedOffer.advance_amount}% = ${formatCurrency(advanceAmount)}`
+                            {calculatedOffer.advance_is_percentage 
+                              ? `${calculatedOffer.advance_amount}% = ${formatCurrency(advanceAmount)}`
                               : formatCurrency(advanceAmount)}
                           </span>
                         </div>
@@ -1405,14 +1467,14 @@ export function SaleConfirmation() {
                     </div>
               </div>
 
-                  {selectedOffer && (
+                  {calculatedOffer && (
                     <div className="mt-3 pt-3 border-t border-gray-300 bg-white rounded p-2">
                       <p className="text-xs text-gray-600 mb-1">معلومات العرض:</p>
-                      {selectedOffer.offer_name && (
-                        <p className="text-xs font-medium text-gray-800">اسم العرض: {selectedOffer.offer_name}</p>
+                      {calculatedOffer.offer_name && (
+                        <p className="text-xs font-medium text-gray-800">اسم العرض: {calculatedOffer.offer_name}</p>
                       )}
-                      {selectedOffer.notes && (
-                        <p className="text-xs text-gray-600 mt-1">{selectedOffer.notes}</p>
+                      {calculatedOffer.notes && (
+                        <p className="text-xs text-gray-600 mt-1">{calculatedOffer.notes}</p>
                       )}
                     </div>
                   )}

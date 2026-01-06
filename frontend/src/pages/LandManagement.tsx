@@ -5835,7 +5835,7 @@ export function LandManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* Floating Sell Button for Mobile and Desktop */}
+      {/* Floating Sell Button for Mobile and Desktop - Red for multiple sales */}
       {selectedPieces.size > 0 && hasPermission('create_sales') && !clientDialogOpen && !saleDialogOpen && (
         <>
           {/* Mobile: Full width button */}
@@ -5843,7 +5843,7 @@ export function LandManagement() {
             <Button 
               onClick={() => setClientDialogOpen(true)} 
               size="lg"
-              className="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 h-12 text-base font-semibold shadow-lg transition-all"
+              className="w-full bg-red-600 hover:bg-red-700 active:bg-red-800 h-12 text-base font-semibold shadow-lg transition-all"
             >
               <ShoppingCart className="ml-2 h-5 w-5" />
               بيع ({selectedPieces.size} {selectedPieces.size === 1 ? 'قطعة' : 'قطعة'})
@@ -5855,7 +5855,7 @@ export function LandManagement() {
             <Button 
               onClick={() => setClientDialogOpen(true)} 
               size="lg"
-              className="bg-green-600 hover:bg-green-700 active:bg-green-800 h-12 px-8 text-base font-semibold shadow-xl rounded-full transition-all hover:shadow-2xl min-w-[180px]"
+              className="bg-red-600 hover:bg-red-700 active:bg-red-800 h-12 px-8 text-base font-semibold shadow-xl rounded-full transition-all hover:shadow-2xl min-w-[180px]"
             >
               <ShoppingCart className="ml-2 h-5 w-5" />
               بيع ({selectedPieces.size})
