@@ -64,38 +64,40 @@ export function MainLayout() {
   return (
     <div className="flex min-h-screen bg-background" style={{ overscrollBehaviorX: 'none', touchAction: 'pan-y' }}>
       {/* Mobile header buttons */}
-      <div className="fixed top-2 left-2 right-2 z-50 md:hidden flex items-center gap-2">
-        {/* Burger menu button */}
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="bg-background shrink-0 h-9 w-9"
-        >
-          {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </Button>
-        
-        {/* Spacer */}
-        <div className="flex-1" />
-        
-        {/* Right side buttons */}
-        <div className="flex items-center gap-2">
-          {/* Notification bell */}
-          <div className="bg-background border border-border rounded-md">
-            <NotificationBell />
-          </div>
-        
-        {/* Go back button */}
-        {canGoBack && (
+      <div className="fixed top-0 left-0 right-0 z-50 md:hidden bg-white border-b shadow-sm">
+        <div className="px-2 py-2 flex items-center gap-2">
+          {/* Burger menu button */}
           <Button
             variant="outline"
             size="icon"
-            onClick={() => navigate(-1)}
-              className="bg-background shrink-0 h-9 w-9"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="bg-white shrink-0 h-9 w-9 border-gray-200"
           >
-            <ArrowLeft className="h-5 w-5" />
+            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
-        )}
+          
+          {/* Spacer */}
+          <div className="flex-1" />
+          
+          {/* Right side buttons */}
+          <div className="flex items-center gap-2">
+            {/* Notification bell */}
+            <div className="bg-white border border-gray-200 rounded-md">
+              <NotificationBell />
+            </div>
+          
+          {/* Go back button */}
+          {canGoBack && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => navigate(-1)}
+              className="bg-white shrink-0 h-9 w-9 border-gray-200"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          )}
+          </div>
         </div>
       </div>
 
