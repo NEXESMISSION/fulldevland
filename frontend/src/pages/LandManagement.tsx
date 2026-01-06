@@ -144,6 +144,11 @@ function ImageZoomViewer({ src, alt, onError }: { src: string; alt: string; onEr
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isMobile) return
     
+    // Prevent default immediately for touch events to allow zoom/pan
+    if (e.touches.length === 2 || (e.touches.length === 1 && isDragging && scale > 1)) {
+      e.preventDefault()
+    }
+    
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current)
     }
@@ -151,7 +156,6 @@ function ImageZoomViewer({ src, alt, onError }: { src: string; alt: string; onEr
     animationFrameRef.current = requestAnimationFrame(() => {
       if (e.touches.length === 2 && lastDistance !== null) {
         // Pinch zoom - smoother calculation
-        e.preventDefault()
         const touch1 = e.touches[0]
         const touch2 = e.touches[1]
         const distance = Math.hypot(
@@ -173,7 +177,6 @@ function ImageZoomViewer({ src, alt, onError }: { src: string; alt: string; onEr
         }
       } else if (e.touches.length === 1 && isDragging && lastTouch && scale > 1) {
         // Pan - smoother movement
-        e.preventDefault()
         const touch = e.touches[0]
         const deltaX = touch.clientX - lastTouch.x
         const deltaY = touch.clientY - lastTouch.y
@@ -221,7 +224,16 @@ function ImageZoomViewer({ src, alt, onError }: { src: string; alt: string; onEr
       ref={containerRef}
       data-zoom-viewer="true"
       className="w-full h-full flex items-center justify-center overflow-hidden relative"
-      style={{ touchAction: isMobile ? 'none' : 'auto' }}
+      style={{ 
+        touchAction: isMobile ? 'none' : 'auto',
+        pointerEvents: 'auto'
+      }}
+      onTouchStart={(e) => {
+        // Allow touch events to propagate to image
+        if (e.target === containerRef.current) {
+          e.stopPropagation()
+        }
+      }}
     >
       <img
         ref={imageRef}
@@ -235,12 +247,24 @@ function ImageZoomViewer({ src, alt, onError }: { src: string; alt: string; onEr
           transform: isMobile ? `translate(${position.x}px, ${position.y}px) scale(${scale})` : undefined,
           transformOrigin: 'center center',
           touchAction: isMobile ? 'none' : 'auto',
+          pointerEvents: 'auto',
           transition: isMobile && scale === 1 && position.x === 0 && position.y === 0 ? 'transform 0.3s ease-out' : 'none',
           willChange: isMobile ? 'transform' : 'auto',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
         }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        onTouchStart={(e) => {
+          handleTouchStart(e)
+          e.stopPropagation()
+        }}
+        onTouchMove={(e) => {
+          handleTouchMove(e)
+          e.stopPropagation()
+        }}
+        onTouchEnd={(e) => {
+          handleTouchEnd()
+          e.stopPropagation()
+        }}
         onDoubleClick={handleDoubleClick}
         draggable={false}
       />
@@ -5225,7 +5249,16 @@ export function LandManagement() {
           <DialogHeader className="px-6 py-4 border-b">
             <DialogTitle>{viewingImageName}</DialogTitle>
           </DialogHeader>
-          <div className="p-6 flex items-center justify-center bg-gray-50 min-h-[400px] overflow-hidden relative">
+          <div 
+            className="p-6 flex items-center justify-center bg-gray-50 min-h-[400px] overflow-hidden relative"
+            style={{ touchAction: 'none', pointerEvents: 'auto' }}
+            onTouchStart={(e) => {
+              // Don't prevent default on container, let image handle it
+              if (!(e.target as HTMLElement).closest('[data-zoom-viewer]')) {
+                e.stopPropagation()
+              }
+            }}
+          >
             {viewingImageUrl && (
               <ImageZoomViewer 
                 src={viewingImageUrl} 
