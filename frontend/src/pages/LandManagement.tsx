@@ -3403,9 +3403,13 @@ export function LandManagement() {
         saleData.monthly_installment_amount = monthlyAmount
       }
       
-      if (saleForm.deadline_date && saleForm.deadline_date.trim() !== '') {
-        saleData.deadline_date = saleForm.deadline_date
+      // Deadline date is now required
+      if (!saleForm.deadline_date || saleForm.deadline_date.trim() === '') {
+        showNotification('يرجى إدخال آخر أجل لإتمام الإجراءات', 'error')
+        setCreatingSale(false)
+        return
       }
+      saleData.deadline_date = saleForm.deadline_date
 
       const { data: newSale, error } = await supabase
         .from('sales')
@@ -5653,7 +5657,7 @@ export function LandManagement() {
               })()}
 
               <div className="space-y-2">
-                <Label htmlFor="deadlineDate">آخر أجل لإتمام الإجراءات (اختياري)</Label>
+                <Label htmlFor="deadlineDate">آخر أجل لإتمام الإجراءات *</Label>
                 <Input
                   id="deadlineDate"
                   type="date"

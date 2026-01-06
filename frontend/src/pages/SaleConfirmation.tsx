@@ -1083,22 +1083,43 @@ export function SaleConfirmation() {
                     <div className="flex items-center gap-2 flex-wrap">
                       {sale.deadline_date && sale.status !== 'Completed' && (() => {
                         const deadline = new Date(sale.deadline_date)
-                        const today = new Date()
-                        today.setHours(0, 0, 0, 0)
-                        deadline.setHours(0, 0, 0, 0)
-                        const daysUntil = Math.ceil((deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-                        const isOverdue = daysUntil < 0
-                        const isToday = daysUntil === 0
+                        const now = new Date()
+                        deadline.setHours(23, 59, 59, 999) // End of deadline day
+                        
+                        const diffMs = deadline.getTime() - now.getTime()
+                        const daysUntil = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+                        const hoursUntil = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+                        const minutesUntil = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+                        
+                        const isOverdue = diffMs < 0
+                        const isToday = daysUntil === 0 && hoursUntil >= 0
                         const isClose = daysUntil > 0 && daysUntil <= 3
                         
-                        if (isOverdue || isToday || isClose) {
-                          return (
-                            <Badge variant="destructive" className="text-xs">
-                              {isOverdue ? `⚠ تجاوز الموعد (${Math.abs(daysUntil)} يوم)` : isToday ? '⚠ اليوم هو الموعد النهائي' : `⚠ قريب (${daysUntil} يوم)`}
-                            </Badge>
-                          )
+                        // Always show countdown for deadline
+                        let countdownText = ''
+                        if (isOverdue) {
+                          const overdueDays = Math.abs(daysUntil)
+                          countdownText = `⚠ تجاوز الموعد بـ ${overdueDays} ${overdueDays === 1 ? 'يوم' : 'أيام'}`
+                        } else if (isToday) {
+                          if (hoursUntil > 0) {
+                            countdownText = `⚠ متبقي: ${hoursUntil} ${hoursUntil === 1 ? 'ساعة' : 'ساعات'} و ${minutesUntil} ${minutesUntil === 1 ? 'دقيقة' : 'دقائق'}`
+                          } else if (minutesUntil > 0) {
+                            countdownText = `⚠ متبقي: ${minutesUntil} ${minutesUntil === 1 ? 'دقيقة' : 'دقائق'}`
+                          } else {
+                            countdownText = '⚠ الموعد النهائي اليوم'
+                          }
+                        } else {
+                          countdownText = `⏰ متبقي: ${daysUntil} ${daysUntil === 1 ? 'يوم' : 'أيام'} و ${hoursUntil} ${hoursUntil === 1 ? 'ساعة' : 'ساعات'}`
                         }
-                        return null
+                        
+                        return (
+                          <Badge 
+                            variant={isOverdue ? "destructive" : isToday || isClose ? "warning" : "default"} 
+                            className="text-xs font-medium"
+                          >
+                            {countdownText}
+                          </Badge>
+                        )
                       })()}
                       <Badge variant={sale.status === 'Pending' ? 'warning' : 'secondary'} className="text-xs">
                         {sale.status === 'Pending' ? 'محجوز' : 'قيد الدفع'}
