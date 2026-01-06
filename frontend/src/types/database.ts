@@ -26,6 +26,7 @@ export interface User {
   name: string
   email: string
   role: UserRole
+  sidebar_order?: string[] | null
   created_at: string
   updated_at: string
 }
@@ -78,6 +79,24 @@ export interface LandPiece {
   reserved_until: string | null
   reservation_client_id: string | null
   notes: string | null
+  created_at: string
+  updated_at: string
+  payment_offers?: PaymentOffer[]
+}
+
+export interface PaymentOffer {
+  id: string
+  land_batch_id: string | null
+  land_piece_id: string | null
+  price_per_m2_installment: number | null
+  company_fee_percentage: number
+  advance_amount: number
+  advance_is_percentage: boolean
+  monthly_payment: number
+  offer_name: string | null
+  notes: string | null
+  is_default: boolean
+  created_by: string | null
   created_at: string
   updated_at: string
 }

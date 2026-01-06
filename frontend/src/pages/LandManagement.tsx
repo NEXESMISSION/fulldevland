@@ -30,7 +30,7 @@ import { showNotification } from '@/components/ui/notification'
 import { debounce } from '@/lib/throttle'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Edit, Trash2, Map, ChevronDown, ChevronRight, Calculator, X, DollarSign, AlertTriangle, ShoppingCart, Upload, Image as ImageIcon } from 'lucide-react'
-import type { LandBatch, LandPiece, LandStatus, Client } from '@/types/database'
+import type { LandBatch, LandPiece, LandStatus, Client, PaymentOffer } from '@/types/database'
 
 interface LandBatchWithPieces extends LandBatch {
   land_pieces: LandPiece[]
@@ -164,7 +164,10 @@ export function LandManagement() {
     payment_type: 'Full' as 'Full' | 'Installment',
     reservation_amount: '',
     deadline_date: '',
+    selected_offer_id: '',
   })
+  const [availableOffers, setAvailableOffers] = useState<PaymentOffer[]>([])
+  const [selectedOffer, setSelectedOffer] = useState<PaymentOffer | null>(null)
   const [savingClient, setSavingClient] = useState(false)
   const [creatingSale, setCreatingSale] = useState(false)
   const [searchingClient, setSearchingClient] = useState(false)
@@ -348,6 +351,23 @@ export function LandManagement() {
     price_per_m2_installment: '',
   })
 
+  // Payment offers management
+  const [batchOffers, setBatchOffers] = useState<PaymentOffer[]>([])
+  const [pieceOffers, setPieceOffers] = useState<PaymentOffer[]>([])
+  const [editingOffer, setEditingOffer] = useState<PaymentOffer | null>(null)
+  const [offerDialogOpen, setOfferDialogOpen] = useState(false)
+  const [isBatchOffer, setIsBatchOffer] = useState(true) // true for batch, false for piece
+  const [offerForm, setOfferForm] = useState({
+    price_per_m2_installment: '',
+    company_fee_percentage: '',
+    advance_amount: '',
+    advance_is_percentage: false,
+    monthly_payment: '',
+    offer_name: '',
+    notes: '',
+    is_default: false,
+  })
+
   // Auto-calculate prices based on batch price per m² or existing pieces
   const calculatePieceValues = (pieceNumber: string, surfaceArea: string) => {
     if (!selectedBatchForPiece) return null
@@ -418,7 +438,11 @@ export function LandManagement() {
     try {
       const { data, error: fetchError } = await supabase
         .from('land_batches')
-        .select('*, land_pieces(*)')
+        .select(`
+          *,
+          land_pieces(*),
+          payment_offers!payment_offers_land_batch_id_fkey(*)
+        `)
         .order('date_acquired', { ascending: false })
 
       if (fetchError) {
@@ -430,12 +454,39 @@ export function LandManagement() {
         }
         return
       }
-      const batchesData = (data as LandBatchWithPieces[]) || []
-      setBatches(batchesData)
+      
+      // Also fetch offers for pieces
+      const { data: piecesData } = await supabase
+        .from('land_pieces')
+        .select(`
+          *,
+          payment_offers!payment_offers_land_piece_id_fkey(*)
+        `)
+
+      const batchesData = (data as any[]) || []
+      
+      // Attach offers to batches and pieces
+      const batchesWithOffers = batchesData.map(batch => {
+        const batchOffers = (batch.payment_offers || []) as PaymentOffer[]
+        const pieces = (batch.land_pieces || []).map((piece: any) => {
+          const pieceOffers = (piecesData || []).find((p: any) => p.id === piece.id)?.payment_offers || []
+          return {
+            ...piece,
+            payment_offers: pieceOffers as PaymentOffer[]
+          }
+        })
+        return {
+          ...batch,
+          payment_offers: batchOffers,
+          land_pieces: pieces
+        }
+      }) as LandBatchWithPieces[]
+      
+      setBatches(batchesWithOffers)
       
       // Update selectedBatchForPiece if it's still selected
       if (selectedBatchId) {
-        const updatedBatch = batchesData.find(b => b.id === selectedBatchId)
+        const updatedBatch = batchesWithOffers.find(b => b.id === selectedBatchId)
         if (updatedBatch) {
           setSelectedBatchForPiece(updatedBatch)
         }
@@ -459,7 +510,7 @@ export function LandManagement() {
     })
   }
 
-  const openBatchDialog = (batch?: LandBatch) => {
+  const openBatchDialog = async (batch?: LandBatch) => {
     if (batch) {
       setEditingBatch(batch)
       setBatchForm({
@@ -472,13 +523,40 @@ export function LandManagement() {
         real_estate_tax_number: (batch as any).real_estate_tax_number || '',
         price_per_m2_full: (batch as any).price_per_m2_full?.toString() || '',
         price_per_m2_installment: (batch as any).price_per_m2_installment?.toString() || '',
-        company_fee_percentage: (batch as any).company_fee_percentage?.toString() || '',
-        received_amount: (batch as any).received_amount?.toString() || '',
-        number_of_months: (batch as any).number_of_months?.toString() || '',
+        company_fee_percentage: '',
+        received_amount: '',
+        number_of_months: '',
         image_url: (batch as any).image_url || '',
       })
       setImagePreview((batch as any).image_url || null)
       setImageFile(null)
+      
+      // Load offers for this batch - try both from batch object and database
+      let offers: PaymentOffer[] = []
+      
+      // First, try to get offers from the batch object (if loaded with fetchBatches)
+      if ((batch as any).payment_offers && Array.isArray((batch as any).payment_offers)) {
+        offers = (batch as any).payment_offers as PaymentOffer[]
+        console.log('Loaded batch offers from batch object:', offers)
+      }
+      
+      // Also fetch from database to ensure we have the latest
+      const { data: dbOffers, error: offersError } = await supabase
+        .from('payment_offers')
+        .select('*')
+        .eq('land_batch_id', batch.id)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: true })
+      
+      if (offersError) {
+        console.error('Error loading batch offers from database:', offersError)
+      } else if (dbOffers && dbOffers.length > 0) {
+        // Use database offers if available (more up-to-date)
+        offers = dbOffers as PaymentOffer[]
+        console.log('Loaded batch offers from database:', offers)
+      }
+      
+      setBatchOffers(offers)
       // No generation mode when editing
     } else {
       setEditingBatch(null)
@@ -508,7 +586,125 @@ export function LandManagement() {
       setRestPieceSize('400')
       setFlexiblePieces([])
     }
+    setBatchOffers([])
     setBatchDialogOpen(true)
+  }
+
+  // Payment Offers Management Functions
+  const addBatchOffer = () => {
+    setEditingOffer(null)
+    setIsBatchOffer(true)
+    setOfferForm({
+      price_per_m2_installment: '',
+      company_fee_percentage: '',
+      advance_amount: '',
+      advance_is_percentage: false,
+      monthly_payment: '',
+      offer_name: '',
+      notes: '',
+      is_default: false,
+    })
+    setOfferDialogOpen(true)
+  }
+
+  const editBatchOffer = (offer: PaymentOffer) => {
+    setEditingOffer(offer)
+    setIsBatchOffer(true)
+    setOfferForm({
+      price_per_m2_installment: offer.price_per_m2_installment?.toString() || '',
+      company_fee_percentage: offer.company_fee_percentage.toString(),
+      advance_amount: offer.advance_amount.toString(),
+      advance_is_percentage: offer.advance_is_percentage,
+      monthly_payment: offer.monthly_payment.toString(),
+      offer_name: offer.offer_name || '',
+      notes: offer.notes || '',
+      is_default: offer.is_default,
+    })
+    setOfferDialogOpen(true)
+  }
+
+  const saveBatchOffer = async () => {
+    if (!editingBatch) return
+
+    if (!offerForm.monthly_payment) {
+      setError('يرجى إدخال المبلغ الشهري')
+      return
+    }
+
+    try {
+      const offerData: any = {
+        land_batch_id: editingBatch.id,
+        price_per_m2_installment: offerForm.price_per_m2_installment ? parseFloat(offerForm.price_per_m2_installment) : null,
+        company_fee_percentage: offerForm.company_fee_percentage ? parseFloat(offerForm.company_fee_percentage) : 0,
+        advance_amount: offerForm.advance_amount ? parseFloat(offerForm.advance_amount) : 0,
+        advance_is_percentage: offerForm.advance_is_percentage,
+        monthly_payment: parseFloat(offerForm.monthly_payment),
+        offer_name: offerForm.offer_name.trim() || null,
+        notes: offerForm.notes.trim() || null,
+        is_default: offerForm.is_default,
+        created_by: user?.id || null,
+      }
+
+      if (editingOffer) {
+        const { error } = await supabase
+          .from('payment_offers')
+          .update(offerData)
+          .eq('id', editingOffer.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('payment_offers')
+          .insert([offerData])
+        if (error) throw error
+      }
+
+      // Reload offers
+      const { data: offers } = await supabase
+        .from('payment_offers')
+        .select('*')
+        .eq('land_batch_id', editingBatch.id)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: true })
+      setBatchOffers((offers as PaymentOffer[]) || [])
+      
+      setOfferDialogOpen(false)
+      setEditingOffer(null)
+      setOfferForm({
+        price_per_m2_installment: '',
+        company_fee_percentage: '',
+        advance_amount: '',
+        advance_is_percentage: false,
+        monthly_payment: '',
+        offer_name: '',
+        notes: '',
+        is_default: false,
+      })
+    } catch (err: any) {
+      setError(err.message || 'خطأ في حفظ العرض')
+    }
+  }
+
+  const deleteBatchOffer = async (offerId: string) => {
+    if (!editingBatch) return
+    
+    try {
+      const { error } = await supabase
+        .from('payment_offers')
+        .delete()
+        .eq('id', offerId)
+      if (error) throw error
+
+      // Reload offers
+      const { data: offers } = await supabase
+        .from('payment_offers')
+        .select('*')
+        .eq('land_batch_id', editingBatch.id)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: true })
+      setBatchOffers((offers as PaymentOffer[]) || [])
+    } catch (err: any) {
+      setError(err.message || 'خطأ في حذف العرض')
+    }
   }
 
   // Calculate pieces preview based on generation mode
@@ -1033,6 +1229,15 @@ export function LandManagement() {
           .eq('id', editingBatch.id)
         if (error) throw error
 
+        // Reload offers after batch update to ensure they're fresh
+        const { data: updatedOffers } = await supabase
+          .from('payment_offers')
+          .select('*')
+          .eq('land_batch_id', editingBatch.id)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: true })
+        setBatchOffers((updatedOffers as PaymentOffer[]) || [])
+
         // If pricing changed and both prices are valid, update all available land pieces in this batch
         if (pricingChanged && pricePerM2Full !== null && !isNaN(pricePerM2Full) && pricePerM2Full > 0 && 
             pricePerM2Installment !== null && !isNaN(pricePerM2Installment) && pricePerM2Installment > 0) {
@@ -1270,6 +1475,17 @@ export function LandManagement() {
             if (piecesError) throw piecesError
           }
         }
+      }
+
+      // Reload offers if editing batch (before closing dialog)
+      if (editingBatch) {
+        const { data: offers } = await supabase
+          .from('payment_offers')
+          .select('*')
+          .eq('land_batch_id', editingBatch.id)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: true })
+        setBatchOffers((offers as PaymentOffer[]) || [])
       }
 
       setBatchDialogOpen(false)
@@ -1575,7 +1791,7 @@ export function LandManagement() {
     setBulkAddDialogOpen(true)
   }
 
-  const openPieceDialog = (batchId: string, piece?: LandPiece) => {
+  const openPieceDialog = async (batchId: string, piece?: LandPiece) => {
     setSelectedBatchId(batchId)
     // Find the batch for auto-calculation
     const batch = batches.find(b => b.id === batchId)
@@ -1590,13 +1806,50 @@ export function LandManagement() {
         surface_area: piece.surface_area.toString(),
         selling_price_full: piece.selling_price_full?.toString() || '',
         selling_price_installment: piece.selling_price_installment?.toString() || '',
-        price_per_m2_full: (piece as any).price_per_m2_full?.toString() || '',
-        price_per_m2_installment: (piece as any).price_per_m2_installment?.toString() || '',
-        company_fee_percentage: (piece as any).company_fee_percentage?.toString() || '',
-        received_amount: (piece as any).received_amount?.toString() || '',
-        number_of_months: (piece as any).number_of_months?.toString() || '',
+        price_per_m2_full: '',
+        price_per_m2_installment: '',
+        company_fee_percentage: '',
+        received_amount: '',
+        number_of_months: '',
         notes: piece.notes || '',
       })
+      
+      // Load offers for this piece - try both from piece and batch
+      let offers: PaymentOffer[] = []
+      
+      // First, try to get offers from piece
+      const { data: pieceOffers, error: pieceOffersError } = await supabase
+        .from('payment_offers')
+        .select('*')
+        .eq('land_piece_id', piece.id)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: true })
+      
+      if (pieceOffersError) {
+        console.error('Error loading piece offers:', pieceOffersError)
+      } else if (pieceOffers && pieceOffers.length > 0) {
+        offers = pieceOffers as PaymentOffer[]
+        console.log('Loaded piece offers from piece:', offers)
+      }
+      
+      // If no piece offers, try to get offers from batch
+      if (offers.length === 0 && piece.land_batch_id) {
+        const { data: batchOffers, error: batchOffersError } = await supabase
+          .from('payment_offers')
+          .select('*')
+          .eq('land_batch_id', piece.land_batch_id)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: true })
+        
+        if (batchOffersError) {
+          console.error('Error loading batch offers for piece:', batchOffersError)
+        } else if (batchOffers && batchOffers.length > 0) {
+          offers = batchOffers as PaymentOffer[]
+          console.log('Loaded piece offers from batch:', offers)
+        }
+      }
+      
+      setPieceOffers(offers)
     } else {
       setEditingPiece(null)
       // Get next piece number - support alphanumeric patterns (B1, R1, P001, 1, etc.)
@@ -1681,8 +1934,166 @@ export function LandManagement() {
         number_of_months: '',
         notes: '',
       })
+      setPieceOffers([])
     }
     setPieceDialogOpen(true)
+  }
+
+  // Piece Offers Management Functions
+  const addPieceOffer = () => {
+    setEditingOffer(null)
+    setIsBatchOffer(false)
+    setOfferForm({
+      price_per_m2_installment: '',
+      company_fee_percentage: '',
+      advance_amount: '',
+      advance_is_percentage: false,
+      monthly_payment: '',
+      offer_name: '',
+      notes: '',
+      is_default: false,
+    })
+    setOfferDialogOpen(true)
+  }
+
+  const editPieceOffer = (offer: PaymentOffer) => {
+    setEditingOffer(offer)
+    setIsBatchOffer(false)
+    setOfferForm({
+      price_per_m2_installment: offer.price_per_m2_installment?.toString() || '',
+      company_fee_percentage: offer.company_fee_percentage.toString(),
+      advance_amount: offer.advance_amount.toString(),
+      advance_is_percentage: offer.advance_is_percentage,
+      monthly_payment: offer.monthly_payment.toString(),
+      offer_name: offer.offer_name || '',
+      notes: offer.notes || '',
+      is_default: offer.is_default,
+    })
+    setOfferDialogOpen(true)
+  }
+
+  const savePieceOffer = async () => {
+    if (!editingPiece) return
+
+    if (!offerForm.monthly_payment) {
+      setError('يرجى إدخال المبلغ الشهري')
+      return
+    }
+
+    try {
+      const offerData: any = {
+        land_piece_id: editingPiece.id,
+        price_per_m2_installment: offerForm.price_per_m2_installment ? parseFloat(offerForm.price_per_m2_installment) : null,
+        company_fee_percentage: offerForm.company_fee_percentage ? parseFloat(offerForm.company_fee_percentage) : 0,
+        advance_amount: offerForm.advance_amount ? parseFloat(offerForm.advance_amount) : 0,
+        advance_is_percentage: offerForm.advance_is_percentage,
+        monthly_payment: parseFloat(offerForm.monthly_payment),
+        offer_name: offerForm.offer_name.trim() || null,
+        notes: offerForm.notes.trim() || null,
+        is_default: offerForm.is_default,
+        created_by: user?.id || null,
+      }
+
+      if (editingOffer) {
+        const { error } = await supabase
+          .from('payment_offers')
+          .update(offerData)
+          .eq('id', editingOffer.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('payment_offers')
+          .insert([offerData])
+        if (error) throw error
+      }
+
+      // Reload offers - try both from piece and batch
+      let reloadedOffers: PaymentOffer[] = []
+      
+      // First, try to get offers from piece
+      const { data: pieceOffers } = await supabase
+        .from('payment_offers')
+        .select('*')
+        .eq('land_piece_id', editingPiece.id)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: true })
+      
+      if (pieceOffers && pieceOffers.length > 0) {
+        reloadedOffers = pieceOffers as PaymentOffer[]
+      } else if (editingPiece.land_batch_id) {
+        // If no piece offers, try to get offers from batch
+        const { data: batchOffers } = await supabase
+          .from('payment_offers')
+          .select('*')
+          .eq('land_batch_id', editingPiece.land_batch_id)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: true })
+        
+        if (batchOffers && batchOffers.length > 0) {
+          reloadedOffers = batchOffers as PaymentOffer[]
+        }
+      }
+      
+      setPieceOffers(reloadedOffers)
+      
+      setOfferDialogOpen(false)
+      setEditingOffer(null)
+      setOfferForm({
+        price_per_m2_installment: '',
+        company_fee_percentage: '',
+        advance_amount: '',
+        advance_is_percentage: false,
+        monthly_payment: '',
+        offer_name: '',
+        notes: '',
+        is_default: false,
+      })
+    } catch (err: any) {
+      setError(err.message || 'خطأ في حفظ العرض')
+    }
+  }
+
+  const deletePieceOffer = async (offerId: string) => {
+    if (!editingPiece) return
+    
+    try {
+      const { error } = await supabase
+        .from('payment_offers')
+        .delete()
+        .eq('id', offerId)
+      if (error) throw error
+
+      // Reload offers - try both from piece and batch
+      let reloadedOffers: PaymentOffer[] = []
+      
+      // First, try to get offers from piece
+      const { data: pieceOffers } = await supabase
+        .from('payment_offers')
+        .select('*')
+        .eq('land_piece_id', editingPiece.id)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: true })
+      
+      if (pieceOffers && pieceOffers.length > 0) {
+        reloadedOffers = pieceOffers as PaymentOffer[]
+      } else if (editingPiece.land_batch_id) {
+        // If no piece offers, try to get offers from batch
+        const { data: batchOffers } = await supabase
+          .from('payment_offers')
+          .select('*')
+          .eq('land_batch_id', editingPiece.land_batch_id)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: true })
+        
+        if (batchOffers && batchOffers.length > 0) {
+          reloadedOffers = batchOffers as PaymentOffer[]
+        }
+      }
+      
+      setPieceOffers(reloadedOffers)
+    } catch (err: any) {
+      setError(err.message || 'خطأ في حذف العرض')
+    }
   }
 
   // Handle piece number or surface area change - allow alphanumeric (B1, R1, P001, etc.)
@@ -1821,6 +2232,35 @@ export function LandManagement() {
           console.error('Error updating piece:', error)
           throw error
         }
+        
+        // Reload offers after piece update
+        let reloadedOffers: PaymentOffer[] = []
+        
+        // First, try to get offers from piece
+        const { data: pieceOffers } = await supabase
+          .from('payment_offers')
+          .select('*')
+          .eq('land_piece_id', editingPiece.id)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: true })
+        
+        if (pieceOffers && pieceOffers.length > 0) {
+          reloadedOffers = pieceOffers as PaymentOffer[]
+        } else if (editingPiece.land_batch_id) {
+          // If no piece offers, try to get offers from batch
+          const { data: batchOffers } = await supabase
+            .from('payment_offers')
+            .select('*')
+            .eq('land_batch_id', editingPiece.land_batch_id)
+            .order('is_default', { ascending: false })
+            .order('created_at', { ascending: true })
+          
+          if (batchOffers && batchOffers.length > 0) {
+            reloadedOffers = batchOffers as PaymentOffer[]
+          }
+        }
+        
+        setPieceOffers(reloadedOffers)
       } else {
         const { error, data } = await supabase
           .from('land_pieces')
@@ -1856,6 +2296,7 @@ export function LandManagement() {
         notes: '',
       })
       setEditingPiece(null)
+      setPieceOffers([])
       
       // Refresh batches and ensure the batch is expanded
       await fetchBatches()
@@ -2009,6 +2450,27 @@ export function LandManagement() {
   }
 
   // Filter batches by search term (name, location) and filter pieces within each batch
+  // Calculate statistics for all pieces
+  const statistics = useMemo(() => {
+    let total = 0
+    let available = 0
+    let reserved = 0
+    let sold = 0
+    
+    batches.forEach((batch) => {
+      if (batch.land_pieces) {
+        batch.land_pieces.forEach((piece: LandPiece) => {
+          total++
+          if (piece.status === 'Available') available++
+          else if (piece.status === 'Reserved') reserved++
+          else if (piece.status === 'Sold') sold++
+        })
+      }
+    })
+    
+    return { total, available, reserved, sold }
+  }, [batches])
+
   const filteredBatches = batches
     .filter((batch) => {
       // Filter batches by name, location, or piece numbers
@@ -2073,6 +2535,138 @@ export function LandManagement() {
       return nameA.localeCompare(nameB, 'ar')
     })
 
+  // Load offers for selected pieces
+  const loadOffersForSelectedPieces = async () => {
+    if (selectedPieces.size === 0) {
+      setAvailableOffers([])
+      setSelectedOffer(null)
+      return
+    }
+
+    try {
+      // Get all pieces with their batch IDs
+      const pieceIds = Array.from(selectedPieces)
+      const { data: pieces } = await supabase
+        .from('land_pieces')
+        .select('id, land_batch_id')
+        .in('id', pieceIds)
+
+      if (!pieces || pieces.length === 0) {
+        setAvailableOffers([])
+        setSelectedOffer(null)
+        return
+      }
+
+      // Collect all batch IDs and piece IDs
+      const batchIds = [...new Set(pieces.map(p => p.land_batch_id).filter(Boolean))]
+      const pieceIdsList = pieces.map(p => p.id)
+
+      // Load batch offers
+      const batchOffersPromises = batchIds.map(batchId =>
+        supabase
+          .from('payment_offers')
+          .select('*')
+          .eq('land_batch_id', batchId)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: true })
+      )
+
+      // Load piece offers
+      const pieceOffersPromises = pieceIdsList.map(pieceId =>
+        supabase
+          .from('payment_offers')
+          .select('*')
+          .eq('land_piece_id', pieceId)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: true })
+      )
+
+      const [batchOffersResults, pieceOffersResults] = await Promise.all([
+        Promise.all(batchOffersPromises),
+        Promise.all(pieceOffersPromises)
+      ])
+
+      // Combine all offers
+      const allOffers: PaymentOffer[] = []
+      
+      // Add batch offers (apply to all pieces)
+      batchOffersResults.forEach(result => {
+        if (result.data) {
+          allOffers.push(...(result.data as PaymentOffer[]))
+        }
+      })
+
+      // Add piece offers (specific to each piece)
+      pieceOffersResults.forEach(result => {
+        if (result.data) {
+          allOffers.push(...(result.data as PaymentOffer[]))
+        }
+      })
+
+      // Remove duplicates (same offer might be from batch and piece)
+      const uniqueOffersMap: Record<string, PaymentOffer> = {}
+      allOffers.forEach((offer) => {
+        const key = `${offer.price_per_m2_installment || ''}_${offer.company_fee_percentage}_${offer.advance_amount}_${offer.advance_is_percentage}_${offer.monthly_payment}`
+        if (!uniqueOffersMap[key]) {
+          uniqueOffersMap[key] = offer
+        }
+      })
+
+      const offersArray = Object.values(uniqueOffersMap) as PaymentOffer[]
+      
+      // Sort: default first, then by creation date
+      offersArray.sort((a, b) => {
+        if (a.is_default && !b.is_default) return -1
+        if (!a.is_default && b.is_default) return 1
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      })
+
+      setAvailableOffers(offersArray)
+      
+      // Auto-select default offer if exists
+      const defaultOffer = offersArray.find(o => o.is_default)
+      if (defaultOffer) {
+        setSelectedOffer(defaultOffer)
+        applyOfferToSaleForm(defaultOffer)
+      } else {
+        setSelectedOffer(null)
+      }
+    } catch (error) {
+      console.error('Error loading offers:', error)
+      setAvailableOffers([])
+      setSelectedOffer(null)
+    }
+  }
+
+  // Apply selected offer to sale form
+  const applyOfferToSaleForm = (offer: PaymentOffer) => {
+    if (!offer) return
+
+    // Calculate advance amount
+    let advanceAmount = 0
+    const selectedPieceIds = Array.from(selectedPieces)
+    const selectedPiecesData = batches.flatMap(b => b.land_pieces).filter(p => selectedPieceIds.includes(p.id))
+    const totalPrice = selectedPiecesData.reduce((sum, p) => {
+      // Use installment price if available, otherwise full price
+      const price = offer.price_per_m2_installment 
+        ? (p.surface_area * offer.price_per_m2_installment)
+        : (p.selling_price_installment || p.selling_price_full || 0)
+      return sum + price
+    }, 0)
+
+    if (offer.advance_is_percentage) {
+      advanceAmount = (totalPrice * offer.advance_amount) / 100
+    } else {
+      advanceAmount = offer.advance_amount
+    }
+
+    setSaleForm(prev => ({
+      ...prev,
+      reservation_amount: advanceAmount.toFixed(2),
+      selected_offer_id: offer.id,
+    }))
+  }
+
   // Handle create client
   const handleCreateClient = async () => {
     if (savingClient) return
@@ -2129,6 +2723,10 @@ export function LandManagement() {
 
       setNewClient(newClientData)
       setClientDialogOpen(false)
+      
+      // Load offers for selected pieces
+      await loadOffersForSelectedPieces()
+      
       setSaleDialogOpen(true)
       showNotification('تم إضافة العميل بنجاح', 'success')
     } catch (error: any) {
@@ -2178,7 +2776,17 @@ export function LandManagement() {
         return
       }
 
-      const reservation = parseFloat(saleForm.reservation_amount) || 0
+      // Calculate reservation amount from selected offer if available
+      let reservation = 0
+      if (selectedOffer && saleForm.payment_type === 'Installment') {
+        const advanceAmount = selectedOffer.advance_is_percentage
+          ? (totalPrice * selectedOffer.advance_amount) / 100
+          : selectedOffer.advance_amount
+        reservation = advanceAmount
+      } else if (saleForm.payment_type === 'Full') {
+        // For full payment, reservation is 0 (or can be set manually if needed)
+        reservation = 0
+      }
       
       if (reservation > totalPrice) {
         showNotification('مبلغ العربون لا يمكن أن يكون أكبر من السعر الإجمالي', 'error')
@@ -2249,7 +2857,10 @@ export function LandManagement() {
         payment_type: 'Full',
         reservation_amount: '',
         deadline_date: '',
+        selected_offer_id: '',
       })
+      setAvailableOffers([])
+      setSelectedOffer(null)
       fetchBatches()
     } catch (error: any) {
       console.error('Error creating sale:', error)
@@ -2291,32 +2902,52 @@ export function LandManagement() {
       <div className="hidden md:block sticky top-0 z-30 bg-background border-b shadow-sm mb-4 -mt-6 -mx-3 md:-mx-6">
         <div className="px-3 md:px-6 pt-6 pb-4 space-y-3">
           {/* Header Row */}
-          <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold">الأراضي</h1>
             <div className="flex items-center gap-2">
-              {hasPermission('edit_land') && (
-                <Button onClick={() => openBatchDialog()} size="sm">
-                  <Plus className="ml-1 h-4 w-4" />
-                  إضافة
-                </Button>
-              )}
+        {hasPermission('edit_land') && (
+            <Button onClick={() => openBatchDialog()} size="sm">
+              <Plus className="ml-1 h-4 w-4" />
+              إضافة
+          </Button>
+        )}
             </div>
-          </div>
-          
+      </div>
+
           {/* Search Bar */}
           <div>
-            <Input
+              <Input
               placeholder="بحث في الأراضي..."
-              value={searchTerm}
-              maxLength={50}
-              onChange={(e) => {
-                setSearchTerm(e.target.value)
-                debouncedSearchFn(e.target.value)
-              }}
+                value={searchTerm}
+                maxLength={50}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value)
+                  debouncedSearchFn(e.target.value)
+                }}
               className="w-full h-10 text-base shadow-sm focus:shadow-md transition-shadow border-2 focus:border-primary"
             />
           </div>
-        </div>
+          
+          {/* Statistics Filters */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-200">
+              <span className="text-sm text-muted-foreground">إجمالي القطع:</span>
+              <span className="text-sm font-semibold text-gray-900">{statistics.total}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 rounded-lg border border-green-200">
+              <span className="text-sm text-muted-foreground">متاح:</span>
+              <span className="text-sm font-semibold text-green-700">{statistics.available}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 rounded-lg border border-yellow-200">
+              <span className="text-sm text-muted-foreground">محجوز:</span>
+              <span className="text-sm font-semibold text-yellow-700">{statistics.reserved}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 rounded-lg border border-blue-200">
+              <span className="text-sm text-muted-foreground">مباع:</span>
+              <span className="text-sm font-semibold text-blue-700">{statistics.sold}</span>
+            </div>
+          </div>
+          </div>
       </div>
 
       {/* Mobile: Floating Search Bar with Header */}
@@ -2348,6 +2979,26 @@ export function LandManagement() {
                   إضافة
                 </Button>
               )}
+            </div>
+          </div>
+          
+          {/* Statistics Filters - Mobile */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-200">
+              <span className="text-xs text-muted-foreground">إجمالي:</span>
+              <span className="text-xs font-semibold text-gray-900">{statistics.total}</span>
+            </div>
+            <div className="flex items-center gap-1 px-2.5 py-1 bg-green-50 rounded-lg border border-green-200">
+              <span className="text-xs text-muted-foreground">متاح:</span>
+              <span className="text-xs font-semibold text-green-700">{statistics.available}</span>
+            </div>
+            <div className="flex items-center gap-1 px-2.5 py-1 bg-yellow-50 rounded-lg border border-yellow-200">
+              <span className="text-xs text-muted-foreground">محجوز:</span>
+              <span className="text-xs font-semibold text-yellow-700">{statistics.reserved}</span>
+            </div>
+            <div className="flex items-center gap-1 px-2.5 py-1 bg-blue-50 rounded-lg border border-blue-200">
+              <span className="text-xs text-muted-foreground">مباع:</span>
+              <span className="text-xs font-semibold text-blue-700">{statistics.sold}</span>
             </div>
           </div>
         </div>
@@ -2427,7 +3078,7 @@ export function LandManagement() {
                     <Button variant="outline" size="sm" onClick={() => openBulkAddDialog(batch.id)} className="flex-1 h-8 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200">
                       <Plus className="ml-1 h-3.5 w-3.5" />
                       إضافة متعددة
-                    </Button>
+                  </Button>
               </div>
                 )}
 
@@ -2550,12 +3201,12 @@ export function LandManagement() {
                         }
                         
                         return (
-                          <div 
-                            key={piece.id} 
+                        <div 
+                          key={piece.id} 
                             className={`p-2.5 rounded-lg border text-xs ${
-                              piece.status === 'Available' ? 'bg-green-50 border-green-200' :
-                              piece.status === 'Reserved' ? 'bg-orange-50 border-orange-200' :
-                              piece.status === 'Sold' ? 'bg-gray-100 border-gray-200' : 'bg-gray-50 border-gray-200'
+                            piece.status === 'Available' ? 'bg-green-50 border-green-200' :
+                            piece.status === 'Reserved' ? 'bg-orange-50 border-orange-200' :
+                            piece.status === 'Sold' ? 'bg-gray-100 border-gray-200' : 'bg-gray-50 border-gray-200'
                             } ${isSelected ? 'ring-2 ring-green-500 border-green-500 bg-green-100' : ''} ${isAvailable ? 'cursor-pointer' : ''}`}
                             onClick={handleClick}
                             onTouchStart={handleTouchStart}
@@ -2597,29 +3248,29 @@ export function LandManagement() {
                                 </div>
                               </div>
                               <Badge variant={statusColors[piece.status]} className="text-xs px-1.5 py-0.5 flex-shrink-0">
-                                {piece.status === 'Available' ? 'متاح' :
-                                 piece.status === 'Reserved' ? 'محجوز' :
-                                 piece.status === 'Sold' ? 'مباع' : 'ملغي'}
-                              </Badge>
-                            </div>
+                              {piece.status === 'Available' ? 'متاح' :
+                               piece.status === 'Reserved' ? 'محجوز' :
+                               piece.status === 'Sold' ? 'مباع' : 'ملغي'}
+                            </Badge>
+                          </div>
                             
                             <div className="font-semibold text-green-600 text-sm mb-2">{formatCurrency(piece.selling_price_full || 0)}</div>
-                            
+                          
                             {/* Sell Button for Available - Only show if not using multi-select */}
                             {isAvailable && !isSelected && (
-                              <Button
-                                size="sm"
+                            <Button
+                              size="sm"
                                 {...createButtonHandler(() => {
                                   setSelectedPieces(new Set([piece.id]))
                                   setClientDialogOpen(true)
                                 })}
                                 className="w-full h-8 text-xs bg-green-600 hover:bg-green-700 active:bg-green-800 mb-1 touch-manipulation"
                                 style={{ touchAction: 'manipulation' }}
-                              >
+                            >
                                 <ShoppingCart className="h-3.5 w-3.5 ml-1" />
-                                بيع
-                              </Button>
-                            )}
+                              بيع
+                            </Button>
+                          )}
                             
                             {/* Selected indicator */}
                             {isSelected && (
@@ -2668,7 +3319,7 @@ export function LandManagement() {
                               </Button>
                             </div>
                           )}
-                          </div>
+                        </div>
                         )
                       })}
                     </div>
@@ -2841,12 +3492,11 @@ export function LandManagement() {
               </div>
             </div>
             
-            {/* Price per m² fields */}
+            {/* Price per m² field - Only full payment price */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-4">
               <p className="text-sm font-medium text-blue-800">أسعار البيع لكل متر مربع</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="price_per_m2_full">سعر المتر المربع (بالحاضر) *</Label>
+                <Label htmlFor="price_per_m2_full">سعر المتر المربع (بالحاضر) *</Label>
                   <Input
                     id="price_per_m2_full"
                     type="number"
@@ -2856,63 +3506,69 @@ export function LandManagement() {
                     placeholder="10.00"
                   />
                   <p className="text-xs text-muted-foreground">سيتم تطبيق هذا السعر على القطع الجديدة فقط. القطع الموجودة والمبيعات السابقة لن تتأثر.</p>
+                <p className="text-xs text-muted-foreground">ملاحظة: سعر المتر المربع (بالتقسيط) يتم تحديده في العروض أدناه.</p>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="price_per_m2_installment">سعر المتر المربع (بالتقسيط) *</Label>
-                  <Input
-                    id="price_per_m2_installment"
-                    type="number"
-                    step="0.01"
-                    value={batchForm.price_per_m2_installment}
-                    onChange={(e) => setBatchForm({ ...batchForm, price_per_m2_installment: e.target.value })}
-                    placeholder="12.00"
-                  />
-                  <p className="text-xs text-muted-foreground">سيتم تطبيق هذا السعر على القطع الجديدة فقط. القطع الموجودة والمبيعات السابقة لن تتأثر.</p>
-                </div>
-              </div>
             </div>
             
-            {/* Company Fee and Payment Settings */}
+            {/* Payment Offers Management */}
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-4">
-              <p className="text-sm font-medium text-green-800">إعدادات الدفع والأقساط</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="company_fee_percentage">عمولة الشركة (%)</Label>
-                  <Input
-                    id="company_fee_percentage"
-                    type="number"
-                    step="0.01"
-                    value={batchForm.company_fee_percentage}
-                    onChange={(e) => setBatchForm({ ...batchForm, company_fee_percentage: e.target.value })}
-                    placeholder="2.00"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="received_amount">المبلغ المستلم *</Label>
-                  <Input
-                    id="received_amount"
-                    type="number"
-                    step="0.01"
-                    value={batchForm.received_amount}
-                    onChange={(e) => setBatchForm({ ...batchForm, received_amount: e.target.value })}
-                    placeholder="0.00"
-                  />
-                </div>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-green-800">عروض التقسيط</p>
+                <Button type="button" size="sm" onClick={addBatchOffer} variant="outline">
+                  <Plus className="h-4 w-4 ml-1" />
+                  إضافة عرض
+                </Button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              
+              {/* Offers List */}
+              {batchOffers.length > 0 ? (
                 <div className="space-y-2">
-                  <Label htmlFor="number_of_months">عدد الأشهر *</Label>
-                  <Input
-                    id="number_of_months"
-                    type="number"
-                    value={batchForm.number_of_months}
-                    onChange={(e) => setBatchForm({ ...batchForm, number_of_months: e.target.value })}
-                    placeholder="12"
-                    min="1"
-                  />
-                  <p className="text-xs text-muted-foreground">إعدادات الأقساط</p>
+                  {batchOffers.map((offer) => (
+                    <div key={offer.id} className="bg-white border border-green-200 rounded-lg p-3 flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          {offer.is_default && (
+                            <Badge variant="default" className="text-xs">افتراضي</Badge>
+                          )}
+                          {offer.offer_name && (
+                            <span className="font-medium text-sm">{offer.offer_name}</span>
+                          )}
                 </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {offer.price_per_m2_installment && `السعر/م²: ${offer.price_per_m2_installment} | `}
+                          عمولة: {offer.company_fee_percentage}% | 
+                          التسبقة: {offer.advance_is_percentage ? `${offer.advance_amount}%` : formatCurrency(offer.advance_amount)} | 
+                          الشهري: {formatCurrency(offer.monthly_payment)}
               </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => editBatchOffer(offer)}
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => deleteBatchOffer(offer.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground text-center py-2">
+                  لا توجد عروض. اضغط "إضافة عرض" لإضافة عرض جديد.
+                </p>
+              )}
+
+              {/* Offer Form Dialog - will be shown at the end of component */}
             </div>
             
             {/* Manual Piece Addition - Simple approach */}
@@ -3045,35 +3701,22 @@ export function LandManagement() {
                   </p>
               </div>
             
-            {/* Price per m² fields - show when editing */}
+            {/* Price per m² field - Only full payment price - show when editing */}
             {editingPiece && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-4">
                 <p className="text-sm font-medium text-blue-800">أسعار البيع لكل متر مربع</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="price_per_m2_full">سعر المتر المربع (بالحاضر) *</Label>
-                    <Input
-                      id="price_per_m2_full"
-                      type="number"
-                      step="0.01"
-                      value={pieceForm.price_per_m2_full}
-                      onChange={(e) => setPieceForm({ ...pieceForm, price_per_m2_full: e.target.value })}
-                      placeholder="10.00"
-                    />
-                    <p className="text-xs text-muted-foreground">سيتم تطبيق هذا السعر على القطع الجديدة فقط. القطع الموجودة والمبيعات السابقة لن تتأثر.</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="price_per_m2_installment">سعر المتر المربع (بالتقسيط) *</Label>
-                    <Input
-                      id="price_per_m2_installment"
-                      type="number"
-                      step="0.01"
-                      value={pieceForm.price_per_m2_installment}
-                      onChange={(e) => setPieceForm({ ...pieceForm, price_per_m2_installment: e.target.value })}
-                      placeholder="12.00"
-                    />
-                    <p className="text-xs text-muted-foreground">سيتم تطبيق هذا السعر على القطع الجديدة فقط. القطع الموجودة والمبيعات السابقة لن تتأثر.</p>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="price_per_m2_full">سعر المتر المربع (بالحاضر) *</Label>
+                  <Input
+                    id="price_per_m2_full"
+                    type="number"
+                    step="0.01"
+                    value={pieceForm.price_per_m2_full}
+                    onChange={(e) => setPieceForm({ ...pieceForm, price_per_m2_full: e.target.value })}
+                    placeholder="10.00"
+                  />
+                  <p className="text-xs text-muted-foreground">سيتم تطبيق هذا السعر على القطع الجديدة فقط. القطع الموجودة والمبيعات السابقة لن تتأثر.</p>
+                  <p className="text-xs text-muted-foreground">ملاحظة: سعر المتر المربع (بالتقسيط) يتم تحديده في العروض أدناه.</p>
                 </div>
               </div>
             )}
@@ -3129,48 +3772,64 @@ export function LandManagement() {
               })()
             )}
             
-            {/* Company Fee and Payment Settings - show when editing */}
+            {/* Payment Offers Management - show when editing */}
             {editingPiece && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-4">
-                <p className="text-sm font-medium text-green-800">إعدادات الدفع والأقساط</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="piece_company_fee_percentage">عمولة الشركة (%)</Label>
-                    <Input
-                      id="piece_company_fee_percentage"
-                      type="number"
-                      step="0.01"
-                      value={pieceForm.company_fee_percentage}
-                      onChange={(e) => setPieceForm({ ...pieceForm, company_fee_percentage: e.target.value })}
-                      placeholder="2.00"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="piece_received_amount">المبلغ المستلم *</Label>
-                    <Input
-                      id="piece_received_amount"
-                      type="number"
-                      step="0.01"
-                      value={pieceForm.received_amount}
-                      onChange={(e) => setPieceForm({ ...pieceForm, received_amount: e.target.value })}
-                      placeholder="0.00"
-                    />
-                  </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-green-800">عروض التقسيط</p>
+                  <Button type="button" size="sm" onClick={addPieceOffer} variant="outline">
+                    <Plus className="h-4 w-4 ml-1" />
+                    إضافة عرض
+                  </Button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                {/* Offers List */}
+                {pieceOffers.length > 0 ? (
                   <div className="space-y-2">
-                    <Label htmlFor="piece_number_of_months">عدد الأشهر *</Label>
-                    <Input
-                      id="piece_number_of_months"
-                      type="number"
-                      value={pieceForm.number_of_months}
-                      onChange={(e) => setPieceForm({ ...pieceForm, number_of_months: e.target.value })}
-                      placeholder="12"
-                      min="1"
-                    />
-                    <p className="text-xs text-muted-foreground">إعدادات الأقساط</p>
+                    {pieceOffers.map((offer) => (
+                      <div key={offer.id} className="bg-white border border-green-200 rounded-lg p-3 flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            {offer.is_default && (
+                              <Badge variant="default" className="text-xs">افتراضي</Badge>
+                            )}
+                            {offer.offer_name && (
+                              <span className="font-medium text-sm">{offer.offer_name}</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {offer.price_per_m2_installment && `السعر/م²: ${offer.price_per_m2_installment} | `}
+                            عمولة: {offer.company_fee_percentage}% | 
+                            التسبقة: {offer.advance_is_percentage ? `${offer.advance_amount}%` : formatCurrency(offer.advance_amount)} | 
+                            الشهري: {formatCurrency(offer.monthly_payment)}
+                          </div>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => editPieceOffer(offer)}
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => deletePieceOffer(offer.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-2">
+                    لا توجد عروض. اضغط "إضافة عرض" لإضافة عرض جديد.
+                  </p>
+                )}
               </div>
             )}
             
@@ -3656,6 +4315,10 @@ export function LandManagement() {
                 if (foundClient) {
                   setNewClient(foundClient)
                   setClientDialogOpen(false)
+                  
+                  // Load offers for selected pieces
+                  await loadOffersForSelectedPieces()
+                  
                   setSaleDialogOpen(true)
                   showNotification('تم استخدام بيانات العميل الموجود', 'success')
                 } else {
@@ -3711,35 +4374,148 @@ export function LandManagement() {
                         >
                           <X className="h-4 w-4" />
                         </Button>
-                      </div>
-                    )
+    </div>
+  )
                   })}
                 </div>
               </div>
+
+              {/* Available Offers - Show only for Installment payment */}
+              {saleForm.payment_type === 'Installment' && availableOffers.length > 0 && (
+                <div className="space-y-2">
+                  <Label>اختر عرض الدفع (اختياري)</Label>
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-2 max-h-60 overflow-y-auto">
+                    {availableOffers.map((offer) => {
+                      const selectedPieceIds = Array.from(selectedPieces)
+                      const selectedPiecesData = batches.flatMap(b => b.land_pieces).filter(p => selectedPieceIds.includes(p.id))
+                      const totalPrice = selectedPiecesData.reduce((sum, p) => {
+                        const price = offer.price_per_m2_installment 
+                          ? (p.surface_area * offer.price_per_m2_installment)
+                          : (p.selling_price_installment || p.selling_price_full || 0)
+                        return sum + price
+                      }, 0)
+                      
+                      const advanceAmount = offer.advance_is_percentage
+                        ? (totalPrice * offer.advance_amount) / 100
+                        : offer.advance_amount
+                      
+                      const remainingAmount = totalPrice - advanceAmount
+                      const numberOfMonths = offer.monthly_payment > 0 
+                        ? Math.ceil(remainingAmount / offer.monthly_payment)
+                        : 0
+
+                      const isSelected = selectedOffer?.id === offer.id
+
+                      return (
+                        <div
+                          key={offer.id}
+                          onClick={() => {
+                            setSelectedOffer(offer)
+                            applyOfferToSaleForm(offer)
+                          }}
+                          className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                            isSelected
+                              ? 'bg-green-100 border-green-500 ring-2 ring-green-500'
+                              : 'bg-white border-green-200 hover:bg-green-50'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                {offer.is_default && (
+                                  <Badge variant="default" className="text-xs">افتراضي</Badge>
+                                )}
+                                {offer.offer_name && (
+                                  <span className="font-medium text-sm">{offer.offer_name}</span>
+                                )}
+                              </div>
+                              <div className="text-xs text-muted-foreground space-y-0.5">
+                                {offer.price_per_m2_installment && (
+                                  <div>سعر المتر المربع: {offer.price_per_m2_installment} DT</div>
+                                )}
+                                <div>عمولة الشركة: {offer.company_fee_percentage}%</div>
+                                <div>
+                                  التسبقة: {offer.advance_is_percentage 
+                                    ? `${offer.advance_amount}% (${formatCurrency(advanceAmount)})`
+                                    : formatCurrency(offer.advance_amount)}
+                                </div>
+                                <div>المبلغ الشهري: {formatCurrency(offer.monthly_payment)}</div>
+                                {numberOfMonths > 0 && (
+                                  <div className="font-medium text-green-700 mt-1">
+                                    عدد الأشهر: {numberOfMonths} شهر
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="ml-2">
+                              <input
+                                type="radio"
+                                checked={isSelected}
+                                onChange={() => {
+                                  setSelectedOffer(offer)
+                                  applyOfferToSaleForm(offer)
+                                }}
+                                className="h-4 w-4 text-green-600"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    اختر عرضاً لملء الحقول تلقائياً، أو املأها يدوياً
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="paymentType">نوع الدفع *</Label>
                 <Select
                   id="paymentType"
                   value={saleForm.payment_type}
-                  onChange={(e) => setSaleForm({ ...saleForm, payment_type: e.target.value as 'Full' | 'Installment' })}
+                  onChange={(e) => {
+                    const newPaymentType = e.target.value as 'Full' | 'Installment'
+                    setSaleForm({ ...saleForm, payment_type: newPaymentType })
+                    // Reload offers when switching to Installment
+                    if (newPaymentType === 'Installment') {
+                      loadOffersForSelectedPieces()
+                    } else {
+                      setAvailableOffers([])
+                      setSelectedOffer(null)
+                    }
+                  }}
                 >
                   <option value="Full">بالحاضر</option>
                   <option value="Installment">بالتقسيط</option>
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="reservationAmount">العربون (مبلغ الحجز) *</Label>
-                <Input
-                  id="reservationAmount"
-                  type="number"
-                  step="0.01"
-                  value={saleForm.reservation_amount}
-                  onChange={(e) => setSaleForm({ ...saleForm, reservation_amount: e.target.value })}
-                  placeholder="أدخل مبلغ العربون"
-                />
-              </div>
+              {selectedOffer && saleForm.payment_type === 'Installment' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-xs text-green-700 font-medium mb-1">
+                    تم تحديد العربون من العرض المختار
+                  </p>
+                  <p className="text-sm font-semibold text-green-800">
+                    {(() => {
+                      const selectedPieceIds = Array.from(selectedPieces)
+                      const selectedPiecesData = batches.flatMap(b => b.land_pieces).filter(p => selectedPieceIds.includes(p.id))
+                      const totalPrice = selectedPiecesData.reduce((sum, p) => {
+                        const price = selectedOffer.price_per_m2_installment 
+                          ? (p.surface_area * selectedOffer.price_per_m2_installment)
+                          : (p.selling_price_installment || p.selling_price_full || 0)
+                        return sum + price
+                      }, 0)
+                      
+                      const advanceAmount = selectedOffer.advance_is_percentage
+                        ? (totalPrice * selectedOffer.advance_amount) / 100
+                        : selectedOffer.advance_amount
+                      
+                      return formatCurrency(advanceAmount)
+                    })()}
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="deadlineDate">آخر أجل لإتمام الإجراءات (اختياري)</Label>
@@ -3801,6 +4577,126 @@ export function LandManagement() {
           </div>
         </>
       )}
+
+      {/* Unified Offer Dialog */}
+      <Dialog open={offerDialogOpen} onOpenChange={setOfferDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingOffer ? 'تعديل العرض' : 'إضافة عرض جديد'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="offer_name">اسم العرض (اختياري)</Label>
+              <Input
+                id="offer_name"
+                value={offerForm.offer_name}
+                onChange={(e) => setOfferForm({ ...offerForm, offer_name: e.target.value })}
+                placeholder="مثال: عرض خاص، عرض تقسيط طويل..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="offer_price_per_m2_installment">سعر المتر المربع (بالتقسيط) *</Label>
+              <Input
+                id="offer_price_per_m2_installment"
+                type="number"
+                step="0.01"
+                value={offerForm.price_per_m2_installment}
+                onChange={(e) => setOfferForm({ ...offerForm, price_per_m2_installment: e.target.value })}
+                placeholder="110.00"
+              />
+              <p className="text-xs text-muted-foreground">سيتم تطبيق هذا السعر على القطع الجديدة فقط. القطع الموجودة والمبيعات السابقة لن تتأثر.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="offer_company_fee_percentage">عمولة الشركة (%)</Label>
+                <Input
+                  id="offer_company_fee_percentage"
+                  type="number"
+                  step="0.01"
+                  value={offerForm.company_fee_percentage}
+                  onChange={(e) => setOfferForm({ ...offerForm, company_fee_percentage: e.target.value })}
+                  placeholder="2.00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="offer_advance_amount">التسبقة *</Label>
+                <Input
+                  id="offer_advance_amount"
+                  type="number"
+                  step="0.01"
+                  value={offerForm.advance_amount}
+                  onChange={(e) => setOfferForm({ ...offerForm, advance_amount: e.target.value })}
+                  placeholder={offerForm.advance_is_percentage ? "10.00" : "0.00"}
+                />
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="checkbox"
+                    id="offer_advance_is_percentage"
+                    checked={offerForm.advance_is_percentage}
+                    onChange={(e) => setOfferForm({ ...offerForm, advance_is_percentage: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="offer_advance_is_percentage" className="text-xs">نسبة مئوية</Label>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="offer_monthly_payment">المبلغ الشهري *</Label>
+              <Input
+                id="offer_monthly_payment"
+                type="number"
+                step="0.01"
+                value={offerForm.monthly_payment}
+                onChange={(e) => setOfferForm({ ...offerForm, monthly_payment: e.target.value })}
+                placeholder="0.00"
+                min="0.01"
+              />
+              <p className="text-xs text-muted-foreground">سيتم حساب عدد الأشهر تلقائياً بناءً على المبلغ المتبقي بعد التسبقة</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="offer_notes">ملاحظات (اختياري)</Label>
+              <Textarea
+                id="offer_notes"
+                value={offerForm.notes}
+                onChange={(e) => setOfferForm({ ...offerForm, notes: e.target.value })}
+                placeholder="ملاحظات إضافية..."
+                rows={2}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="offer_is_default"
+                checked={offerForm.is_default}
+                onChange={(e) => setOfferForm({ ...offerForm, is_default: e.target.checked })}
+                className="h-4 w-4"
+              />
+              <Label htmlFor="offer_is_default" className="text-sm">تعيين كعرض افتراضي</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setOfferDialogOpen(false)
+              setEditingOffer(null)
+              setOfferForm({
+                price_per_m2_installment: '',
+                company_fee_percentage: '',
+                advance_amount: '',
+                advance_is_percentage: false,
+                monthly_payment: '',
+                offer_name: '',
+                notes: '',
+                is_default: false,
+              })
+            }}>
+              إلغاء
+            </Button>
+            <Button onClick={isBatchOffer ? saveBatchOffer : savePieceOffer} disabled={!offerForm.price_per_m2_installment || !offerForm.monthly_payment}>
+              حفظ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

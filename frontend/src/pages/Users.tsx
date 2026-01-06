@@ -23,7 +23,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText, CreditCard, Home, Building, Wallet, DollarSign, Lock, Eye, EyeOff, AlertCircle, Briefcase, MessageSquare, XCircle } from 'lucide-react'
+import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText, CreditCard, Home, Building, Wallet, DollarSign, Lock, Eye, EyeOff, AlertCircle, Briefcase, MessageSquare, XCircle, ArrowUp, ArrowDown } from 'lucide-react'
 import type { User as UserType, UserRole, Sale, WorkerProfile } from '@/types/database'
 import { sanitizeText, sanitizeEmail } from '@/lib/sanitize'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -48,7 +48,6 @@ const roleColors: Record<UserRole, 'default' | 'secondary' | 'destructive'> = {
 const ALL_PAGES = [
   { id: 'home', name: 'الرئيسية', icon: Home, description: 'الصفحة الرئيسية' },
   { id: 'land', name: 'إدارة الأراضي', icon: MapIcon, description: 'إدارة قطع الأراضي' },
-  { id: 'availability', name: 'توفر الأراضي', icon: MapIcon, description: 'عرض توفر الأراضي' },
   { id: 'clients', name: 'العملاء', icon: UsersIcon, description: 'إدارة العملاء' },
   { id: 'sales', name: 'المبيعات', icon: ShoppingCart, description: 'إدارة المبيعات' },
   { id: 'confirm-sales', name: 'تأكيد المبيعات', icon: CheckCircle2, description: 'تأكيد عمليات البيع' },
@@ -104,6 +103,7 @@ export function Users() {
     password: '',
     role: 'Worker' as UserRole,
     allowedPages: [] as string[],
+    sidebarOrder: [] as string[],
     // Worker profile fields - always enabled for Worker role
     worker_type: '',
     region: '',
@@ -122,7 +122,7 @@ export function Users() {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, name, email, role, created_at, updated_at, allowed_pages')
+        .select('id, name, email, role, created_at, updated_at, allowed_pages, sidebar_order')
         .order('name', { ascending: true })
 
       if (error) {
@@ -343,6 +343,7 @@ export function Users() {
         password: '',
         role: user.role,
         allowedPages: (user as any).allowed_pages || [],
+        sidebarOrder: (user as any).sidebar_order || [],
         worker_type: workerProfile?.worker_type || '',
         region: workerProfile?.region || '',
         skills: workerProfile?.skills || [],
@@ -357,6 +358,7 @@ export function Users() {
         email: '',
         password: '',
         role: 'Worker',
+        sidebarOrder: [],
         allowedPages: defaultPages,
         worker_type: '',
         region: '',
@@ -401,6 +403,25 @@ export function Users() {
     setForm({ ...form, skills: form.skills.filter(s => s !== skill) })
   }
 
+  // Sidebar order management functions
+  const movePageUp = (pageId: string) => {
+    const currentOrder = [...form.sidebarOrder]
+    const index = currentOrder.indexOf(pageId)
+    if (index > 0) {
+      [currentOrder[index], currentOrder[index - 1]] = [currentOrder[index - 1], currentOrder[index]]
+      setForm({ ...form, sidebarOrder: currentOrder })
+    }
+  }
+
+  const movePageDown = (pageId: string) => {
+    const currentOrder = [...form.sidebarOrder]
+    const index = currentOrder.indexOf(pageId)
+    if (index >= 0 && index < currentOrder.length - 1) {
+      [currentOrder[index], currentOrder[index + 1]] = [currentOrder[index + 1], currentOrder[index]]
+      setForm({ ...form, sidebarOrder: currentOrder })
+    }
+  }
+
   const saveUser = async () => {
     setError(null)
     setSaving(true)
@@ -433,6 +454,7 @@ export function Users() {
             name: sanitizeText(form.name),
             role: form.role,
             allowed_pages: form.role === 'Owner' ? null : form.allowedPages,
+            sidebar_order: form.sidebarOrder.length > 0 ? form.sidebarOrder : null,
           })
           .eq('id', editingUser.id)
 
@@ -487,6 +509,7 @@ export function Users() {
           password: '', 
           role: 'Worker', 
           allowedPages: [],
+          sidebarOrder: [],
           worker_type: '',
           region: '',
           skills: [],
@@ -674,6 +697,7 @@ export function Users() {
             email: cleanEmail,
             role: form.role,
             allowed_pages: form.role === 'Owner' ? null : form.allowedPages,
+            sidebar_order: form.sidebarOrder.length > 0 ? form.sidebarOrder : null,
           },
         ])
 
@@ -753,6 +777,7 @@ export function Users() {
           password: '', 
           role: 'Worker', 
           allowedPages: [],
+          sidebarOrder: [],
           worker_type: '',
           region: '',
           skills: [],
@@ -1090,6 +1115,7 @@ export function Users() {
             password: '', 
             role: 'Worker', 
             allowedPages: [],
+            sidebarOrder: [],
             worker_type: '',
             region: '',
             skills: [],

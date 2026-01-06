@@ -11,7 +11,6 @@ import { Financial } from '@/pages/FinancialNew'
 import { Users } from '@/pages/Users'
 import { UserPermissions } from '@/pages/UserPermissions'
 import { Security } from '@/pages/Security'
-import { LandAvailability } from '@/pages/LandAvailability'
 import { Home } from '@/pages/Home'
 import { Debts } from '@/pages/Debts'
 import { Expenses } from '@/pages/Expenses'
@@ -162,14 +161,6 @@ function AppRoutes() {
           element={
             <PermissionProtectedRoute permission="view_land" pageId="land">
               <LandManagement />
-            </PermissionProtectedRoute>
-          } 
-        />
-        <Route 
-          path="availability" 
-          element={
-            <PermissionProtectedRoute permission="view_land" pageId="availability">
-              <LandAvailability />
             </PermissionProtectedRoute>
           } 
         />

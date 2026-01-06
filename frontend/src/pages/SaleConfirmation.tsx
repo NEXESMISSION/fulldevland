@@ -27,7 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import type { Sale, Client, LandPiece } from '@/types/database'
+import type { Sale, Client, LandPiece, PaymentOffer } from '@/types/database'
 
 interface SaleWithDetails extends Sale {
   client: Client | null
@@ -57,6 +57,7 @@ export function SaleConfirmation() {
   const [confirmationNotes, setConfirmationNotes] = useState('')
   const [confirmationType, setConfirmationType] = useState<'full' | 'bigAdvance'>('full')
   const [installmentStartDate, setInstallmentStartDate] = useState('')
+  const [selectedOffer, setSelectedOffer] = useState<PaymentOffer | null>(null)
   
   // Client details dialog
   const [clientDetailsOpen, setClientDetailsOpen] = useState(false)
@@ -272,19 +273,75 @@ export function SaleConfirmation() {
     }
   }
 
-  const openConfirmDialog = (sale: SaleWithDetails, piece: LandPiece, type: 'full' | 'bigAdvance') => {
+  const openConfirmDialog = async (sale: SaleWithDetails, piece: LandPiece, type: 'full' | 'bigAdvance') => {
     setSelectedSale(sale)
     setSelectedPiece(piece)
     setConfirmationType(type)
-    setCompanyFeePercentage(sale.company_fee_percentage?.toString() || '2')
-    setNumberOfInstallments(sale.number_of_installments?.toString() || '12')
+    
+    // Load payment offer for this piece (from batch or piece)
+    let offer: PaymentOffer | null = null
+    try {
+      // First try to get offer from piece
+      const { data: pieceOffers } = await supabase
+        .from('payment_offers')
+        .select('*')
+        .eq('land_piece_id', piece.id)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: true })
+        .limit(1)
+      
+      if (pieceOffers && pieceOffers.length > 0) {
+        offer = pieceOffers[0] as PaymentOffer
+      } else {
+        // Try to get offer from batch
+        const { data: batchOffers } = await supabase
+          .from('payment_offers')
+          .select('*')
+          .eq('land_batch_id', piece.land_batch_id)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: true })
+          .limit(1)
+        
+        if (batchOffers && batchOffers.length > 0) {
+          offer = batchOffers[0] as PaymentOffer
+        }
+      }
+    } catch (error) {
+      console.error('Error loading payment offer:', error)
+    }
+    
+    setSelectedOffer(offer)
+    
+    // Set company fee from offer or sale
+    if (offer) {
+      setCompanyFeePercentage(offer.company_fee_percentage.toString())
+    } else {
+      setCompanyFeePercentage(sale.company_fee_percentage?.toString() || '2')
+    }
+    
+    // Calculate number of months from offer if available
+    if (offer && type === 'bigAdvance' && sale.payment_type === 'Installment') {
+      const pieceCount = sale.land_piece_ids.length
+      const pricePerPiece = sale.total_selling_price / pieceCount
+      const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
+      const advanceAmount = offer.advance_is_percentage
+        ? (pricePerPiece * offer.advance_amount) / 100
+        : offer.advance_amount
+      const remainingAmount = pricePerPiece - reservationPerPiece - advanceAmount
+      const numberOfMonths = offer.monthly_payment > 0 
+        ? Math.ceil(remainingAmount / offer.monthly_payment)
+        : 12
+      setNumberOfInstallments(numberOfMonths.toString())
+    } else {
+      setNumberOfInstallments(sale.number_of_installments?.toString() || '12')
+    }
     
     // Auto-fill received amount for full payment with remaining amount
     if (type === 'full') {
       const pieceCount = sale.land_piece_ids.length
       const pricePerPiece = sale.total_selling_price / pieceCount
       const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
-      const feePercentage = parseFloat(sale.company_fee_percentage?.toString() || '2') || 2
+      const feePercentage = parseFloat(offer?.company_fee_percentage.toString() || sale.company_fee_percentage?.toString() || '2') || 2
       const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
       const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
       const remainingAmount = totalPayablePerPiece - reservationPerPiece
@@ -306,7 +363,12 @@ export function SaleConfirmation() {
     const pieceCount = sale.land_piece_ids.length
     const pricePerPiece = sale.total_selling_price / pieceCount
     const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
-    const feePercentage = parseFloat(companyFeePercentage) || 0
+    
+    // Use company fee from selected offer if available, otherwise from form
+    const feePercentage = selectedOffer 
+      ? selectedOffer.company_fee_percentage 
+      : (parseFloat(companyFeePercentage) || 0)
+    
     const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
     const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
     
@@ -998,7 +1060,7 @@ export function SaleConfirmation() {
                                     size="sm"
                                   >
                                     <CheckCircle className="ml-1 h-3 w-3" />
-                                    اتمام البيع
+                                    تأكيد بالحاضر
                                   </Button>
                                 )}
                                 {sale.payment_type === 'Installment' && (
@@ -1008,7 +1070,7 @@ export function SaleConfirmation() {
                                     size="sm"
                                   >
                                     <DollarSign className="ml-1 h-3 w-3" />
-                                    دفعة
+                                    تأكيد بالتقسيط
                                   </Button>
                                 )}
                               </div>
@@ -1066,7 +1128,7 @@ export function SaleConfirmation() {
                                       size="sm"
                                     >
                                       <CheckCircle className="ml-1 h-3 w-3" />
-                                      اتمام البيع
+                                      تأكيد بالحاضر
                                     </Button>
                                   )}
                                   {sale.payment_type === 'Installment' && (
@@ -1077,7 +1139,7 @@ export function SaleConfirmation() {
                                         size="sm"
                                       >
                                         <DollarSign className="ml-1 h-3 w-3" />
-                                        دفعة
+                                        تأكيد بالتقسيط
                                       </Button>
                                     </>
                                   )}
@@ -1101,8 +1163,8 @@ export function SaleConfirmation() {
         <DialogContent className="w-[95vw] sm:w-full max-w-2xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {confirmationType === 'full' && 'تأكيد الدفع الكامل'}
-              {confirmationType === 'bigAdvance' && 'تأكيد الدفعة الكبيرة'}
+              {confirmationType === 'full' && 'تأكيد بالحاضر'}
+              {confirmationType === 'bigAdvance' && (selectedSale?.payment_type === 'Full' ? 'تأكيد بالحاضر' : 'تأكيد بالتقسيط')}
               {selectedPiece && ` - #${selectedPiece.piece_number}`}
             </DialogTitle>
           </DialogHeader>
@@ -1128,7 +1190,13 @@ export function SaleConfirmation() {
                           value={companyFeePercentage}
                           onChange={e => setCompanyFeePercentage(e.target.value)}
                           className="w-full sm:w-24 text-xs sm:text-sm"
+                          disabled={!!selectedOffer}
                         />
+                        {selectedOffer && (
+                          <p className="text-xs text-green-600">
+                            من العرض المختار
+                          </p>
+                        )}
                       </div>
                       <div className="flex justify-between text-xs sm:text-sm">
                         <span className="text-muted-foreground">عمولة الشركة:</span>
@@ -1157,6 +1225,21 @@ export function SaleConfirmation() {
                 <div className="space-y-3 sm:space-y-4 p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200">
                   <p className="text-xs sm:text-sm font-medium text-blue-800 mb-2 sm:mb-3">إعدادات الأقساط</p>
                   
+                  {selectedOffer && (
+                    <div className="bg-white border border-blue-200 rounded-lg p-2 mb-3">
+                      <p className="text-xs text-blue-700 font-medium mb-1">من العرض المختار:</p>
+                      <div className="text-xs text-muted-foreground space-y-0.5">
+                        {selectedOffer.offer_name && (
+                          <div>اسم العرض: {selectedOffer.offer_name}</div>
+                        )}
+                        <div>المبلغ الشهري: {formatCurrency(selectedOffer.monthly_payment)}</div>
+                        {selectedOffer.price_per_m2_installment && (
+                          <div>سعر المتر المربع: {selectedOffer.price_per_m2_installment} DT</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
                   <div className="space-y-1.5 sm:space-y-2">
                     <Label htmlFor="numberOfInstallments" className="text-xs sm:text-sm">عدد الأشهر *</Label>
                     <Input
@@ -1167,7 +1250,13 @@ export function SaleConfirmation() {
                       onChange={e => setNumberOfInstallments(e.target.value)}
                       placeholder="أدخل عدد الأشهر"
                       className="text-xs sm:text-sm"
+                      disabled={!!selectedOffer}
                     />
+                    {selectedOffer && (
+                      <p className="text-xs text-green-600">
+                        محسوب تلقائياً من العرض المختار
+                      </p>
+                    )}
                   </div>
                   
                   <div className="space-y-1.5 sm:space-y-2">

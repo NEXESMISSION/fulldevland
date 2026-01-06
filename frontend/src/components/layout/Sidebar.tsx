@@ -25,9 +25,8 @@ import { cn } from '@/lib/utils'
 // pageId must match the IDs used in Users.tsx ALL_PAGES and stored in allowed_pages
 const navItems = [
   { to: '/land', icon: Map, label: 'إدارة الأراضي', permission: 'view_land', pageId: 'land' },
-  { to: '/availability', icon: MapPin, label: 'توفر الأراضي', permission: 'view_land', pageId: 'availability' },
   { to: '/clients', icon: Users, label: 'العملاء', permission: 'view_clients', pageId: 'clients' },
-  { to: '/sales', icon: ShoppingCart, label: 'المبيعات', permission: 'view_sales', pageId: 'sales' },
+  { to: '/sales', icon: ShoppingCart, label: 'السجل', permission: 'view_sales', pageId: 'sales' },
   { to: '/sale-confirmation', icon: CheckCircle2, label: 'تأكيد المبيعات', permission: 'edit_sales', pageId: 'confirm-sales' },
   { to: '/installments', icon: CreditCard, label: 'الأقساط', permission: 'view_installments', pageId: 'installments' },
   { to: '/financial', icon: DollarSign, label: 'المالية', permission: 'view_financial', pageId: 'finance' },
@@ -55,6 +54,9 @@ export function Sidebar({ onClose }: SidebarProps) {
   // Get allowed_pages from profile
   const allowedPages = (profile as any)?.allowed_pages as string[] | null | undefined
   
+  // Get sidebar_order from profile
+  const sidebarOrder = (profile as any)?.sidebar_order as string[] | null | undefined
+  
   // Check if user has explicit allowed_pages configured (non-Owner with pages set)
   const hasExplicitPageAccess = profile?.role !== 'Owner' && 
     Array.isArray(allowedPages) && 
@@ -64,17 +66,62 @@ export function Sidebar({ onClose }: SidebarProps) {
   // This prevents flash of unauthorized content
   const shouldRenderNav = isReady && !!profile
 
+  // Filter and sort navigation items based on user's custom order
+  const getOrderedNavItems = () => {
+    // First, filter items based on permissions
+    const filteredItems = navItems.filter((item) => {
+      if (hasExplicitPageAccess) {
+        // Only check page access (allowed_pages), ignore role permissions
+        return hasPageAccess(item.pageId)
+      } else {
+        // No explicit page access configured - use role permissions
+        if (item.permission && !hasPermission(item.permission)) return false
+        return true
+      }
+    })
+
+    // If user has custom sidebar order, sort items accordingly
+    if (Array.isArray(sidebarOrder) && sidebarOrder.length > 0) {
+      // Create a map for quick lookup
+      const orderMap: Record<string, number> = {}
+      sidebarOrder.forEach((pageId, index) => {
+        orderMap[pageId] = index
+      })
+
+      // Sort items: items in custom order first (by their order), then items not in order
+      return filteredItems.sort((a, b) => {
+        const aOrder = orderMap[a.pageId] !== undefined ? orderMap[a.pageId] : Infinity
+        const bOrder = orderMap[b.pageId] !== undefined ? orderMap[b.pageId] : Infinity
+        
+        if (aOrder !== Infinity && bOrder !== Infinity) {
+          return aOrder - bOrder
+        } else if (aOrder !== Infinity) {
+          return -1 // a comes first
+        } else if (bOrder !== Infinity) {
+          return 1 // b comes first
+        } else {
+          // Both not in custom order, maintain original order
+          return navItems.indexOf(a) - navItems.indexOf(b)
+        }
+      })
+    }
+
+    // No custom order, return filtered items in original order
+    return filteredItems
+  }
+
+  const orderedNavItems = shouldRenderNav ? getOrderedNavItems() : []
+
   return (
-    <aside className="flex h-screen w-64 flex-col border-l bg-card shadow-lg md:shadow-none">
-      <div className="flex h-16 items-center justify-between border-b px-4 md:px-6">
-        <h1 className="text-xl font-bold text-primary">نظام الأراضي</h1>
+    <aside className="flex h-screen w-64 flex-col border-l bg-card shadow-lg md:shadow-none overflow-hidden">
+      <div className="flex h-16 items-center justify-end border-b px-4 md:px-6 shrink-0">
         {/* Desktop notification bell in sidebar header */}
         <div className="hidden md:block">
           <NotificationBell />
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 p-4">
+      <nav className="flex-1 space-y-1 p-4 overflow-y-auto min-h-0">
         {!shouldRenderNav ? (
           // Show loading skeleton while profile loads
           <div className="space-y-2">
@@ -82,17 +129,7 @@ export function Sidebar({ onClose }: SidebarProps) {
               <div key={i} className="h-10 bg-muted/50 rounded-lg animate-pulse" />
             ))}
           </div>
-        ) : navItems.map((item) => {
-          // If user has explicit page access configured, use that as primary control
-          // This allows Owners to give page access that overrides role restrictions
-          if (hasExplicitPageAccess) {
-            // Only check page access (allowed_pages), ignore role permissions
-            if (!hasPageAccess(item.pageId)) return null
-          } else {
-            // No explicit page access configured - use role permissions
-          if (item.permission && !hasPermission(item.permission)) return null
-          }
-
+        ) : orderedNavItems.map((item) => {
           return (
             <NavLink
               key={item.to}
@@ -114,7 +151,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         })}
       </nav>
 
-      <div className="border-t p-4">
+      <div className="border-t p-4 shrink-0 bg-card">
         <div className="mb-3 px-3">
           <p className="text-sm font-medium">{profile?.name}</p>
           <p className="text-xs text-muted-foreground">
@@ -125,7 +162,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         </div>
         <button
           onClick={signOut}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           <LogOut className="h-5 w-5" />
           تسجيل الخروج
