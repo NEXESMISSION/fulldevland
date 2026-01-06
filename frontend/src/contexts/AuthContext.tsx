@@ -75,6 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userPermissions, setUserPermissions] = useState<Record<string, boolean>>({})
   const fetchingRef = useRef(false)
   const initializedRef = useRef(false)
+  const profileCacheRef = useRef<{ userId: string; profile: User; timestamp: number } | null>(null)
+  const CACHE_DURATION_MS = 5 * 60 * 1000 // 5 minutes cache
   
   // isReady is true when auth loading is done AND (no user OR profile is loaded)
   const isReady = !loading && (!user || (!!user && !!profile && !profileLoading))
@@ -91,13 +93,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (initializedRef.current) return
     initializedRef.current = true
     
-    // Hard timeout to prevent infinite loading (15 seconds)
+    // Hard timeout to prevent infinite loading (10 seconds - reduced from 15)
     const loadingTimeout = setTimeout(() => {
       console.warn('Loading timeout reached - forcing loading to stop')
       setLoading(false)
       setProfileLoading(false)
       fetchingRef.current = false
-    }, 15000)
+      // Try to use cached profile if available
+      if (profileCacheRef.current && session?.user?.id === profileCacheRef.current.userId) {
+        const cacheAge = Date.now() - profileCacheRef.current.timestamp
+        if (cacheAge < CACHE_DURATION_MS) {
+          console.log('Using cached profile due to timeout')
+          setProfile(profileCacheRef.current.profile)
+        }
+      }
+    }, 10000)
     
     // Use retry mechanism for initial session fetch
     retryWithBackoff(
@@ -155,17 +165,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const fetchProfile = async (userId: string) => {
+    // Check cache first
+    if (profileCacheRef.current && profileCacheRef.current.userId === userId) {
+      const cacheAge = Date.now() - profileCacheRef.current.timestamp
+      if (cacheAge < CACHE_DURATION_MS) {
+        console.log('Using cached profile')
+        setProfile(profileCacheRef.current.profile)
+        setProfileLoading(false)
+        setLoading(false)
+        fetchingRef.current = false
+        
+        // Still fetch in background to update cache
+        fetchProfileFromServer(userId).catch(() => {
+          // Silent fail - we already have cached data
+        })
+        return
+      }
+    }
+    
     // Prevent multiple simultaneous fetches
-    if (fetchingRef.current) return
+    if (fetchingRef.current) {
+      // If already fetching, wait a bit and check cache again
+      setTimeout(() => {
+        if (profileCacheRef.current && profileCacheRef.current.userId === userId) {
+          const cacheAge = Date.now() - profileCacheRef.current.timestamp
+          if (cacheAge < CACHE_DURATION_MS) {
+            setProfile(profileCacheRef.current.profile)
+            setProfileLoading(false)
+            setLoading(false)
+          }
+        }
+      }, 500)
+      return
+    }
+    
     fetchingRef.current = true
     setProfileLoading(true)
     
-    // Hard timeout to prevent infinite loading (15 seconds)
+    // Hard timeout to prevent infinite loading (10 seconds - reduced from 15)
     const profileTimeout = setTimeout(() => {
       console.warn('Profile loading timeout reached - forcing loading to stop')
       setProfileLoading(false)
       fetchingRef.current = false
-    }, 15000)
+      setLoading(false)
+      
+      // Try to use cached profile if available
+      if (profileCacheRef.current && profileCacheRef.current.userId === userId) {
+        console.log('Using cached profile due to timeout')
+        setProfile(profileCacheRef.current.profile)
+      }
+    }, 10000)
+    
+    try {
+      await fetchProfileFromServer(userId)
+    } finally {
+      clearTimeout(profileTimeout)
+      fetchingRef.current = false
+      setProfileLoading(false)
+      setLoading(false)
+    }
+  }
+  
+  const fetchProfileFromServer = async (userId: string) => {
     
     try {
       // Use retry mechanism for profile fetch
@@ -265,30 +326,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       )
       
-        clearTimeout(profileTimeout)
+      // Cache the profile
+      profileCacheRef.current = {
+        userId: userId,
+        profile: data,
+        timestamp: Date.now()
+      }
+      
       setProfile(data)
         
-        // Fetch custom user permissions if not Owner
-        if (data.role !== 'Owner') {
-          await fetchUserPermissions(data.id)
-        } else {
-          // Owner has all permissions, no need to fetch
-          setUserPermissions({})
+      // Fetch custom user permissions if not Owner
+      if (data.role !== 'Owner') {
+        await fetchUserPermissions(data.id)
+      } else {
+        // Owner has all permissions, no need to fetch
+        setUserPermissions({})
       }
     } catch (error) {
-      clearTimeout(profileTimeout)
       console.error('Failed to fetch profile:', error)
       // If it's a retryable error, show a message but don't block
       if (isRetryableError(error as Error)) {
         console.warn('Network error fetching profile, will retry on next auth state change')
       }
+      
+      // Try to use cached profile if available
+      if (profileCacheRef.current && profileCacheRef.current.userId === userId) {
+        const cacheAge = Date.now() - profileCacheRef.current.timestamp
+        // Use cache even if older than normal cache duration (up to 30 minutes)
+        if (cacheAge < 30 * 60 * 1000) {
+          console.log('Using cached profile due to fetch error')
+          setProfile(profileCacheRef.current.profile)
+          return
+        }
+      }
+      
       setProfile(null)
       setUserPermissions({})
-    } finally {
-      clearTimeout(profileTimeout)
-      fetchingRef.current = false
-      setProfileLoading(false)
-      setLoading(false)
+      throw error // Re-throw to be caught by outer try-catch
     }
   }
 
@@ -584,6 +658,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTimeout(sessionTimeoutRef.current)
       sessionTimeoutRef.current = null
     }
+    
+    // Clear cache
+    profileCacheRef.current = null
     
     await supabase.auth.signOut()
     setUser(null)
