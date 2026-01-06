@@ -426,33 +426,24 @@ export function Financial() {
   }, [sales, payments, landPieces, dateFilter, selectedDate])
 
   // Group payments by land batch and piece - don't repeat installments for same piece
+  // This function uses filteredData which already has date filtering and excludes cancelled sales
   const getPaymentsByLand = (paymentType: PaymentTypeFilter): PaymentByLand[] => {
-    const { start: startDate, end: endDate } = getDateRange(dateFilter)
+    // Get the appropriate payment list from filteredData based on type
+    let filteredPayments: PaymentWithDetails[] = []
     
-    const isDateInRange = (dateString: string, start: Date, end: Date | null): boolean => {
-      const date = new Date(dateString)
-      date.setHours(0, 0, 0, 0)
-      const startOnly = new Date(start)
-      startOnly.setHours(0, 0, 0, 0)
-      
-      if (end) {
-        const endOnly = new Date(end)
-        endOnly.setHours(23, 59, 59, 999)
-        return date >= startOnly && date <= endOnly
-      } else {
-        return date >= startOnly
-      }
+    if (paymentType === 'Installment') {
+      filteredPayments = filteredData.installmentPaymentsList
+    } else if (paymentType === 'SmallAdvance') {
+      filteredPayments = filteredData.smallAdvancePaymentsList
+    } else if (paymentType === 'Full') {
+      filteredPayments = filteredData.fullPaymentsList
+    } else if (paymentType === 'BigAdvance') {
+      filteredPayments = filteredData.bigAdvancePaymentsList
+    } else {
+      filteredPayments = filteredData.payments
     }
     
-    let filteredPayments = payments
-      .filter(p => isDateInRange(p.payment_date, startDate, endDate))
-      .filter(p => p.payment_type !== 'Refund')
-    
-    if (paymentType) {
-      filteredPayments = filteredPayments.filter(p => p.payment_type === paymentType)
-    }
-    
-    // Attach land pieces to payments
+    // Attach land pieces to payments (already filtered and excluding cancelled sales in filteredData)
     const paymentsWithPieces = filteredPayments.map(payment => {
       const pieceIds = payment.sale?.land_piece_ids || []
       const pieces = landPieces.filter(p => pieceIds.includes(p.id))
@@ -816,6 +807,10 @@ export function Financial() {
                   {/* الأقساط */}
                   {(() => {
                     const data = getPaymentsByLand('Installment')
+                    const totalAmount = filteredData.installmentPaymentsTotal
+                    const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
+                    const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
+                    
                     if (data.length === 0) {
                       return (
                         <TableRow className="bg-blue-50/50">
@@ -828,33 +823,49 @@ export function Financial() {
                         </TableRow>
                       )
                     }
-                    return data.map((group, idx) => (
-                      <TableRow key={`inst-${idx}`} className="bg-blue-50/50 hover:bg-blue-100/50">
-                        <TableCell className="font-bold text-blue-700">{idx === 0 ? 'الأقساط' : ''}</TableCell>
-                        <TableCell>
-                          <div className="font-medium">{group.landBatchName}</div>
-                          {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                        </TableCell>
-                        <TableCell className="text-center">{group.pieces.length}</TableCell>
-                        <TableCell className="text-center">{group.paymentCount}</TableCell>
-                        <TableCell className="text-right font-bold text-blue-600">{formatCurrency(group.totalAmount)}</TableCell>
-                        <TableCell className="text-center">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => openPaymentDetailsDialog('Installment')}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    return [
+                      ...data.map((group, idx) => (
+                        <TableRow key={`inst-${idx}`} className="bg-blue-50/50 hover:bg-blue-100/50">
+                          <TableCell className="font-bold text-blue-700">{idx === 0 ? 'الأقساط' : ''}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{group.landBatchName}</div>
+                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
+                          </TableCell>
+                          <TableCell className="text-center">{group.pieces.length}</TableCell>
+                          <TableCell className="text-center">{group.paymentCount}</TableCell>
+                          <TableCell className="text-right font-bold text-blue-600">{formatCurrency(group.totalAmount)}</TableCell>
+                          <TableCell className="text-center">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => openPaymentDetailsDialog('Installment')}
+                              className="text-blue-600 hover:text-blue-800"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )),
+                      data.length > 1 && (
+                        <TableRow key="inst-summary" className="bg-blue-100/50 font-bold">
+                          <TableCell className="text-blue-800">إجمالي الأقساط</TableCell>
+                          <TableCell>-</TableCell>
+                          <TableCell className="text-center">{totalPieces}</TableCell>
+                          <TableCell className="text-center">{totalPayments}</TableCell>
+                          <TableCell className="text-right text-blue-800">{formatCurrency(totalAmount)}</TableCell>
+                          <TableCell>-</TableCell>
+                        </TableRow>
+                      )
+                    ]
                   })()}
                   
                   {/* العربون */}
                   {(() => {
                     const data = getPaymentsByLand('SmallAdvance')
+                    const totalAmount = filteredData.smallAdvanceTotal
+                    const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
+                    const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
+                    
                     if (data.length === 0) {
                       return (
                         <TableRow className="bg-orange-50/50">
@@ -867,33 +878,49 @@ export function Financial() {
                         </TableRow>
                       )
                     }
-                    return data.map((group, idx) => (
-                      <TableRow key={`small-${idx}`} className="bg-orange-50/50 hover:bg-orange-100/50">
-                        <TableCell className="font-bold text-orange-700">{idx === 0 ? 'العربون' : ''}</TableCell>
-                        <TableCell>
-                          <div className="font-medium">{group.landBatchName}</div>
-                          {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                        </TableCell>
-                        <TableCell className="text-center">{group.pieces.length}</TableCell>
-                        <TableCell className="text-center">{group.paymentCount}</TableCell>
-                        <TableCell className="text-right font-bold text-orange-600">{formatCurrency(group.totalAmount)}</TableCell>
-                        <TableCell className="text-center">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => openPaymentDetailsDialog('SmallAdvance')}
-                            className="text-orange-600 hover:text-orange-800"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    return [
+                      ...data.map((group, idx) => (
+                        <TableRow key={`small-${idx}`} className="bg-orange-50/50 hover:bg-orange-100/50">
+                          <TableCell className="font-bold text-orange-700">{idx === 0 ? 'العربون' : ''}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{group.landBatchName}</div>
+                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
+                          </TableCell>
+                          <TableCell className="text-center">{group.pieces.length}</TableCell>
+                          <TableCell className="text-center">{group.paymentCount}</TableCell>
+                          <TableCell className="text-right font-bold text-orange-600">{formatCurrency(group.totalAmount)}</TableCell>
+                          <TableCell className="text-center">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => openPaymentDetailsDialog('SmallAdvance')}
+                              className="text-orange-600 hover:text-orange-800"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )),
+                      data.length > 1 && (
+                        <TableRow key="small-summary" className="bg-orange-100/50 font-bold">
+                          <TableCell className="text-orange-800">إجمالي العربون</TableCell>
+                          <TableCell>-</TableCell>
+                          <TableCell className="text-center">{totalPieces}</TableCell>
+                          <TableCell className="text-center">{totalPayments}</TableCell>
+                          <TableCell className="text-right text-orange-800">{formatCurrency(totalAmount)}</TableCell>
+                          <TableCell>-</TableCell>
+                        </TableRow>
+                      )
+                    ]
                   })()}
                   
                   {/* الدفع الكامل */}
                   {(() => {
                     const data = getPaymentsByLand('Full')
+                    const totalAmount = filteredData.fullPaymentsTotal
+                    const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
+                    const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
+                    
                     if (data.length === 0) {
                       return (
                         <TableRow className="bg-green-50/50">
@@ -906,33 +933,49 @@ export function Financial() {
                         </TableRow>
                       )
                     }
-                    return data.map((group, idx) => (
-                      <TableRow key={`full-${idx}`} className="bg-green-50/50 hover:bg-green-100/50">
-                        <TableCell className="font-bold text-green-700">{idx === 0 ? 'الدفع الكامل' : ''}</TableCell>
-                        <TableCell>
-                          <div className="font-medium">{group.landBatchName}</div>
-                          {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                        </TableCell>
-                        <TableCell className="text-center">{group.pieces.length}</TableCell>
-                        <TableCell className="text-center">{group.paymentCount}</TableCell>
-                        <TableCell className="text-right font-bold text-green-600">{formatCurrency(group.totalAmount)}</TableCell>
-                        <TableCell className="text-center">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => openPaymentDetailsDialog('Full')}
-                            className="text-green-600 hover:text-green-800"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    return [
+                      ...data.map((group, idx) => (
+                        <TableRow key={`full-${idx}`} className="bg-green-50/50 hover:bg-green-100/50">
+                          <TableCell className="font-bold text-green-700">{idx === 0 ? 'الدفع الكامل' : ''}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{group.landBatchName}</div>
+                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
+                          </TableCell>
+                          <TableCell className="text-center">{group.pieces.length}</TableCell>
+                          <TableCell className="text-center">{group.paymentCount}</TableCell>
+                          <TableCell className="text-right font-bold text-green-600">{formatCurrency(group.totalAmount)}</TableCell>
+                          <TableCell className="text-center">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => openPaymentDetailsDialog('Full')}
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )),
+                      data.length > 1 && (
+                        <TableRow key="full-summary" className="bg-green-100/50 font-bold">
+                          <TableCell className="text-green-800">إجمالي الدفع الكامل</TableCell>
+                          <TableCell>-</TableCell>
+                          <TableCell className="text-center">{totalPieces}</TableCell>
+                          <TableCell className="text-center">{totalPayments}</TableCell>
+                          <TableCell className="text-right text-green-800">{formatCurrency(totalAmount)}</TableCell>
+                          <TableCell>-</TableCell>
+                        </TableRow>
+                      )
+                    ]
                   })()}
                   
                   {/* الدفعة الأولى */}
                   {(() => {
                     const data = getPaymentsByLand('BigAdvance')
+                    const totalAmount = filteredData.bigAdvanceTotal
+                    const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
+                    const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
+                    
                     if (data.length === 0) {
                       return (
                         <TableRow className="bg-purple-50/50">
@@ -945,28 +988,40 @@ export function Financial() {
                         </TableRow>
                       )
                     }
-                    return data.map((group, idx) => (
-                      <TableRow key={`big-${idx}`} className="bg-purple-50/50 hover:bg-purple-100/50">
-                        <TableCell className="font-bold text-purple-700">{idx === 0 ? 'الدفعة الأولى' : ''}</TableCell>
-                        <TableCell>
-                          <div className="font-medium">{group.landBatchName}</div>
-                          {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                        </TableCell>
-                        <TableCell className="text-center">{group.pieces.length}</TableCell>
-                        <TableCell className="text-center">{group.paymentCount}</TableCell>
-                        <TableCell className="text-right font-bold text-purple-600">{formatCurrency(group.totalAmount)}</TableCell>
-                        <TableCell className="text-center">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => openPaymentDetailsDialog('BigAdvance')}
-                            className="text-purple-600 hover:text-purple-800"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    return [
+                      ...data.map((group, idx) => (
+                        <TableRow key={`big-${idx}`} className="bg-purple-50/50 hover:bg-purple-100/50">
+                          <TableCell className="font-bold text-purple-700">{idx === 0 ? 'الدفعة الأولى' : ''}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{group.landBatchName}</div>
+                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
+                          </TableCell>
+                          <TableCell className="text-center">{group.pieces.length}</TableCell>
+                          <TableCell className="text-center">{group.paymentCount}</TableCell>
+                          <TableCell className="text-right font-bold text-purple-600">{formatCurrency(group.totalAmount)}</TableCell>
+                          <TableCell className="text-center">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => openPaymentDetailsDialog('BigAdvance')}
+                              className="text-purple-600 hover:text-purple-800"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )),
+                      data.length > 1 && (
+                        <TableRow key="big-summary" className="bg-purple-100/50 font-bold">
+                          <TableCell className="text-purple-800">إجمالي الدفعة الأولى</TableCell>
+                          <TableCell>-</TableCell>
+                          <TableCell className="text-center">{totalPieces}</TableCell>
+                          <TableCell className="text-center">{totalPayments}</TableCell>
+                          <TableCell className="text-right text-purple-800">{formatCurrency(totalAmount)}</TableCell>
+                          <TableCell>-</TableCell>
+                        </TableRow>
+                      )
+                    ]
                   })()}
                   
                   {/* العمولة */}
