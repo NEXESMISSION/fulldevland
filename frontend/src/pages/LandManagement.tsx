@@ -249,6 +249,7 @@ export function LandManagement() {
     price_per_m2_full: '',
     price_per_m2_installment: '',
     company_fee_percentage: '',
+    company_fee_percentage_full: '',
     received_amount: '',
     number_of_months: '',
     image_url: '',
@@ -759,6 +760,7 @@ export function LandManagement() {
         price_per_m2_full: (batch as any).price_per_m2_full?.toString() || '',
         price_per_m2_installment: (batch as any).price_per_m2_installment?.toString() || '',
         company_fee_percentage: '',
+        company_fee_percentage_full: (batch as any).company_fee_percentage_full?.toString() || '',
         received_amount: '',
         number_of_months: '',
         image_url: (batch as any).image_url || '',
@@ -807,6 +809,7 @@ export function LandManagement() {
         price_per_m2_full: '',
         price_per_m2_installment: '',
         company_fee_percentage: '',
+        company_fee_percentage_full: '',
         received_amount: '',
         number_of_months: '',
         image_url: '',
@@ -1436,9 +1439,12 @@ export function LandManagement() {
       batchData.price_per_m2_full = pricePerM2Full !== null && !isNaN(pricePerM2Full) ? pricePerM2Full : null
       batchData.price_per_m2_installment = pricePerM2Installment !== null && !isNaN(pricePerM2Installment) ? pricePerM2Installment : null
 
-      // Add company fee, received amount, and number of months
+      // Add company fee for installment, company fee for full payment, received amount, and number of months
       const companyFeePercentage = batchForm.company_fee_percentage && batchForm.company_fee_percentage.trim()
         ? parseFloat(batchForm.company_fee_percentage)
+        : null
+      const companyFeePercentageFull = batchForm.company_fee_percentage_full && batchForm.company_fee_percentage_full.trim()
+        ? parseFloat(batchForm.company_fee_percentage_full)
         : null
       const receivedAmount = batchForm.received_amount && batchForm.received_amount.trim()
         ? parseFloat(batchForm.received_amount)
@@ -1450,6 +1456,9 @@ export function LandManagement() {
       // Add these fields to batchData (even if null)
       if (companyFeePercentage !== null && !isNaN(companyFeePercentage)) {
         batchData.company_fee_percentage = companyFeePercentage
+      }
+      if (companyFeePercentageFull !== null && !isNaN(companyFeePercentageFull)) {
+        batchData.company_fee_percentage_full = companyFeePercentageFull
       }
       if (receivedAmount !== null && !isNaN(receivedAmount)) {
         batchData.received_amount = receivedAmount
@@ -4098,6 +4107,22 @@ export function LandManagement() {
                   <p className="text-xs text-muted-foreground">سيتم تطبيق هذا السعر على القطع الجديدة فقط. القطع الموجودة والمبيعات السابقة لن تتأثر.</p>
                 <p className="text-xs text-muted-foreground">ملاحظة: سعر المتر المربع (بالتقسيط) يتم تحديده في العروض أدناه.</p>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="company_fee_percentage_full">عمولة الشركة للدفع بالحاضر (%)</Label>
+                  <Input
+                    id="company_fee_percentage_full"
+                    type="number"
+                    step="0.01"
+                    value={batchForm.company_fee_percentage_full}
+                    onChange={(e) => setBatchForm({ ...batchForm, company_fee_percentage_full: e.target.value })}
+                    placeholder="0.00"
+                    min="0"
+                    max="100"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    نسبة عمولة الشركة للدفع بالحاضر (اختياري). سيتم تطبيقها على جميع المبيعات بالحاضر لهذه الدفعة.
+                  </p>
+                </div>
             </div>
             
             {/* Payment Offers Management */}
@@ -5295,7 +5320,7 @@ export function LandManagement() {
                   
                   // Get company fee percentage from batch (use first batch's fee, or default to 0)
                   const firstBatch = batches.find(b => b.id === selectedPiecesData[0]?.land_batch_id)
-                  const companyFeePercentage = (firstBatch as any)?.company_fee_percentage || 0
+                  const companyFeePercentage = (firstBatch as any)?.company_fee_percentage_full || 0
                   const companyFeeAmount = (totalPrice * companyFeePercentage) / 100
                   const totalPayable = totalPrice + companyFeeAmount
                   

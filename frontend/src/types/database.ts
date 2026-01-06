@@ -62,6 +62,7 @@ export interface LandBatch {
   real_estate_tax_number: string | null
   price_per_m2_full?: number | null
   price_per_m2_installment?: number | null
+  company_fee_percentage_full?: number | null
   created_by: string | null
   created_at: string
   updated_at: string
