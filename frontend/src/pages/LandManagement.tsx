@@ -896,6 +896,7 @@ export function LandManagement() {
     try {
       const offerData: any = {
         land_batch_id: editingBatch.id,
+        land_piece_id: null, // Batch offers should not be tied to specific pieces
         price_per_m2_installment: offerForm.price_per_m2_installment ? parseFloat(offerForm.price_per_m2_installment) : null,
         company_fee_percentage: offerForm.company_fee_percentage ? parseFloat(offerForm.company_fee_percentage) : 0,
         advance_amount: offerForm.advance_amount ? parseFloat(offerForm.advance_amount) : 0,
@@ -2308,6 +2309,7 @@ export function LandManagement() {
     try {
       const offerData: any = {
         land_piece_id: editingPiece.id,
+        land_batch_id: null, // Piece-specific offers should not be tied to batch (they override batch offers)
         price_per_m2_installment: offerForm.price_per_m2_installment ? parseFloat(offerForm.price_per_m2_installment) : null,
         company_fee_percentage: offerForm.company_fee_percentage ? parseFloat(offerForm.company_fee_percentage) : 0,
         advance_amount: offerForm.advance_amount ? parseFloat(offerForm.advance_amount) : 0,
@@ -2442,38 +2444,34 @@ export function LandManagement() {
         }
       }
 
-      // Reload offers - combine piece and batch offers
+      // Reload offers - separate piece-specific and batch offers
       let allOffers: PaymentOffer[] = []
       
-      // Get piece-specific offers
-      const { data: pieceOffers } = await supabase
+      // Get piece-specific offers (only for this piece, not batch offers)
+      const { data: pieceOffersData } = await supabase
         .from('payment_offers')
         .select('*')
         .eq('land_piece_id', editingPiece.id)
+        .is('land_batch_id', null) // Only piece-specific offers, not batch offers
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: true })
       
-      if (pieceOffers && pieceOffers.length > 0) {
-        allOffers.push(...(pieceOffers as PaymentOffer[]))
+      if (pieceOffersData && pieceOffersData.length > 0) {
+        allOffers.push(...(pieceOffersData as PaymentOffer[]))
       }
       
-      // Also get batch offers if no piece offers or to show all available
+      // Also get batch offers (for reference, but they're separate)
       if (editingPiece.land_batch_id) {
-        const { data: batchOffers } = await supabase
+        const { data: batchOffersData } = await supabase
           .from('payment_offers')
           .select('*')
           .eq('land_batch_id', editingPiece.land_batch_id)
+          .is('land_piece_id', null) // Only batch offers, not piece-specific
           .order('is_default', { ascending: false })
           .order('created_at', { ascending: true })
         
-        if (batchOffers && batchOffers.length > 0) {
-          // Add batch offers that aren't already in piece offers
-          const pieceOfferIds = new Set(allOffers.map(o => o.id))
-          batchOffers.forEach((offer: any) => {
-            if (!pieceOfferIds.has(offer.id)) {
-              allOffers.push(offer as PaymentOffer)
-            }
-          })
+        if (batchOffersData && batchOffersData.length > 0) {
+          allOffers.push(...(batchOffersData as PaymentOffer[]))
         }
       }
       
