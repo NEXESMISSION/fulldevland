@@ -493,12 +493,6 @@ export function RealEstateBuildings() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          {currentView !== 'projects' && (
-            <Button variant="ghost" size="sm" onClick={handleBack} className="gap-2">
-              <ChevronRight className="h-4 w-4" />
-              رجوع
-            </Button>
-          )}
           <div>
             <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
               <Building2 className="h-6 w-6 md:h-8 md:w-8 text-primary" />

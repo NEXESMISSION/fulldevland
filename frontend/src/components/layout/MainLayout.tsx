@@ -6,14 +6,56 @@ import { Button } from '@/components/ui/button'
 import { PullToRefresh } from './PullToRefresh'
 import { useSwipeGesture } from '@/hooks/useSwipeGesture'
 import { NotificationBell } from '@/components/ui/notification-bell'
+import { useAuth } from '@/contexts/AuthContext'
 
 function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+  const { profile, hasPageAccess } = useAuth()
   
   // Check if we can go back (not on home page)
   const canGoBack = location.pathname !== '/'
+  
+  // Map pathname to pageId for access check
+  const pathToPageId: Record<string, string> = {
+    '/land': 'land',
+    '/clients': 'clients',
+    '/sales': 'sales',
+    '/sale-confirmation': 'confirm-sales',
+    '/installments': 'installments',
+    '/financial': 'finance',
+    '/expenses': 'expenses',
+    '/debts': 'debts',
+    '/real-estate-buildings': 'real-estate',
+    '/messages': 'messages',
+    '/users': 'users',
+    '/security': 'security',
+    '/workers': 'workers',
+  }
+  
+  // Smart back navigation: for workers, only go back to accessible pages
+  const handleGoBack = useCallback(() => {
+    // For Real Estate Buildings page, use browser back (handles internal navigation)
+    if (location.pathname === '/real-estate-buildings') {
+      navigate(-1)
+      return
+    }
+    
+    // For workers, navigate to home instead of browser back
+    // This prevents going to pages they don't have access to
+    if (profile?.role === 'Worker') {
+      const allowedPages = (profile as any)?.allowed_pages as string[] | null | undefined
+      // If worker has explicit page restrictions, go to home
+      if (Array.isArray(allowedPages) && allowedPages.length > 0) {
+        navigate('/', { replace: true })
+        return
+      }
+    }
+    
+    // Default: use browser back
+    navigate(-1)
+  }, [location.pathname, navigate, profile])
 
   // Pull to refresh handler - reload the page
   const handleRefresh = useCallback(async () => {
@@ -91,7 +133,7 @@ function MainLayout() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => navigate(-1)}
+            onClick={handleGoBack}
               className="bg-white shrink-0 h-9 w-9 border-gray-200"
           >
             <ArrowLeft className="h-5 w-5" />
