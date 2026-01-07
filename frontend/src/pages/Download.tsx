@@ -35,11 +35,15 @@ export function Download() {
           .from('app-downloads')
           .download('app.apk')
 
-        if (!error && data) {
+        if (!error && data && data.size > 0) {
           blob = data
+        } else if (error) {
+          console.log('Supabase Storage error:', error.message)
+          // Don't throw, try other methods
         }
-      } catch (storageError) {
-        console.log('Supabase Storage download failed, trying other methods...')
+      } catch (storageError: any) {
+        console.log('Supabase Storage download failed:', storageError?.message || 'Unknown error')
+        // Continue to try other methods
       }
 
       // Try method 2: Direct download from public folder
@@ -67,17 +71,12 @@ export function Download() {
         }
       }
 
-      // Try method 3: Get public URL from Supabase Storage and download
+      // Try method 3: Get public URL from Supabase Storage and download (without image transform)
       if (!blob) {
         try {
           const { data: urlData } = supabase.storage
             .from('app-downloads')
-            .getPublicUrl('app.apk', {
-              transform: {
-                width: null,
-                height: null,
-              }
-            })
+            .getPublicUrl('app.apk')
 
           if (urlData?.publicUrl) {
             const response = await fetch(urlData.publicUrl, {
@@ -89,13 +88,18 @@ export function Download() {
             
             if (response.ok) {
               const contentType = response.headers.get('content-type')
-              if (contentType && (contentType.includes('octet-stream') || contentType.includes('package-archive'))) {
-                blob = await response.blob()
+              // Check if response is actually APK (not HTML error page)
+              if (contentType && (contentType.includes('octet-stream') || contentType.includes('package-archive') || contentType.includes('application'))) {
+                const responseBlob = await response.blob()
+                // Double check - if blob is too small or is HTML, skip it
+                if (responseBlob.size > 1000 && !responseBlob.type.includes('html')) {
+                  blob = responseBlob
+                }
               }
             }
           }
         } catch (urlError) {
-          console.log('Public URL download failed')
+          console.log('Public URL download failed:', urlError)
         }
       }
 
@@ -124,8 +128,21 @@ export function Download() {
         return
       }
 
-      // If all methods fail
-      throw new Error('لم يتم العثور على ملف APK. يرجى التأكد من رفع الملف في Supabase Storage أو مجلد public.')
+      // If all methods fail, show helpful error message
+      const errorMessage = `
+لم يتم العثور على ملف APK. 
+
+يرجى التأكد من:
+1. إنشاء bucket باسم "app-downloads" في Supabase Storage
+2. رفع ملف APK باسم "app.apk" في الـ bucket
+3. أو وضع ملف APK في مجلد public باسم app.apk
+
+للإعداد:
+- شغّل ملف create_app_downloads_bucket.sql في Supabase
+- ارفع ملف APK إلى الـ bucket
+      `.trim()
+      
+      throw new Error(errorMessage)
     } catch (error: any) {
       console.error('Download error:', error)
       showNotification(
