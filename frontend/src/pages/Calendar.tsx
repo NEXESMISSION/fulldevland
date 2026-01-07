@@ -115,8 +115,16 @@ export function Calendar() {
 
   const handleDateClick = (date: number) => {
     const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(date).padStart(2, '0')}`
+    const dayRendezvous = rendezvousByDate[dateStr] || []
+    
+    if (dayRendezvous.length === 0) {
+      // Show notification for empty day
+      showNotification('لا توجد مواعيد في هذا اليوم', 'info')
+      return
+    }
+    
     setSelectedDate(dateStr)
-    setSelectedDateRendezvous(rendezvousByDate[dateStr] || [])
+    setSelectedDateRendezvous(dayRendezvous)
   }
 
   // Update selectedDateRendezvous when rendezvousByDate changes (e.g., after cancel)
@@ -379,16 +387,19 @@ export function Calendar() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-3">
-            <CardTitle className="text-xl sm:text-2xl font-bold text-center sm:text-right">تقويم المواعيد</CardTitle>
+      <Card className="shadow-lg border-0">
+        <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-center gap-2">
+              <CalendarIcon className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+              <CardTitle className="text-xl sm:text-2xl font-bold text-center">تقويم المواعيد</CardTitle>
+            </div>
             <div className="flex items-center justify-center gap-2 sm:gap-3">
               <Button 
                 variant="outline" 
                 size="sm" 
                 onClick={goToToday}
-                className="text-xs sm:text-sm px-3 sm:px-4 h-9 sm:h-10 shrink-0"
+                className="text-xs sm:text-sm px-3 sm:px-4 h-9 sm:h-10 shrink-0 bg-white hover:bg-gray-50 shadow-sm"
               >
                 اليوم
               </Button>
@@ -396,32 +407,35 @@ export function Calendar() {
                 variant="outline" 
                 size="sm" 
                 onClick={goToPreviousMonth}
-                className="h-9 w-9 sm:h-10 sm:w-10 p-0 flex items-center justify-center shrink-0"
+                className="h-9 w-9 sm:h-10 sm:w-10 p-0 flex items-center justify-center shrink-0 bg-white hover:bg-gray-50 shadow-sm"
               >
                 <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
               </Button>
-              <span className="text-base sm:text-lg font-semibold text-center px-2 sm:px-4 min-w-[140px] sm:min-w-[200px]">
+              <span className="text-base sm:text-lg font-bold text-center px-3 sm:px-5 min-w-[140px] sm:min-w-[200px] bg-white rounded-lg py-2 shadow-sm">
                 {monthNames[currentMonth]} {currentYear}
               </span>
               <Button 
                 variant="outline" 
                 size="sm" 
                 onClick={goToNextMonth}
-                className="h-9 w-9 sm:h-10 sm:w-10 p-0 flex items-center justify-center shrink-0"
+                className="h-9 w-9 sm:h-10 sm:w-10 p-0 flex items-center justify-center shrink-0 bg-white hover:bg-gray-50 shadow-sm"
               >
                 <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 sm:p-6">
           {loading ? (
-            <div className="text-center py-8">جاري التحميل...</div>
+            <div className="text-center py-12">
+              <div className="inline-block h-8 w-8 border-4 border-gray-300 border-t-primary rounded-full animate-spin mb-2"></div>
+              <p className="text-sm text-muted-foreground">جاري التحميل...</p>
+            </div>
           ) : (
-            <div className="grid grid-cols-7 gap-2">
-              {/* Day headers */}
+            <div className="grid grid-cols-7 gap-2 sm:gap-3">
+              {/* Day headers - Modern style */}
               {dayNames.map((day, index) => (
-                <div key={index} className="text-center font-semibold text-sm py-2 border-b">
+                <div key={index} className="text-center font-bold text-xs sm:text-sm py-2 sm:py-3 text-gray-600 bg-gray-50 rounded-lg">
                   {day}
                 </div>
               ))}
@@ -431,34 +445,45 @@ export function Calendar() {
                 <div key={`empty-${index}`} className="aspect-square" />
               ))}
 
-              {/* Days of the month */}
+              {/* Days of the month - Modern design */}
               {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((date) => {
                 const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(date).padStart(2, '0')}`
                 const dayRendezvous = rendezvousByDate[dateStr] || []
                 const hasRendezvous = dayRendezvous.length > 0
+                const isTodayDate = isToday(date)
 
                 return (
                   <div
                     key={date}
                     onClick={() => handleDateClick(date)}
                     className={`
-                      aspect-square border rounded-lg p-1 cursor-pointer transition-colors
-                      ${isToday(date) ? 'bg-primary/10 border-primary' : 'border-gray-200 hover:border-primary/50'}
-                      ${hasRendezvous ? 'bg-blue-50' : ''}
+                      aspect-square rounded-xl p-2 sm:p-3 cursor-pointer transition-all duration-200
+                      flex flex-col items-center justify-center
+                      ${isTodayDate 
+                        ? 'bg-gradient-to-br from-primary to-primary/80 text-white shadow-lg ring-2 ring-primary/50' 
+                        : hasRendezvous
+                        ? 'bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 hover:border-blue-400 hover:shadow-md'
+                        : 'bg-white border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm'
+                      }
                     `}
                   >
-                    <div className="flex flex-col h-full">
-                      <div className={`text-sm font-medium ${isToday(date) ? 'text-primary' : ''}`}>
-                        {date}
-                      </div>
-                      {hasRendezvous && (
-                        <div className="mt-1 flex-1 flex items-center justify-center">
-                          <Badge variant="default" className="text-xs">
-                            {dayRendezvous.length}
-                          </Badge>
-                        </div>
-                      )}
+                    <div className={`text-base sm:text-lg font-bold ${isTodayDate ? 'text-white' : 'text-gray-800'}`}>
+                      {date}
                     </div>
+                    {hasRendezvous && (
+                      <div className="mt-1">
+                        <Badge 
+                          variant={isTodayDate ? "secondary" : "default"} 
+                          className={`text-xs font-bold ${
+                            isTodayDate 
+                              ? 'bg-white/20 text-white border-white/30' 
+                              : 'bg-blue-500 text-white border-blue-600'
+                          }`}
+                        >
+                          {dayRendezvous.length}
+                        </Badge>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -683,142 +708,72 @@ export function Calendar() {
                       payment_updated: 'bg-cyan-100 text-cyan-800 border-cyan-200',
                     }
 
+                    // Format date and time for display - simpler format
+                    const formatDateTime = (date: string, time: string) => {
+                      if (!date) return ''
+                      try {
+                        const dateObj = new Date(date)
+                        const formattedDate = dateObj.toLocaleDateString('ar-TN', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                        })
+                        return time ? `${formattedDate} ${time}` : formattedDate
+                      } catch {
+                        return time ? `${date} ${time}` : date
+                      }
+                    }
+
+                    // Get the main change description - simplified
+                    let mainChange = ''
+                    if (historyItem.old_rendezvous_date && historyItem.new_rendezvous_date) {
+                      const oldDate = formatDateTime(historyItem.old_rendezvous_date, historyItem.old_rendezvous_time || '')
+                      const newDate = formatDateTime(historyItem.new_rendezvous_date, historyItem.new_rendezvous_time || '')
+                      mainChange = `${oldDate} → ${newDate}`
+                    } else if (historyItem.new_rendezvous_date) {
+                      mainChange = formatDateTime(historyItem.new_rendezvous_date, historyItem.new_rendezvous_time || '')
+                    } else if (historyItem.old_status && historyItem.new_status && historyItem.old_status !== historyItem.new_status) {
+                      mainChange = `${historyItem.old_status} → ${historyItem.new_status}`
+                    } else if (historyItem.new_status) {
+                      mainChange = historyItem.new_status
+                    }
+
+                    // Format timestamp more simply
+                    const timestamp = new Date(historyItem.created_at).toLocaleString('ar-TN', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+
+                    // Get user name
+                    const userName = historyItem.changed_by_user?.name || historyItem.changed_by_user?.email || 'غير معروف'
+
                     return (
-                      <Card key={historyItem.id} className="border-l-4 border-l-primary">
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between gap-4 mb-3">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                <Badge className={changeTypeColors[historyItem.change_type] || 'bg-gray-100 text-gray-800'}>
-                                  {changeTypeLabels[historyItem.change_type] || historyItem.change_type}
-                                </Badge>
-                                {historyItem.history_type && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {historyItem.history_type === 'sale' ? 'البيع' : 'الموعد'}
-                                  </Badge>
-                                )}
-                                <span className="text-xs text-muted-foreground">
-                                  {new Date(historyItem.created_at).toLocaleString('ar-TN', {
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                  })}
-                                </span>
-                              </div>
-                              {historyItem.change_description && (
-                                <p className="text-sm font-medium mb-2">{historyItem.change_description}</p>
-                              )}
-                              {historyItem.changed_by_user && (
-                                <p className="text-xs text-muted-foreground">
-                                  بواسطة: {historyItem.changed_by_user.name || historyItem.changed_by_user.email || 'غير معروف'}
-                                </p>
-                              )}
-                            </div>
+                      <div key={historyItem.id} className="flex items-start gap-3 py-2 border-b last:border-0">
+                        <div className="flex-shrink-0 mt-1">
+                          <div className={`w-2 h-2 rounded-full ${
+                            historyItem.change_type === 'created' ? 'bg-green-500' :
+                            historyItem.change_type === 'rescheduled' ? 'bg-yellow-500' :
+                            historyItem.change_type === 'status_changed' ? 'bg-orange-500' :
+                            historyItem.change_type === 'cancelled' ? 'bg-red-500' :
+                            'bg-blue-500'
+                          }`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-medium">
+                              {changeTypeLabels[historyItem.change_type] || historyItem.change_type}
+                            </span>
+                            <span className="text-xs text-muted-foreground">•</span>
+                            <span className="text-xs text-muted-foreground">{timestamp}</span>
                           </div>
-
-                          {/* Show rendez-vous date/time changes */}
-                          {(historyItem.old_rendezvous_date || historyItem.new_rendezvous_date) && (
-                            <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
-                              {historyItem.old_rendezvous_date && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground min-w-[80px]">من:</span>
-                                  <span className="font-medium">
-                                    {historyItem.old_rendezvous_date} {historyItem.old_rendezvous_time}
-                                  </span>
-                                </div>
-                              )}
-                              {historyItem.new_rendezvous_date && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground min-w-[80px]">إلى:</span>
-                                  <span className="font-medium text-green-700">
-                                    {historyItem.new_rendezvous_date} {historyItem.new_rendezvous_time}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
+                          {mainChange && (
+                            <p className="text-sm text-gray-700 mb-1">{mainChange}</p>
                           )}
-
-                          {/* Show sale status changes */}
-                          {(historyItem.old_status || historyItem.new_status) && (
-                            <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm mt-2">
-                              {historyItem.old_status && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground min-w-[100px]">
-                                    {historyItem.history_type === 'sale' ? 'حالة البيع السابقة:' : 'الحالة السابقة:'}
-                                  </span>
-                                  <Badge variant="outline">{historyItem.old_status}</Badge>
-                                </div>
-                              )}
-                              {historyItem.new_status && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground min-w-[100px]">
-                                    {historyItem.history_type === 'sale' ? 'حالة البيع الجديدة:' : 'الحالة الجديدة:'}
-                                  </span>
-                                  <Badge variant="default">{historyItem.new_status}</Badge>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Show sale payment changes */}
-                          {historyItem.history_type === 'sale' && (
-                            <>
-                              {(historyItem.old_total_selling_price || historyItem.new_total_selling_price) && (
-                                <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm mt-2">
-                                  {historyItem.old_total_selling_price && (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-muted-foreground min-w-[100px]">السعر السابق:</span>
-                                      <span className="font-medium">{formatCurrency(historyItem.old_total_selling_price)}</span>
-                                    </div>
-                                  )}
-                                  {historyItem.new_total_selling_price && (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-muted-foreground min-w-[100px]">السعر الجديد:</span>
-                                      <span className="font-medium text-green-700">{formatCurrency(historyItem.new_total_selling_price)}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {(historyItem.old_payment_type || historyItem.new_payment_type) && (
-                                <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm mt-2">
-                                  {historyItem.old_payment_type && (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-muted-foreground min-w-[100px]">نوع الدفع السابق:</span>
-                                      <Badge variant="outline">{historyItem.old_payment_type === 'Full' ? 'بالحاضر' : 'بالتقسيط'}</Badge>
-                                    </div>
-                                  )}
-                                  {historyItem.new_payment_type && (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-muted-foreground min-w-[100px]">نوع الدفع الجديد:</span>
-                                      <Badge variant="default">{historyItem.new_payment_type === 'Full' ? 'بالحاضر' : 'بالتقسيط'}</Badge>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </>
-                          )}
-
-                          {(historyItem.old_notes || historyItem.new_notes) && (
-                            <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm mt-2">
-                              {historyItem.old_notes && (
-                                <div>
-                                  <span className="text-muted-foreground text-xs">الملاحظات السابقة:</span>
-                                  <p className="text-xs mt-1">{historyItem.old_notes}</p>
-                                </div>
-                              )}
-                              {historyItem.new_notes && (
-                                <div>
-                                  <span className="text-muted-foreground text-xs">الملاحظات الجديدة:</span>
-                                  <p className="text-xs mt-1 text-green-700">{historyItem.new_notes}</p>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
+                          <p className="text-xs text-muted-foreground">{userName}</p>
+                        </div>
+                      </div>
                     )
                   })}
                 </div>
