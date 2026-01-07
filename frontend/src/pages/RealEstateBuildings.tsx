@@ -139,7 +139,27 @@ export function RealEstateBuildings() {
         .order('created_at', { ascending: false })
       
       if (error) throw error
-      setBoxes(data || [])
+      
+      // Fetch expenses count and total for each box
+      const boxesWithStats = await Promise.all(
+        (data || []).map(async (box) => {
+          const { data: expensesData } = await supabase
+            .from('box_expenses')
+            .select('amount')
+            .eq('box_id', box.id)
+          
+          const expensesCount = expensesData?.length || 0
+          const totalExpenses = expensesData?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0
+          
+          return {
+            ...box,
+            _expensesCount: expensesCount,
+            _totalExpenses: totalExpenses
+          }
+        })
+      )
+      
+      setBoxes(boxesWithStats as any)
     } catch (err: any) {
       console.error('Error fetching boxes:', err)
       setError(err.message || 'خطأ في تحميل الصناديق')
@@ -547,30 +567,31 @@ export function RealEstateBuildings() {
                   {project.description && (
                     <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{project.description}</p>
                   )}
-                  <div className="flex items-center gap-2 pt-2 border-t">
+                  <div className="flex items-center justify-end gap-1 pt-2 border-t">
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       onClick={(e) => {
                         e.stopPropagation()
                         openProjectDialog(project)
                       }}
-                      className="flex-1"
+                      className="h-7 w-7"
+                      title="تعديل"
                     >
-                      <Edit className="h-3 w-3 mr-1" />
-                      تعديل
+                      <Edit className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       onClick={(e) => {
                         e.stopPropagation()
                         setItemToDelete({ type: 'project', id: project.id })
                         setDeleteConfirmOpen(true)
                       }}
-                      className="text-destructive hover:text-destructive"
+                      className="h-7 w-7 text-destructive hover:text-destructive"
+                      title="حذف"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </CardContent>
@@ -593,42 +614,68 @@ export function RealEstateBuildings() {
               </Button>
             </div>
           ) : (
-            boxes.map((box) => (
-              <Card key={box.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => handleViewBox(box)}>
+            boxes.map((box: any) => (
+              <Card key={box.id} className="hover:shadow-md transition-shadow">
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
-                    <span>{box.name}</span>
-                    <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+                    <span className="flex-1">{box.name}</span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openBoxDialog(box)
+                        }}
+                        className="h-7 w-7"
+                        title="تعديل"
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setItemToDelete({ type: 'box', id: box.id })
+                          setDeleteBoxConfirmOpen(true)
+                        }}
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        title="حذف"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {box.description && (
-                    <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{box.description}</p>
-                  )}
-                  <div className="flex items-center gap-2 pt-2 border-t">
+                  <div className="space-y-3">
+                    {box.description && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">الوصف:</p>
+                        <p className="text-sm text-foreground">{box.description}</p>
+                      </div>
+                    )}
+                    
+                    <div className="grid grid-cols-2 gap-3 pt-2 border-t">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">عدد المصروفات:</p>
+                        <p className="text-sm font-semibold">{box._expensesCount || 0}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">إجمالي المصروفات:</p>
+                        <p className="text-sm font-semibold text-primary">{formatCurrency(box._totalExpenses || 0)}</p>
+                      </div>
+                    </div>
+                    
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openBoxDialog(box)
-                      }}
-                      className="flex-1"
+                      onClick={() => handleViewBox(box)}
+                      className="w-full mt-2"
                     >
-                      <Edit className="h-3 w-3 mr-1" />
-                      تعديل
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setItemToDelete({ type: 'box', id: box.id })
-                        setDeleteBoxConfirmOpen(true)
-                      }}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-3 w-3" />
+                      <Eye className="h-3.5 w-3.5 ml-1" />
+                      عرض المصروفات
                     </Button>
                   </div>
                 </CardContent>
@@ -666,55 +713,69 @@ export function RealEstateBuildings() {
                     <Card key={expense.id} className="hover:shadow-md transition-shadow">
                       <CardContent className="p-4">
                         <div className="space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="font-bold text-lg text-primary">
-                                {formatCurrency(expense.amount)}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 space-y-2">
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">المبلغ:</p>
+                                <div className="font-bold text-lg text-primary">
+                                  {formatCurrency(expense.amount)}
+                                </div>
                               </div>
-                              <div className="text-xs text-muted-foreground mt-1">
-                                {formatDate(expense.expense_date)}
+                              
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">التاريخ:</p>
+                                <p className="text-sm font-medium">{formatDate(expense.expense_date)}</p>
                               </div>
+                              
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">الوصف:</p>
+                                <p className="text-sm font-medium">{expense.description}</p>
+                              </div>
+                              
+                              {expense.notes && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground mb-1">ملاحظات:</p>
+                                  <p className="text-xs text-foreground">{expense.notes}</p>
+                                </div>
+                              )}
+                              
+                              {expense.image_url && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground mb-1">صورة الدليل:</p>
+                                  <img
+                                    src={expense.image_url}
+                                    alt="Expense proof"
+                                    className="w-full h-32 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity border"
+                                    onClick={() => window.open(expense.image_url!, '_blank')}
+                                  />
+                                </div>
+                              )}
                             </div>
-                            <div className="flex gap-1">
+                            
+                            <div className="flex flex-col gap-1">
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="icon"
                                 onClick={() => openExpenseDialog(expense)}
-                                className="h-8 w-8 p-0"
+                                className="h-7 w-7"
+                                title="تعديل"
                               >
-                                <Edit className="h-3 w-3" />
+                                <Edit className="h-3.5 w-3.5" />
                               </Button>
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="icon"
                                 onClick={() => {
                                   setItemToDelete({ type: 'expense', id: expense.id })
                                   setDeleteExpenseConfirmOpen(true)
                                 }}
-                                className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                title="حذف"
                               >
-                                <Trash2 className="h-3 w-3" />
+                                <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>
                           </div>
-                          
-                          <div>
-                            <p className="text-sm font-medium">{expense.description}</p>
-                            {expense.notes && (
-                              <p className="text-xs text-muted-foreground mt-1">{expense.notes}</p>
-                            )}
-                          </div>
-
-                          {expense.image_url && (
-                            <div className="mt-2">
-                              <img
-                                src={expense.image_url}
-                                alt="Expense proof"
-                                className="w-full h-32 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
-                                onClick={() => window.open(expense.image_url!, '_blank')}
-                              />
-                            </div>
-                          )}
                         </div>
                       </CardContent>
                     </Card>
