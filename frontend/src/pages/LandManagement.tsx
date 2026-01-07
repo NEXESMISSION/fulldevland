@@ -4103,13 +4103,13 @@ export function LandManagement() {
                     <TableHeader>
                           <TableRow className="text-xs">
                             {hasPermission('create_sales') && (
-                              <TableHead className="py-2 w-10"></TableHead>
+                              <TableHead className="py-2 w-10 text-center"></TableHead>
                             )}
-                            <TableHead className="py-2">قطعة</TableHead>
-                            <TableHead className="py-2">م²</TableHead>
-                            <TableHead className="py-2">بالحاضر</TableHead>
-                            <TableHead className="py-2">الحالة</TableHead>
-                            <TableHead className="py-2">إجراءات</TableHead>
+                            <TableHead className="py-2 text-center">قطعة</TableHead>
+                            <TableHead className="py-2 text-center">م²</TableHead>
+                            <TableHead className="py-2 text-right">بالحاضر</TableHead>
+                            <TableHead className="py-2 text-center">الحالة</TableHead>
+                            <TableHead className="py-2 text-center">إجراءات</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -4119,7 +4119,7 @@ export function LandManagement() {
                               className={`text-sm ${selectedPieces.has(piece.id) ? 'bg-green-50' : ''}`}
                             >
                               {hasPermission('create_sales') && (
-                                <TableCell className="py-2">
+                                <TableCell className="py-2 text-center">
                                   {piece.status === 'Available' ? (
                                     <input
                                       type="checkbox"
@@ -4138,17 +4138,17 @@ export function LandManagement() {
                                   ) : null}
                                 </TableCell>
                               )}
-                              <TableCell className="py-2 font-medium">{piece.piece_number}</TableCell>
-                              <TableCell className="py-2">{piece.surface_area}</TableCell>
-                              <TableCell className="py-2 text-green-600 font-medium">{formatCurrency(piece.selling_price_full || 0)}</TableCell>
-                              <TableCell className="py-2">
+                              <TableCell className="py-2 font-medium text-center">{piece.piece_number}</TableCell>
+                              <TableCell className="py-2 text-center">{piece.surface_area}</TableCell>
+                              <TableCell className="py-2 text-green-600 font-medium text-right">{formatCurrency(piece.selling_price_full || 0)}</TableCell>
+                              <TableCell className="py-2 text-center">
                                 <Badge variant={statusColors[piece.status]} className="text-xs">
                               {piece.status === 'Available' ? 'متاح' :
                                piece.status === 'Reserved' ? 'محجوز' :
                                piece.status === 'Sold' ? 'مباع' : 'ملغي'}
                             </Badge>
                           </TableCell>
-                              <TableCell className="py-2">
+                              <TableCell className="py-2 text-center">
                                 <div className="flex items-center gap-0.5">
                                   {piece.status === 'Available' && hasPermission('create_sales') && (
                                     <Button

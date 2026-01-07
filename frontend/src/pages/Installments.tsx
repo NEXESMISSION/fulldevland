@@ -1785,16 +1785,16 @@ export function Installments() {
                 <Table className="min-w-full">
               <TableHeader>
                 <TableRow className="bg-gray-50">
-                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">العميل</TableHead>
-                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">الصفقة</TableHead>
-                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">القطع</TableHead>
-                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">الأقساط</TableHead>
-                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">المدفوع</TableHead>
-                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">المتبقي</TableHead>
-                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">المتأخر</TableHead>
-                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">تاريخ الاستحقاق</TableHead>
-                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">الحالة</TableHead>
-                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap">إجراء</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap text-right">العميل</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap text-center">الصفقة</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap text-center">القطع</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap text-center">الأقساط</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap text-right">المدفوع</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap text-right">المتبقي</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap text-right">المتأخر</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap text-center">تاريخ الاستحقاق</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap text-center">الحالة</TableHead>
+                      <TableHead className="font-semibold text-xs sm:text-sm whitespace-nowrap text-center">إجراء</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1821,7 +1821,7 @@ export function Installments() {
                         }`}
                         onClick={() => openSaleDetails(deal)}
                       >
-                        <TableCell>
+                        <TableCell className="text-right">
                           <div>
                               <div className="font-medium text-xs sm:text-sm">{deal.clientName}</div>
                             {deal.clientCin && (
@@ -1829,30 +1829,30 @@ export function Installments() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                             <div className="text-xs sm:text-sm">{formatDate(deal.saleDate)}</div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Badge variant="outline" className="text-xs">
                             {deal.landPieces}
                           </Badge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                             <div className="text-xs sm:text-sm">
                             {deal.paidInstallments}/{deal.totalInstallments}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-right">
                             <div className="text-xs sm:text-sm font-medium text-green-600">
                             {formatCurrency(deal.totalPaid)}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-right">
                             <div className="text-xs sm:text-sm font-medium">
                             {formatCurrency(deal.totalUnpaid)}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-right">
                           {deal.isOverdue ? (
                               <div className="text-xs sm:text-sm font-semibold text-red-600">
                               {formatCurrency(deal.overdueAmount)}
@@ -1861,7 +1861,7 @@ export function Installments() {
                               <div className="text-xs sm:text-sm text-muted-foreground">-</div>
                           )}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           {deal.nextDueDate ? (
                               <div className="text-xs sm:text-sm">
                               {formatDate(deal.nextDueDate)}
@@ -1875,15 +1875,15 @@ export function Installments() {
                               <div className="text-xs sm:text-sm text-muted-foreground">-</div>
                           )}
                         </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
+                        <TableCell className="text-center">
+                          <div className="flex items-center gap-1 justify-center">
                               <span className="text-xs">{statusIndicator}</span>
                               <span className={`text-xs sm:text-sm font-medium ${statusColor}`}>
                               {statusText}
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+                        <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                           {hasPermission('record_payments') && deal.totalUnpaid > 0.01 && (
                             <Button
                               size="sm"

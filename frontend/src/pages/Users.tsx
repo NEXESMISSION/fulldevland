@@ -1048,19 +1048,19 @@ export function Users() {
               <Table className="min-w-full">
               <TableHeader>
                 <TableRow>
-                  <TableHead>الاسم</TableHead>
-                  <TableHead>البريد الإلكتروني</TableHead>
-                  <TableHead>الدور</TableHead>
-                  <TableHead>الإحصائيات</TableHead>
-                  <TableHead>الإجراءات</TableHead>
+                  <TableHead className="text-right">الاسم</TableHead>
+                  <TableHead className="text-right">البريد الإلكتروني</TableHead>
+                  <TableHead className="text-center">الدور</TableHead>
+                  <TableHead className="text-right">الإحصائيات</TableHead>
+                  <TableHead className="text-center">الإجراءات</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {users.map((user) => (
                   <TableRow key={user.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium text-right">
                       <div 
-                        className="flex items-center gap-2 cursor-pointer hover:text-primary transition-colors"
+                        className="flex items-center gap-2 cursor-pointer hover:text-primary transition-colors justify-end"
                         onClick={() => openUserDetails(user)}
                       >
                         <User className="h-4 w-4 text-muted-foreground" />
@@ -1078,13 +1078,13 @@ export function Users() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-right">{user.email}</TableCell>
+                    <TableCell className="text-center">
                       <Badge variant={roleColors[user.role]}>
                         {user.role === 'Owner' ? 'مالك' : 'عامل'}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-right">
                       {(() => {
                         const stats = userStats.get(user.id)
                         return stats ? (
@@ -1103,7 +1103,7 @@ export function Users() {
                         )
                       })()}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">
                       <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"

@@ -1375,15 +1375,15 @@ export function SalesNew() {
               <Table className="min-w-full">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[150px]">العميل</TableHead>
-                    <TableHead className="w-[120px]">القطعة</TableHead>
-                    <TableHead className="w-[80px]">النوع</TableHead>
+                    <TableHead className="w-[150px] text-right">العميل</TableHead>
+                    <TableHead className="w-[120px] text-right">القطعة</TableHead>
+                    <TableHead className="w-[80px] text-center">النوع</TableHead>
                     <TableHead className="w-[100px] text-right">السعر</TableHead>
                     <TableHead className="w-[100px] text-right">عربون</TableHead>
                     <TableHead className="w-[120px] text-right">الدفعة الأولى</TableHead>
                     <TableHead className="w-[100px] text-right">المتبقي</TableHead>
-                    <TableHead className="w-[100px]">الحالة</TableHead>
-                    <TableHead className="w-[180px]">البائع والتاريخ</TableHead>
+                    <TableHead className="w-[100px] text-center">الحالة</TableHead>
+                    <TableHead className="w-[180px] text-right">البائع والتاريخ</TableHead>
                     {user?.role === 'Owner' && (
                       <TableHead className="w-[120px]">المستخدم</TableHead>
                     )}
@@ -1399,8 +1399,8 @@ export function SalesNew() {
                         setSaleDetailsOpen(true)
                       }}
                     >
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
+                      <TableCell className="font-medium text-right">
+                        <div className="flex items-center gap-2 justify-end">
                           {/* Status Dot */}
                           {(() => {
                             const saleData = sales.find(s => s.id === sale.saleId)
@@ -1427,7 +1427,7 @@ export function SalesNew() {
                         </button>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-right">
                         <div className="text-sm">
                           <div>{sale.batchName} - {sale.pieceName}</div>
                           <div className="text-xs text-muted-foreground">{sale.surfaceArea} م²</div>
@@ -1454,7 +1454,7 @@ export function SalesNew() {
                           })()}
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-center">
                         <Badge variant={sale.paymentType === 'Full' ? 'success' : 'secondary'} className="text-xs">
                           {sale.paymentType === 'Full' ? 'بالحاضر' : 'بالتقسيط'}
                         </Badge>
@@ -1481,7 +1481,7 @@ export function SalesNew() {
                       <TableCell className="text-right font-medium">
                         {formatCurrency((sale as any).remainingAmount ?? sale.price)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-center">
                         <Badge 
                           variant={
                             sale.status === 'Completed' ? 'success' :
@@ -1497,7 +1497,7 @@ export function SalesNew() {
                            'محجوز'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="text-xs text-muted-foreground text-right">
                         {formatDateTime(sale.updatedAt || sale.createdAt || sale.saleDate)}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
