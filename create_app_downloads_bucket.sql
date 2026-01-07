@@ -1,15 +1,35 @@
+-- ============================================
 -- Create app-downloads bucket for APK files
--- Run this in Supabase SQL Editor
+-- ============================================
+-- IMPORTANT: Bucket creation must be done manually in Supabase Dashboard
+-- This SQL file only sets up the RLS policies AFTER bucket is created
+-- ============================================
 
--- Step 1: Create the bucket (must be done manually in Supabase Dashboard)
--- Go to Storage → New Bucket
--- Name: app-downloads
--- Public: Yes (checked)
--- File size limit: 100MB (for APK files)
--- Allowed MIME types: application/vnd.android.package-archive, application/octet-stream
+-- STEP 1: CREATE BUCKET MANUALLY (Required before running this SQL)
+-- ============================================
+-- 1. Go to Supabase Dashboard → Storage
+-- 2. Click "New bucket" button
+-- 3. Enter bucket name: app-downloads
+-- 4. Check "Public bucket" (IMPORTANT: Must be public for downloads)
+-- 5. Set File size limit: 104857600 (100MB) - for APK files
+-- 6. Set Allowed MIME types: 
+--    application/vnd.android.package-archive,application/octet-stream
+-- 7. Click "Create bucket"
+-- ============================================
 
--- Step 2: Set up RLS Policies
--- Note: Bucket must be created first in Dashboard before running these policies
+-- STEP 2: UPLOAD APK FILE (After bucket is created)
+-- ============================================
+-- 1. Go to Storage → app-downloads bucket
+-- 2. Click "Upload file" or drag and drop
+-- 3. Select your APK file
+-- 4. Name it exactly: app.apk (IMPORTANT: Must be this exact name)
+-- 5. Click "Upload"
+-- ============================================
+
+-- STEP 3: RUN THIS SQL (After bucket is created)
+-- ============================================
+-- Run the policies below in Supabase SQL Editor
+-- ============================================
 
 -- Policy 1: Allow public read access (for downloads)
 DROP POLICY IF EXISTS "Allow public read access to app downloads" ON storage.objects;
