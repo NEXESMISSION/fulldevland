@@ -992,19 +992,21 @@ export function LandManagement() {
       const companyFeePercentage = selectedNewOffer.company_fee_percentage || 0
       
       // Calculate for each piece separately
+      // NOTE: Commission is NOT included in installments - it's collected at confirmation with advance
       for (const piece of piecesData) {
         const pricePerPiece = piece.selling_price_installment || piece.selling_price_full || averagePricePerPiece
         const companyFeePerPiece = (pricePerPiece * companyFeePercentage) / 100
         const advanceAmount = selectedNewOffer.advance_is_percentage
           ? (pricePerPiece * selectedNewOffer.advance_amount) / 100
           : selectedNewOffer.advance_amount
-        const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
-        const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - advanceAmount
+        // Remaining for installments = Price - Reservation - Advance (WITHOUT commission)
+        // Commission is collected separately at confirmation
+        const remainingForInstallments = pricePerPiece - reservationPerPiece - advanceAmount
         
         totalCompanyFee += companyFeePerPiece
         
-        if (monthlyAmount > 0 && remainingAfterAdvance > 0) {
-          const monthsForPiece = Math.ceil(remainingAfterAdvance / monthlyAmount)
+        if (monthlyAmount > 0 && remainingForInstallments > 0) {
+          const monthsForPiece = Math.ceil(remainingForInstallments / monthlyAmount)
           maxMonths = Math.max(maxMonths, monthsForPiece)
         }
       }
@@ -1260,7 +1262,7 @@ export function LandManagement() {
       }
 
       let savedOfferId: string | null = null
-      
+
       if (editingOffer) {
         const { error } = await supabase
           .from('payment_offers')
@@ -3178,7 +3180,7 @@ export function LandManagement() {
           }
           if (sellingPriceInstallment < 0) {
             setError('السعر بالتقسيط يجب أن يكون أكبر من أو يساوي صفر')
-            return
+          return
           }
         } else {
           // Keep the old installment price if not provided
@@ -3841,22 +3843,8 @@ export function LandManagement() {
       
       // Add Promise of Sale fields if payment type is PromiseOfSale
       if (saleForm.payment_type === 'PromiseOfSale') {
-        // Validate Promise of Sale fields
-        if (!saleForm.promise_initial_payment || parseFloat(saleForm.promise_initial_payment) <= 0) {
-          showNotification('يرجى إدخال المبلغ المستلم الآن', 'error')
-          setCreatingSale(false)
-          return
-        }
-        
-        const initialPayment = parseFloat(saleForm.promise_initial_payment)
-        const totalWithFee = totalPayableForValidation
-        if (initialPayment >= totalWithFee) {
-          showNotification('المبلغ المستلم الآن يجب أن يكون أقل من المبلغ الإجمالي المستحق', 'error')
-          setCreatingSale(false)
-          return
-        }
-        
-        saleData.promise_initial_payment = initialPayment
+        // No initial payment validation here - it will be entered in confirmation page
+        saleData.promise_initial_payment = 0 // Will be set during confirmation
         saleData.promise_completion_date = saleForm.deadline_date // Use deadline_date as completion date
         saleData.promise_completed = false
       }
@@ -3876,20 +3864,6 @@ export function LandManagement() {
       
       // Add Promise of Sale fields if payment type is PromiseOfSale
       if (saleForm.payment_type === 'PromiseOfSale') {
-        // Validate Promise of Sale fields
-        if (!saleForm.promise_initial_payment || parseFloat(saleForm.promise_initial_payment) <= 0) {
-          showNotification('يرجى إدخال المبلغ المستلم الآن', 'error')
-          setCreatingSale(false)
-          return
-        }
-        
-        const initialPayment = parseFloat(saleForm.promise_initial_payment)
-        if (initialPayment >= totalPrice) {
-          showNotification('المبلغ المستلم الآن يجب أن يكون أقل من السعر الإجمالي', 'error')
-          setCreatingSale(false)
-          return
-        }
-        
         // Add company fee for PromiseOfSale (same as Full payment)
         const firstPiece = selectedPieceObjects[0] as any
         const companyFeePercentage = firstPiece?.land_batch?.company_fee_percentage_full || 0
@@ -3900,7 +3874,8 @@ export function LandManagement() {
           saleData.company_fee_amount = parseFloat(companyFeeAmount.toFixed(2))
         }
         
-        saleData.promise_initial_payment = initialPayment
+        // No initial payment here - it will be entered in confirmation page
+        saleData.promise_initial_payment = 0 // Will be set during confirmation
         saleData.promise_completion_date = saleForm.deadline_date // Use deadline_date as completion date
         saleData.promise_completed = false
       }
@@ -3959,13 +3934,14 @@ export function LandManagement() {
           
           const companyFeePercentage = offerToUse.company_fee_percentage || 0
           const companyFeePerPiece = (piecePrice * companyFeePercentage) / 100
-          const totalPayablePerPiece = piecePrice + companyFeePerPiece
           
           const advancePerPiece = offerToUse.advance_is_percentage
             ? (piecePrice * offerToUse.advance_amount) / 100
             : offerToUse.advance_amount
           
-          const remainingPerPiece = totalPayablePerPiece - reservationPerPiece - advancePerPiece
+          // Remaining for installments = Price - Reservation - Advance (WITHOUT commission)
+          // Commission is collected separately at confirmation with advance
+          const remainingPerPiece = piecePrice - reservationPerPiece - advancePerPiece
           
           // Calculate based on what the offer has: monthly_payment or number_of_months
           let monthsPerPiece = 0
@@ -4056,21 +4032,7 @@ export function LandManagement() {
         }] as any)
       }
       
-      // Create initial payment for PromiseOfSale
-      if (saleForm.payment_type === 'PromiseOfSale' && newSale && saleForm.promise_initial_payment) {
-        const initialPayment = parseFloat(saleForm.promise_initial_payment)
-        if (initialPayment > 0) {
-          await supabase.from('payments').insert([{
-            client_id: newClient.id,
-            sale_id: newSale.id,
-            amount_paid: initialPayment,
-            payment_type: 'Partial', // Use Partial for promise initial payment
-            payment_date: new Date().toISOString().split('T')[0],
-            recorded_by: user?.id || null,
-            notes: 'دفعة أولية لوعد البيع',
-          }] as any)
-        }
-      }
+      // Initial payment for PromiseOfSale will be created during confirmation
 
       // Update all selected pieces status to Reserved and save calculated prices
       for (const pieceId of selectedPieces) {
@@ -4603,7 +4565,7 @@ export function LandManagement() {
                                 عرض تفاصيل البيع
                               </Button>
                             )}
-                            
+                          
                             {/* Show sale info for reserved pieces */}
                             {piece.status === 'Reserved' && (() => {
                               const sale = reservedSales.find(s => 
@@ -6168,6 +6130,7 @@ export function LandManagement() {
                       const selectedPiecesData = batches.flatMap(b => b.land_pieces).filter(p => selectedPieceIds.includes(p.id))
                       
                       // Calculate per piece
+                      // NOTE: Commission is NOT included in installments - collected at confirmation
                       const piecesCalculations = selectedPiecesData.map(p => {
                         const piecePrice = offer.price_per_m2_installment 
                           ? (p.surface_area * offer.price_per_m2_installment)
@@ -6175,13 +6138,13 @@ export function LandManagement() {
                         
                         const companyFeePercentage = offer.company_fee_percentage || 0
                         const companyFeePerPiece = (piecePrice * companyFeePercentage) / 100
-                        const totalPayablePerPiece = piecePrice + companyFeePerPiece
                         
                         const advancePerPiece = offer.advance_is_percentage
                           ? (piecePrice * offer.advance_amount) / 100
                           : offer.advance_amount
                         
-                        const remainingPerPiece = totalPayablePerPiece - advancePerPiece
+                        // Remaining for installments = Price - Advance (WITHOUT commission)
+                        const remainingPerPiece = piecePrice - advancePerPiece
                         const monthsPerPiece = offer.monthly_payment > 0 && remainingPerPiece > 0
                           ? Math.ceil(remainingPerPiece / offer.monthly_payment)
                           : 0
@@ -6189,7 +6152,6 @@ export function LandManagement() {
                         return {
                           piecePrice,
                           companyFeePerPiece,
-                          totalPayablePerPiece,
                           advancePerPiece,
                           remainingPerPiece,
                           monthsPerPiece
@@ -6311,36 +6273,12 @@ export function LandManagement() {
                 </Select>
               </div>
 
-              {/* Promise of Sale Fields */}
+              {/* Promise of Sale Info */}
               {saleForm.payment_type === 'PromiseOfSale' && (
-                <div className="space-y-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="text-sm font-medium text-blue-800 mb-2">معلومات وعد البيع</p>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="promiseInitialPayment" className="text-sm">المبلغ المستلم الآن *</Label>
-                    <Input
-                      id="promiseInitialPayment"
-                      type="number"
-                      value={saleForm.promise_initial_payment}
-                      onChange={(e) => {
-                        e.stopPropagation()
-                        setSaleForm({ ...saleForm, promise_initial_payment: e.target.value })
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                      }}
-                      onMouseDown={(e) => {
-                        e.stopPropagation()
-                      }}
-                      placeholder="المبلغ المستلم الآن"
-                      className="h-9"
-                      min="0"
-                      step="0.01"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      المبلغ الذي سيتم استلامه الآن. الباقي سيتم تأكيده في صفحة تأكيد المبيعات.
-                    </p>
-                  </div>
+                <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                  <p className="text-sm text-purple-800">
+                    <strong>ملاحظة:</strong> سيتم إنشاء حجز وعد بالبيع. يمكنك تأكيد الوعد وإدخال المبلغ المستلم من صفحة "تأكيد المبيعات".
+                  </p>
                 </div>
               )}
 
@@ -6376,16 +6314,8 @@ export function LandManagement() {
                   // Get reservation amount from form
                   const reservation = parseFloat(saleForm.reservation_amount) || 0
                   
-                  // For PromiseOfSale, get initial payment
-                  const initialPayment = saleForm.payment_type === 'PromiseOfSale' 
-                    ? (parseFloat(saleForm.promise_initial_payment) || 0)
-                    : 0
-                  
                   // Calculate remaining
                   let remainingAfterReservation = totalPayable - reservation
-                  if (saleForm.payment_type === 'PromiseOfSale') {
-                    remainingAfterReservation = totalPayable - reservation - initialPayment
-                  }
                   
                   return (
                     <div className={`${saleForm.payment_type === 'PromiseOfSale' ? 'bg-purple-50 border-purple-200' : 'bg-green-50 border-green-200'} border rounded-lg p-4 space-y-3`}>
@@ -6417,27 +6347,9 @@ export function LandManagement() {
                               <span>العربون (مدفوع عند الحجز):</span>
                               <span className="font-medium">{formatCurrency(reservation)}</span>
                             </div>
-                            {saleForm.payment_type === 'PromiseOfSale' && initialPayment > 0 && (
-                              <div className={`flex justify-between ${saleForm.payment_type === 'PromiseOfSale' ? 'text-purple-700' : 'text-green-700'}`}>
-                                <span>المبلغ المستلم الآن:</span>
-                                <span className="font-medium">{formatCurrency(initialPayment)}</span>
-                              </div>
-                            )}
                             <div className={`flex justify-between border-t ${saleForm.payment_type === 'PromiseOfSale' ? 'border-purple-200' : 'border-green-200'} pt-2`}>
                               <span className="font-medium text-muted-foreground">المبلغ المتبقي:</span>
                               <span className={`font-semibold ${saleForm.payment_type === 'PromiseOfSale' ? 'text-purple-800' : 'text-green-800'}`}>{formatCurrency(Math.max(0, remainingAfterReservation))}</span>
-                            </div>
-                          </>
-                        )}
-                        {saleForm.payment_type === 'PromiseOfSale' && reservation === 0 && initialPayment > 0 && (
-                          <>
-                            <div className="flex justify-between text-purple-700">
-                              <span>المبلغ المستلم الآن:</span>
-                              <span className="font-medium">{formatCurrency(initialPayment)}</span>
-                            </div>
-                            <div className="flex justify-between border-t border-purple-200 pt-2">
-                              <span className="font-medium text-muted-foreground">المبلغ المتبقي:</span>
-                              <span className="font-semibold text-purple-800">{formatCurrency(Math.max(0, remainingAfterReservation))}</span>
                             </div>
                           </>
                         )}
@@ -6455,12 +6367,7 @@ export function LandManagement() {
                           const pieceCompanyFee = (piecePrice * companyFeePercentage) / 100
                           const pieceTotalPayable = piecePrice + pieceCompanyFee
                           const reservationPerPiece = reservation / selectedPiecesData.length
-                          const initialPaymentPerPiece = saleForm.payment_type === 'PromiseOfSale' 
-                            ? (initialPayment / selectedPiecesData.length)
-                            : 0
-                          const pieceRemaining = saleForm.payment_type === 'PromiseOfSale'
-                            ? (pieceTotalPayable - reservationPerPiece - initialPaymentPerPiece)
-                            : (pieceTotalPayable - reservationPerPiece)
+                          const pieceRemaining = pieceTotalPayable - reservationPerPiece
                           
                           return (
                             <div key={piece.id} className={`bg-white rounded p-2 border ${saleForm.payment_type === 'PromiseOfSale' ? 'border-purple-100' : 'border-green-100'}`}>
@@ -6479,10 +6386,7 @@ export function LandManagement() {
                                 {reservation > 0 && (
                                   <div className={saleForm.payment_type === 'PromiseOfSale' ? 'text-purple-700' : 'text-green-700'}>العربون (مدفوع): {formatCurrency(reservationPerPiece)}</div>
                                 )}
-                                {saleForm.payment_type === 'PromiseOfSale' && initialPaymentPerPiece > 0 && (
-                                  <div className="text-purple-700">المستلم الآن: {formatCurrency(initialPaymentPerPiece)}</div>
-                                )}
-                                {(reservation > 0 || (saleForm.payment_type === 'PromiseOfSale' && initialPaymentPerPiece > 0)) && (
+                                {reservation > 0 && (
                                   <div>المتبقي: {formatCurrency(Math.max(0, pieceRemaining))}</div>
                                 )}
                               </div>
@@ -6533,14 +6437,16 @@ export function LandManagement() {
                     
                     const companyFeePercentage = offerToUse.company_fee_percentage || 0
                     const companyFeePerPiece = (piecePrice * companyFeePercentage) / 100
+                    // Total payable = price + commission (for display purposes)
                     const totalPayablePerPiece = piecePrice + companyFeePerPiece
                     
                     const advancePerPiece = offerToUse.advance_is_percentage
                       ? (piecePrice * offerToUse.advance_amount) / 100
                       : offerToUse.advance_amount
                     
-                    // Remaining after reservation (paid at sale creation) and advance (paid at confirmation)
-                    const remainingPerPiece = totalPayablePerPiece - reservationPerPiece - advancePerPiece
+                    // Remaining for installments = Price - Reservation - Advance (WITHOUT commission)
+                    // Commission is collected separately at confirmation with advance
+                    const remainingPerPiece = piecePrice - reservationPerPiece - advancePerPiece
                     
                     // Calculate based on what the offer has: monthly_payment or number_of_months
                     let monthsPerPiece = 0
@@ -6628,11 +6534,11 @@ export function LandManagement() {
                                   <p className="font-semibold text-blue-700 text-xs">{formatCurrency(calc.piecePrice)}</p>
                                 </div>
                                 <div className="text-xs text-muted-foreground space-y-0.5 pl-2">
-                                  <div>عمولة ({calc.companyFeePercentage}%): {formatCurrency(calc.companyFeePerPiece)}</div>
-                                  <div>المستحق: {formatCurrency(calc.totalPayablePerPiece)}</div>
                                   <div className="text-green-700">العربون (مدفوع): {formatCurrency(calc.reservationPerPiece)}</div>
-                                  <div>التسبقة (عند التأكيد): {formatCurrency(calc.advancePerPiece)}</div>
-                                  <div>المتبقي للتقسيط: {formatCurrency(calc.remainingPerPiece)}</div>
+                                  <div className="text-purple-700 font-medium">عند التأكيد: التسبقة + العمولة = {formatCurrency(calc.advancePerPiece + calc.companyFeePerPiece)}</div>
+                                  <div className="text-xs text-muted-foreground pl-2">- التسبقة: {formatCurrency(calc.advancePerPiece)}</div>
+                                  <div className="text-xs text-muted-foreground pl-2">- العمولة ({calc.companyFeePercentage}%): {formatCurrency(calc.companyFeePerPiece)}</div>
+                                  <div className="text-blue-700 font-medium">المتبقي للتقسيط: {formatCurrency(calc.remainingPerPiece)}</div>
                                   {calc.monthlyAmountPerPiece > 0 && (
                                     <div>المبلغ الشهري (لكل قطعة): {formatCurrency(calc.monthlyAmountPerPiece)}</div>
                                   )}
@@ -6653,24 +6559,24 @@ export function LandManagement() {
                                 <span>السعر الإجمالي:</span>
                                 <span className="font-medium">{formatCurrency(totalPrice)}</span>
                               </div>
-                              <div className="flex justify-between">
-                                <span>عمولة الشركة ({avgCompanyFeePercentage.toFixed(1)}%):</span>
-                                <span className="font-medium">{formatCurrency(companyFeeAmount)}</span>
-                              </div>
-                              <div className="flex justify-between border-t border-blue-100 pt-1 mt-1">
-                                <span className="font-medium">المبلغ الإجمالي المستحق:</span>
-                                <span className="font-semibold text-blue-800">{formatCurrency(totalPayable)}</span>
-                              </div>
                               <div className="flex justify-between text-green-700">
                                 <span>العربون (مدفوع عند الحجز):</span>
                                 <span className="font-medium">{formatCurrency(totalReservation)}</span>
                               </div>
-                              <div className="flex justify-between">
-                                <span>التسبقة (عند التأكيد):</span>
+                              <div className="flex justify-between border-t border-purple-200 pt-1 mt-1 bg-purple-50 p-1.5 rounded">
+                                <span className="font-medium text-purple-800">المستحق عند التأكيد (التسبقة + العمولة):</span>
+                                <span className="font-semibold text-purple-800">{formatCurrency(advanceAmount + companyFeeAmount)}</span>
+                              </div>
+                              <div className="flex justify-between pl-2 text-purple-700">
+                                <span>- التسبقة:</span>
                                 <span className="font-medium">{formatCurrency(advanceAmount)}</span>
                               </div>
-                              <div className="flex justify-between border-t border-blue-100 pt-1 mt-1">
-                                <span className="font-medium">المبلغ المتبقي للتقسيط:</span>
+                              <div className="flex justify-between pl-2 text-purple-700">
+                                <span>- العمولة ({avgCompanyFeePercentage.toFixed(1)}%):</span>
+                                <span className="font-medium">{formatCurrency(companyFeeAmount)}</span>
+                              </div>
+                              <div className="flex justify-between border-t border-blue-200 pt-1 mt-1 bg-blue-100 p-1.5 rounded">
+                                <span className="font-medium text-blue-800">المتبقي للتقسيط (بدون العمولة):</span>
                                 <span className="font-semibold text-blue-800">{formatCurrency(remainingAfterPayments)}</span>
                               </div>
                               {maxMonths > 0 && (
@@ -6687,13 +6593,27 @@ export function LandManagement() {
                                     <span className="font-medium">عدد الأشهر:</span>
                                     <span className="font-semibold text-blue-800">{maxMonths} شهر</span>
                                   </div>
+                                  {/* Installment Period Preview */}
+                                  {maxMonths > 0 && (
+                                    <div className="bg-blue-100/50 rounded p-2 mt-2 border border-blue-200">
+                                      <p className="text-xs font-medium text-blue-800 mb-1">فترة التقسيط (تقديرية):</p>
+                                      <div className="flex justify-between items-center text-xs">
+                                        <span className="text-blue-700">من:</span>
+                                        <span className="font-medium">يتم تحديدها عند التأكيد</span>
+                                      </div>
+                                      <div className="flex justify-between items-center text-xs mt-1">
+                                        <span className="text-blue-700">إلى:</span>
+                                        <span className="font-medium">{maxMonths} شهر بعد التأكيد</span>
+                                      </div>
+                                    </div>
+                                  )}
                                 </>
                               )}
                               <div className="text-xs text-muted-foreground mt-2 pt-2 border-t border-blue-100">
                                 <p className="font-medium mb-1">ملاحظة:</p>
                                 <p>• العربون: مبلغ يتم دفعه عند إنشاء البيع (الحجز)</p>
-                                <p>• التسبقة: مبلغ يتم دفعه عند تأكيد البيع</p>
-                                <p>• المبلغ المتبقي: يتم تقسيطه على {maxMonths} شهر بمبلغ {formatCurrency(totalMonthlyAmount)} شهرياً ({formatCurrency(monthlyAmountPerPiece)} لكل قطعة × {selectedPiecesData.length} قطع)</p>
+                                <p>• التسبقة + العمولة: تُدفع عند تأكيد البيع</p>
+                                <p>• المبلغ المتبقي: يتم تقسيطه على {maxMonths} شهر بمبلغ {formatCurrency(totalMonthlyAmount)} شهرياً</p>
                               </div>
                             </div>
                           </div>
@@ -7174,12 +7094,24 @@ export function LandManagement() {
                       </div>
                       <div>
                         <span className="text-gray-500">عدد الأقساط:</span>
-                        <p className="font-medium">{saleDetailsData.number_of_installments || '-'}</p>
+                        <p className="font-medium">{saleDetailsData.number_of_installments || '-'} شهر</p>
                       </div>
                       <div>
                         <span className="text-gray-500">القسط الشهري:</span>
                         <p className="font-medium">{formatCurrency(saleDetailsData.monthly_installment_amount || 0)}</p>
                       </div>
+                      {saleDetailsData.installment_start_date && (
+                        <div>
+                          <span className="text-gray-500">بداية التقسيط:</span>
+                          <p className="font-medium">{formatDate(saleDetailsData.installment_start_date)}</p>
+                        </div>
+                      )}
+                      {saleDetailsData.installment_end_date && (
+                        <div>
+                          <span className="text-gray-500">نهاية التقسيط:</span>
+                          <p className="font-medium">{formatDate(saleDetailsData.installment_end_date)}</p>
+                        </div>
+                      )}
                     </>
                   )}
                   {saleDetailsData.payment_type === 'PromiseOfSale' && (

@@ -513,7 +513,18 @@ export function Calendar() {
             <div className="space-y-3">
               {selectedDateRendezvous.map((r) => {
                 const sale = r.sale as any
-                const paymentType = sale?.payment_type === 'Full' ? 'بالحاضر' : sale?.payment_type === 'Installment' ? 'بالتقسيط' : sale?.payment_type || 'غير محدد'
+                const getPaymentTypeLabel = () => {
+                  if (sale?.payment_type === 'Full') return 'بالحاضر'
+                  if (sale?.payment_type === 'Installment') return 'بالتقسيط'
+                  if (sale?.payment_type === 'PromiseOfSale') {
+                    const isFirstPart = !sale?.promise_completed && !sale?.promise_initial_payment
+                    const isSecondPart = sale?.promise_initial_payment > 0 || sale?.promise_completed
+                    if (isSecondPart) return 'وعد بالبيع (الجزء الثاني - استكمال الدفع)'
+                    return 'وعد بالبيع (الجزء الأول)'
+                  }
+                  return sale?.payment_type || 'غير محدد'
+                }
+                const paymentType = getPaymentTypeLabel()
                 const offer = sale?.selected_offer
                 
                 return (
@@ -553,7 +564,7 @@ export function Calendar() {
                               )}
                               {sale.big_advance_amount > 0 && (
                                 <div className="text-xs text-muted-foreground">
-                                  <span className="font-medium">الدفعة الأولى:</span> {formatCurrency(sale.big_advance_amount)}
+                                  <span className="font-medium">التسبقة:</span> {formatCurrency(sale.big_advance_amount)}
                                 </div>
                               )}
                               {offer && (
@@ -880,7 +891,17 @@ export function Calendar() {
           {selectedRendezvousForDetails && (() => {
             const r = selectedRendezvousForDetails
             const sale = r.sale as any
-            const paymentType = sale?.payment_type === 'Full' ? 'بالحاضر' : sale?.payment_type === 'Installment' ? 'بالتقسيط' : sale?.payment_type || 'غير محدد'
+            const getPaymentTypeLabel = () => {
+              if (sale?.payment_type === 'Full') return 'بالحاضر'
+              if (sale?.payment_type === 'Installment') return 'بالتقسيط'
+              if (sale?.payment_type === 'PromiseOfSale') {
+                const isSecondPart = sale?.promise_initial_payment > 0 || sale?.promise_completed
+                if (isSecondPart) return 'وعد بالبيع (الجزء الثاني - استكمال الدفع)'
+                return 'وعد بالبيع (الجزء الأول)'
+              }
+              return sale?.payment_type || 'غير محدد'
+            }
+            const paymentType = getPaymentTypeLabel()
             const offer = sale?.selected_offer
             
             return (
@@ -930,7 +951,7 @@ export function Calendar() {
                       )}
                       {sale.big_advance_amount > 0 && (
                         <div>
-                          <span className="font-medium">الدفعة الأولى:</span> {formatCurrency(sale.big_advance_amount)}
+                          <span className="font-medium">التسبقة:</span> {formatCurrency(sale.big_advance_amount)}
                         </div>
                       )}
                       {sale.payment_type === 'Installment' && sale.number_of_installments && (

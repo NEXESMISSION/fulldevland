@@ -518,10 +518,10 @@ export function Clients() {
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">إدارة العملاء</h1>
           <p className="text-muted-foreground text-xs sm:text-sm md:text-base mt-1">إدارة عملائك ومعلوماتهم</p>
         </div>
-        <Button onClick={() => openDialog()} className="w-full sm:w-auto">
-          <Plus className="mr-2 h-4 w-4" />
-          إضافة عميل
-        </Button>
+          <Button onClick={() => openDialog()} className="w-full sm:w-auto">
+            <Plus className="mr-2 h-4 w-4" />
+            إضافة عميل
+          </Button>
       </div>
 
       {/* Stats */}

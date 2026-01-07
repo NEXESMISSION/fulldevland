@@ -50,7 +50,7 @@ const ALL_PAGES = [
   { id: 'home', name: 'الرئيسية', icon: Home, description: 'الصفحة الرئيسية' },
   { id: 'land', name: 'إدارة الأراضي', icon: MapIcon, description: 'إدارة قطع الأراضي' },
   { id: 'clients', name: 'العملاء', icon: UsersIcon, description: 'إدارة العملاء' },
-  { id: 'sales', name: 'المبيعات', icon: ShoppingCart, description: 'إدارة المبيعات' },
+  { id: 'sales', name: 'السجل', icon: ShoppingCart, description: 'سجل المبيعات' },
   { id: 'confirm-sales', name: 'تأكيد المبيعات', icon: CheckCircle2, description: 'تأكيد عمليات البيع' },
   { id: 'calendar', name: 'تقويم المواعيد', icon: Calendar, description: 'تقويم مواعيد البيع' },
   { id: 'phone-calls', name: 'مكالمات', icon: Phone, description: 'تتبع مكالمات المواعيد' },
@@ -1594,7 +1594,7 @@ export function Users() {
               <div className="flex gap-1 border-b overflow-x-auto pb-0">
                 {[
                   { id: 'overview', label: 'نظرة عامة', icon: Activity },
-                  { id: 'sales', label: 'المبيعات', icon: ShoppingCart, count: userCreatedSales.length + userConfirmedSales.length },
+                  { id: 'sales', label: 'السجل', icon: ShoppingCart, count: userCreatedSales.length + userConfirmedSales.length },
                   { id: 'payments', label: 'المدفوعات', icon: CreditCard, count: userPayments.length },
                   { id: 'clients', label: 'العملاء', icon: UsersIcon, count: userClients.length },
                   { id: 'activity', label: 'السجل', icon: FileText },

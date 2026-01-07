@@ -260,41 +260,6 @@ export function PhoneCalls() {
         </Button>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            {(['today', 'week', 'all'] as DateFilter[]).map(filter => (
-              <Button
-                key={filter}
-                variant={dateFilter === filter && !selectedDate ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => {
-                  setDateFilter(filter)
-                  setSelectedDate('')
-                }}
-              >
-                {filterLabels[filter]}
-              </Button>
-            ))}
-            <div className="flex items-center gap-2 border rounded-md px-2">
-              <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => {
-                  setSelectedDate(e.target.value)
-                  if (e.target.value) {
-                    setDateFilter('custom')
-                  }
-                }}
-                className="h-8 w-32 border-0 focus-visible:ring-0"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Calendar View */}
       <Card className="shadow-lg">
         <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">

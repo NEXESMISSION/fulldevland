@@ -288,8 +288,10 @@ export function Financial() {
     const cashReceived = filteredPayments.reduce((sum, p) => sum + p.amount_paid, 0)
 
     // Calculate company fees from sales
+    // NOTE: Commission is ONLY counted for CONFIRMED (Completed) sales
+    // Commission is collected at confirmation time, not at reservation
     const companyFeesTotal = filteredSales
-      .filter(s => s.status !== 'Cancelled')
+      .filter(s => s.status === 'Completed')
       .reduce((sum, s) => sum + (s.company_fee_amount || 0), 0)
 
     // Group payments by client and date
@@ -333,9 +335,10 @@ export function Financial() {
     const groupedInitialPayments = groupPayments(initialPaymentsList)
 
     // Group company fees by client and date
+    // NOTE: Commission is ONLY counted for CONFIRMED (Completed) sales
     const groupCompanyFees = (): GroupedCompanyFee[] => {
       const companyFeeSales = filteredSales
-        .filter(s => s.company_fee_amount && s.company_fee_amount > 0 && s.status !== 'Cancelled')
+        .filter(s => s.company_fee_amount && s.company_fee_amount > 0 && s.status === 'Completed')
       
       const groups = new Map<string, GroupedCompanyFee>()
       
@@ -375,9 +378,10 @@ export function Financial() {
     const groupedCompanyFees = groupCompanyFees()
 
     // Group company fees by land batch for table display
+    // NOTE: Commission is ONLY counted for CONFIRMED (Completed) sales
     const groupCompanyFeesByLand = (): CompanyFeeByLand[] => {
       const companyFeeSales = filteredSales
-        .filter(s => s.company_fee_amount && s.company_fee_amount > 0 && s.status !== 'Cancelled')
+        .filter(s => s.company_fee_amount && s.company_fee_amount > 0 && s.status === 'Completed')
       
       const landGroups = new Map<string, CompanyFeeByLand>()
       
@@ -813,8 +817,8 @@ export function Financial() {
   const paymentTypeLabels: Record<Exclude<PaymentTypeFilter, null>, string> = {
     'Installment': 'الأقساط',
     'SmallAdvance': 'العربون (مبلغ الحجز)',
-    'Full': 'الدفع الكامل',
-    'BigAdvance': 'الدفعة الأولى',
+    'Full': 'بالحاضر',
+    'BigAdvance': 'التسبقة',
     'InitialPayment': 'وعد بالبيع',
   }
   
@@ -897,7 +901,7 @@ export function Financial() {
                 المستلم نقداً: {formatCurrency(filteredData.cashReceived)} | العمولة المستحقة: {formatCurrency(filteredData.companyFeesTotal)}
               </p>
               <p className="text-xs text-green-200 mt-1 opacity-90">
-                ملاحظة: العمولة هي مبلغ مستحق يتم إضافته لسعر البيع، وليس مبلغاً مستلماً نقداً
+                ملاحظة: العمولة تُحسب فقط للمبيعات المؤكدة (تُحصّل عند التأكيد مع التسبقة)
               </p>
             </div>
             <div className="text-right hidden sm:block">
@@ -1063,7 +1067,7 @@ export function Financial() {
                     <TableCell colSpan={6} className="p-0"></TableCell>
                   </TableRow>
                   
-                  {/* الدفع الكامل */}
+                  {/* بالحاضر */}
                   {(() => {
                     const data = getPaymentsByLand('Full')
                     const totalAmount = filteredData.fullPaymentsTotal
@@ -1073,7 +1077,7 @@ export function Financial() {
                     if (data.length === 0) {
                       return (
                         <TableRow className="bg-green-50/50">
-                          <TableCell className="font-bold text-green-700">الدفع الكامل</TableCell>
+                          <TableCell className="font-bold text-green-700">بالحاضر</TableCell>
                           <TableCell className="text-muted-foreground">-</TableCell>
                           <TableCell className="text-center">0</TableCell>
                           <TableCell className="text-center">0</TableCell>
@@ -1085,7 +1089,7 @@ export function Financial() {
                     return [
                       ...data.map((group, idx) => (
                       <TableRow key={`full-${idx}`} className="bg-green-50/50 hover:bg-green-100/50">
-                        <TableCell className="font-bold text-green-700">{idx === 0 ? 'الدفع الكامل' : ''}</TableCell>
+                        <TableCell className="font-bold text-green-700">{idx === 0 ? 'بالحاضر' : ''}</TableCell>
                         <TableCell>
                           <div className="font-medium">{group.landBatchName}</div>
                           {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
@@ -1107,7 +1111,7 @@ export function Financial() {
                       )),
                       data.length > 1 && (
                         <TableRow key="full-summary" className="bg-green-100/50 font-bold">
-                          <TableCell className="text-green-800">إجمالي الدفع الكامل</TableCell>
+                          <TableCell className="text-green-800">إجمالي بالحاضر</TableCell>
                           <TableCell>-</TableCell>
                           <TableCell className="text-center">{totalPieces}</TableCell>
                           <TableCell className="text-center">{totalPayments}</TableCell>
@@ -1123,7 +1127,7 @@ export function Financial() {
                     <TableCell colSpan={6} className="p-0"></TableCell>
                   </TableRow>
                   
-                  {/* الدفعة الأولى */}
+                  {/* التسبقة */}
                   {(() => {
                     const data = getPaymentsByLand('BigAdvance')
                     const totalAmount = filteredData.bigAdvanceTotal
@@ -1133,7 +1137,7 @@ export function Financial() {
                     if (data.length === 0) {
                       return (
                         <TableRow className="bg-purple-50/50">
-                          <TableCell className="font-bold text-purple-700">الدفعة الأولى</TableCell>
+                          <TableCell className="font-bold text-purple-700">التسبقة</TableCell>
                           <TableCell className="text-muted-foreground">-</TableCell>
                           <TableCell className="text-center">0</TableCell>
                           <TableCell className="text-center">0</TableCell>
@@ -1145,7 +1149,7 @@ export function Financial() {
                     return [
                       ...data.map((group, idx) => (
                       <TableRow key={`big-${idx}`} className="bg-purple-50/50 hover:bg-purple-100/50">
-                        <TableCell className="font-bold text-purple-700">{idx === 0 ? 'الدفعة الأولى' : ''}</TableCell>
+                        <TableCell className="font-bold text-purple-700">{idx === 0 ? 'التسبقة' : ''}</TableCell>
                         <TableCell>
                           <div className="font-medium">{group.landBatchName}</div>
                           {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
@@ -1167,7 +1171,7 @@ export function Financial() {
                       )),
                       data.length > 1 && (
                         <TableRow key="big-summary" className="bg-purple-100/50 font-bold">
-                          <TableCell className="text-purple-800">إجمالي الدفعة الأولى</TableCell>
+                          <TableCell className="text-purple-800">إجمالي التسبقة</TableCell>
                           <TableCell>-</TableCell>
                           <TableCell className="text-center">{totalPieces}</TableCell>
                           <TableCell className="text-center">{totalPayments}</TableCell>
@@ -1355,7 +1359,7 @@ export function Financial() {
             </CardContent>
           </Card>
 
-          {/* الدفع الكامل */}
+          {/* بالحاضر */}
           <Card 
             className="border-green-200 cursor-pointer hover:shadow-md transition-shadow"
             onClick={() => openPaymentDetailsDialog('Full')}
@@ -1363,7 +1367,7 @@ export function Financial() {
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-sm text-green-700">الدفع الكامل</h3>
+                  <h3 className="font-bold text-sm text-green-700">بالحاضر</h3>
                   {(() => {
                     const data = getPaymentsByLand('Full')
                     if (data.length > 0) {
@@ -1380,7 +1384,7 @@ export function Financial() {
             </CardContent>
           </Card>
 
-          {/* الدفعة الأولى */}
+          {/* التسبقة */}
           <Card 
             className="border-purple-200 cursor-pointer hover:shadow-md transition-shadow"
             onClick={() => openPaymentDetailsDialog('BigAdvance')}
@@ -1388,7 +1392,7 @@ export function Financial() {
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-sm text-purple-700">الدفعة الأولى</h3>
+                  <h3 className="font-bold text-sm text-purple-700">التسبقة</h3>
                   {(() => {
                     const data = getPaymentsByLand('BigAdvance')
                     if (data.length > 0) {

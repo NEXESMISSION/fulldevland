@@ -307,7 +307,7 @@ export function SalesNew() {
           remainingPerPiece = 0 // مباع - fully paid, no remaining
         } else {
           // For ALL sales (installment or full): Remaining = Total Payable - Total Paid
-          // Total Paid includes: العربون (SmallAdvance) + الدفعة الأولى (BigAdvance) + installments
+          // Total Paid includes: العربون (SmallAdvance) + التسبقة (BigAdvance) + installments
           // This ensures the correct calculation regardless of how installments were created
           remainingPerPiece = Math.max(0, totalPayablePerPiece - paidPerPiece)
         }
@@ -865,7 +865,7 @@ export function SalesNew() {
       fetchData()
       setErrorMessage(null)
     } catch (error) {
-      setErrorMessage('خطأ في تأكيد الدفعة الأولى. يرجى المحاولة مرة أخرى.')
+      setErrorMessage('خطأ في تأكيد التسبقة. يرجى المحاولة مرة أخرى.')
     } finally {
       setIsSubmitting(false)
     }
@@ -1553,7 +1553,7 @@ export function SalesNew() {
       <Dialog open={confirmFullOpen} onOpenChange={setConfirmFullOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>تأكيد الدفع الكامل</DialogTitle>
+            <DialogTitle>تأكيد بالحاضر</DialogTitle>
           </DialogHeader>
           {selectedSale && (
             <div className="space-y-3 sm:space-y-4">
@@ -1995,7 +1995,7 @@ export function SalesNew() {
                         {selectedSaleForDetails.paymentType === 'Installment' && (
                           <>
                             <div>
-                              <p className="text-sm text-muted-foreground">الدفعة الأولى (المدفوعة)</p>
+                              <p className="text-sm text-muted-foreground">التسبقة (المدفوعة)</p>
                               <p className="font-medium text-blue-600">{formatCurrency(bigAdvancePaid || selectedSaleForDetails.bigAdvanceAmount || 0)}</p>
                             </div>
                             {selectedSaleForDetails.numberOfInstallments && (

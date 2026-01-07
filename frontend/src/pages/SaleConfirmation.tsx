@@ -795,18 +795,22 @@ export function SaleConfirmation() {
       if (confirmationType === 'full') {
         if (received <= 0) {
           setError('المبلغ المستلم يجب أن يكون أكبر من صفر')
-          setConfirming(false)
-          return
+        setConfirming(false)
+        return
         }
       } else if (confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
         // For installment, use advance amount from offer
+        // NOTE: Advance is calculated from PRICE (not including commission)
+        // Commission is collected SEPARATELY at confirmation
         if (selectedOffer) {
-          // Advance should be calculated from totalPayablePerPiece (price + company fee), not just price
+          // Advance calculated from pricePerPiece (WITHOUT commission)
           const advanceAmount = selectedOffer.advance_is_percentage
-            ? (totalPayablePerPiece * selectedOffer.advance_amount) / 100
+            ? (pricePerPiece * selectedOffer.advance_amount) / 100
             : selectedOffer.advance_amount
-          if (Math.abs(received - advanceAmount) > 0.01) {
-            setError(`التسبقة يجب أن تكون ${formatCurrency(advanceAmount)} حسب العرض المختار`)
+          // Total to receive = Advance + Commission
+          const totalToReceive = advanceAmount + companyFeePerPiece
+          if (Math.abs(received - totalToReceive) > 0.01) {
+            setError(`المبلغ المستحق عند التأكيد (التسبقة + العمولة) يجب أن يكون ${formatCurrency(totalToReceive)}`)
             setConfirming(false)
             return
           }
@@ -838,9 +842,12 @@ export function SaleConfirmation() {
             let installments = 0
             let monthlyAmount = 0
             
-            const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - received
+            // NOTE: Received amount includes both advance + commission
+            // Remaining for installments = Price - Reservation - Advance (WITHOUT commission)
+            const advanceOnly = received - companyFeePerPiece // Extract advance portion
+            const remainingAfterAdvance = pricePerPiece - reservationPerPiece - advanceOnly
             if (remainingAfterAdvance <= 0) {
-              setError('المبلغ المتبقي بعد التسبقة والعربون يجب أن يكون أكبر من صفر')
+              setError('المبلغ المتبقي للتقسيط يجب أن يكون أكبر من صفر')
               setConfirming(false)
               return
             }
@@ -866,7 +873,12 @@ export function SaleConfirmation() {
             
             updates.number_of_installments = installments
             updates.monthly_installment_amount = parseFloat(monthlyAmount.toFixed(2))
-            updates.installment_start_date = installmentStartDate || new Date().toISOString().split('T')[0]
+            const startDateStr = installmentStartDate || new Date().toISOString().split('T')[0]
+            updates.installment_start_date = startDateStr
+            // Calculate end date (start date + number of months - 1)
+            const endDate = new Date(startDateStr)
+            endDate.setMonth(endDate.getMonth() + installments - 1)
+            updates.installment_end_date = endDate.toISOString().split('T')[0]
             
             // Delete existing installments for this sale to avoid duplicates
             const { error: deleteError } = await supabase
@@ -1045,9 +1057,12 @@ export function SaleConfirmation() {
             let installments = 0
             let monthlyAmount = 0
             
-            const remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - received
+            // NOTE: Received amount includes both advance + commission
+            // Remaining for installments = Price - Reservation - Advance (WITHOUT commission)
+            const advanceOnly = received - companyFeePerPiece // Extract advance portion
+            const remainingAfterAdvance = pricePerPiece - reservationPerPiece - advanceOnly
             if (remainingAfterAdvance <= 0) {
-              setError('المبلغ المتبقي بعد التسبقة والعربون يجب أن يكون أكبر من صفر')
+              setError('المبلغ المتبقي للتقسيط يجب أن يكون أكبر من صفر')
               setConfirming(false)
               return
             }
@@ -1073,7 +1088,12 @@ export function SaleConfirmation() {
             
             newSaleData.number_of_installments = installments
             newSaleData.monthly_installment_amount = parseFloat(monthlyAmount.toFixed(2))
-            newSaleData.installment_start_date = installmentStartDate || new Date().toISOString().split('T')[0]
+            const startDateStr = installmentStartDate || new Date().toISOString().split('T')[0]
+            newSaleData.installment_start_date = startDateStr
+            // Calculate end date (start date + number of months - 1)
+            const endDate = new Date(startDateStr)
+            endDate.setMonth(endDate.getMonth() + installments - 1)
+            newSaleData.installment_end_date = endDate.toISOString().split('T')[0]
           }
         }
 
@@ -1219,7 +1239,7 @@ export function SaleConfirmation() {
       showNotification(
         confirmationType === 'full' 
           ? (selectedSale.payment_type === 'PromiseOfSale' 
-              ? 'تم استكمال وعد البيع بنجاح' 
+              ? 'تم تأكيد الوعد بالبيع بنجاح' 
               : 'تم تأكيد البيع بنجاح (دفع كامل)')
           : 'تم تأكيد الدفعة الكبيرة بنجاح',
         'success'
@@ -1606,7 +1626,7 @@ export function SaleConfirmation() {
                                     size="sm"
                                   >
                                     <CheckCircle className="ml-1 h-3 w-3" />
-                                    استكمال الدفع
+                                    تأكيد الوعد بالبيع
                                   </Button>
                                 )}
                               </div>
@@ -1738,7 +1758,7 @@ export function SaleConfirmation() {
                                       size="sm"
                                     >
                                       <CheckCircle className="ml-1 h-3 w-3" />
-                                      استكمال الدفع
+                                      تأكيد الوعد بالبيع
                                     </Button>
                                   )}
                                 </div>
@@ -1761,7 +1781,7 @@ export function SaleConfirmation() {
         <DialogContent className="w-[95vw] sm:w-full max-w-2xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {confirmationType === 'full' && (selectedSale?.payment_type === 'PromiseOfSale' ? 'استكمال وعد البيع' : 'تأكيد بالحاضر')}
+              {confirmationType === 'full' && (selectedSale?.payment_type === 'PromiseOfSale' ? 'تأكيد الوعد بالبيع' : 'تأكيد بالحاضر')}
               {confirmationType === 'bigAdvance' && (selectedSale?.payment_type === 'Full' ? 'تأكيد بالحاضر' : 'تأكيد بالتقسيط')}
               {selectedPiece && ` - #${selectedPiece.piece_number}`}
             </DialogTitle>
@@ -1772,11 +1792,13 @@ export function SaleConfirmation() {
                   const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece, offer: calculatedOffer } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
             
             // Calculate advance amount from offer if available
+            // NOTE: For installments, advance is calculated from PRICE (not total payable with commission)
+            // Commission is collected SEPARATELY at confirmation with the advance
             let advanceAmount = 0
             if (calculatedOffer && confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
-              // Advance should be calculated from totalPayablePerPiece (price + company fee), not just price
+              // Advance should be calculated from pricePerPiece (WITHOUT commission)
               advanceAmount = calculatedOffer.advance_is_percentage
-                ? (totalPayablePerPiece * calculatedOffer.advance_amount) / 100
+                ? (pricePerPiece * calculatedOffer.advance_amount) / 100
                 : calculatedOffer.advance_amount
             } else if (confirmationType === 'full') {
               if (selectedSale.payment_type === 'PromiseOfSale') {
@@ -1789,8 +1811,9 @@ export function SaleConfirmation() {
               }
             }
             
-            // Calculate remaining amount after advance
-            let remainingAfterAdvance = totalPayablePerPiece - reservationPerPiece - advanceAmount
+            // Calculate remaining for installments = Price - Reservation - Advance (WITHOUT commission)
+            // Commission is collected separately at confirmation with advance
+            let remainingAfterAdvance = pricePerPiece - reservationPerPiece - advanceAmount
             if (confirmationType === 'full' && selectedSale.payment_type === 'PromiseOfSale') {
               // For PromiseOfSale, remaining is already calculated in advanceAmount
               remainingAfterAdvance = advanceAmount
@@ -1852,16 +1875,22 @@ export function SaleConfirmation() {
                     
                     {confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment' && calculatedOffer && (
                       <>
-                        <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm sm:text-base text-gray-700">التسبقة:</span>
-                            <Badge variant="default" className="text-xs">من العرض</Badge>
+                        {/* Amount to collect at confirmation = Advance + Commission */}
+                        <div className="bg-purple-50 border border-purple-200 rounded p-2 mt-2">
+                          <div className="flex justify-between items-center py-1.5">
+                            <span className="text-sm sm:text-base font-bold text-purple-800">المستحق عند التأكيد (التسبقة + العمولة):</span>
+                            <span className="text-sm sm:text-base font-bold text-purple-800">
+                              {formatCurrency(advanceAmount + companyFeePerPiece)}
+                            </span>
                           </div>
-                          <span className="text-sm sm:text-base font-semibold text-purple-600">
-                            {calculatedOffer.advance_is_percentage 
-                              ? `${calculatedOffer.advance_amount}% = ${formatCurrency(advanceAmount)}`
-                              : formatCurrency(advanceAmount)}
-                          </span>
+                          <div className="flex justify-between items-center py-1 text-purple-700 text-xs pl-2">
+                            <span>- التسبقة {calculatedOffer.advance_is_percentage ? `(${calculatedOffer.advance_amount}%)` : ''}:</span>
+                            <span>{formatCurrency(advanceAmount)}</span>
+                          </div>
+                          <div className="flex justify-between items-center py-1 text-purple-700 text-xs pl-2">
+                            <span>- العمولة ({calculatedOffer.company_fee_percentage || companyFeePercentage}%):</span>
+                            <span>{formatCurrency(companyFeePerPiece)}</span>
+                          </div>
                         </div>
                         
                         <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
@@ -1878,18 +1907,39 @@ export function SaleConfirmation() {
                             {formatCurrency(monthlyPaymentAmount)}
                         </span>
                       </div>
+                      
+                      {/* Installment Period Display */}
+                      {installmentStartDate && calculatedMonths > 0 && (
+                        <div className="bg-blue-100 rounded p-2 mt-2 border border-blue-200">
+                          <p className="text-xs font-medium text-blue-800 mb-1">فترة التقسيط:</p>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-blue-700">من:</span>
+                            <span className="font-medium">{new Date(installmentStartDate).toLocaleDateString('ar-TN', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs mt-1">
+                            <span className="text-blue-700">إلى:</span>
+                            <span className="font-medium">
+                              {(() => {
+                                const endDate = new Date(installmentStartDate)
+                                endDate.setMonth(endDate.getMonth() + calculatedMonths - 1)
+                                return endDate.toLocaleDateString('ar-TN', { year: 'numeric', month: 'long', day: 'numeric' })
+                              })()}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </>
                     )}
                     
-                    <div className="flex justify-between items-center py-2 border-t-2 border-orange-300 mt-2 bg-orange-50 rounded px-2">
+                    <div className="flex justify-between items-center py-2 border-t-2 border-blue-300 mt-2 bg-blue-50 rounded px-2">
                       <span className="text-base sm:text-lg font-bold text-gray-900">
                         {confirmationType === 'full' 
-                          ? (selectedSale.payment_type === 'PromiseOfSale' ? 'المبلغ المتبقي (بعد الدفعة الأولية):' : 'المبلغ المتبقي:')
-                          : 'المبلغ المتبقي بعد التسبقة:'}
+                          ? (selectedSale.payment_type === 'PromiseOfSale' ? 'المبلغ المتبقي (بعد العربون):' : 'المبلغ المتبقي:')
+                          : 'المتبقي للتقسيط (بدون العمولة):'}
                       </span>
-                      <span className="text-base sm:text-lg font-bold text-orange-600">
+                      <span className="text-base sm:text-lg font-bold text-blue-700">
                         {formatCurrency(confirmationType === 'full' 
-                          ? (selectedSale.payment_type === 'PromiseOfSale' ? remainingAfterAdvance : totalPayablePerPiece - reservationPerPiece)
+                          ? (totalPayablePerPiece - reservationPerPiece)
                           : remainingAfterAdvance)}
                       </span>
                     </div>
@@ -1930,6 +1980,37 @@ export function SaleConfirmation() {
                 </div>
               )}
 
+              {/* Promise of Sale - Amount Received Now */}
+              {confirmationType === 'full' && selectedSale?.payment_type === 'PromiseOfSale' && (
+                <div className="space-y-3 sm:space-y-4 p-3 sm:p-4 bg-purple-50 rounded-lg border border-purple-200">
+                  <p className="text-xs sm:text-sm font-medium text-purple-800 mb-2 sm:mb-3">معلومات وعد البيع</p>
+                  
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <Label htmlFor="promiseReceivedAmount" className="text-xs sm:text-sm">المبلغ المستلم الآن *</Label>
+                    <Input
+                      id="promiseReceivedAmount"
+                      type="number"
+                      value={receivedAmount}
+                      onChange={e => setReceivedAmount(e.target.value)}
+                      placeholder="المبلغ المستلم الآن"
+                      className="text-xs sm:text-sm"
+                      min="0"
+                      step="0.01"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      المبلغ الذي سيتم استلامه الآن. الباقي سيتم تأكيده لاحقاً.
+                    </p>
+                    {receivedAmount && parseFloat(receivedAmount) > 0 && (
+                      <div className="mt-2 p-2 bg-white rounded border border-purple-200">
+                        <p className="text-xs sm:text-sm font-medium text-purple-800">
+                          المبلغ المتبقي بعد هذا الدفع: {formatCurrency(Math.max(0, (totalPayablePerPiece - reservationPerPiece) - parseFloat(receivedAmount)))}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-1.5 sm:space-y-2">
                 <Label htmlFor="paymentMethod" className="text-xs sm:text-sm">طريقة الدفع</Label>
                 <Select
@@ -1961,7 +2042,7 @@ export function SaleConfirmation() {
                   إلغاء
                 </Button>
                 <Button onClick={handleConfirmation} disabled={confirming} className="w-full sm:w-auto">
-                    {confirming ? 'جاري التأكيد...' : 'اتمام البيع'}
+                    {confirming ? 'جاري التأكيد...' : (selectedSale?.payment_type === 'PromiseOfSale' ? 'تأكيد الوعد بالبيع' : 'اتمام البيع')}
                 </Button>
               </DialogFooter>
             </div>
