@@ -64,14 +64,15 @@ export function Clients() {
         return
       }
 
-      if (!cin || cin.trim().length < 2) {
+      // Only search when CIN is 8 characters or more
+      if (!cin || cin.trim().length < 8) {
         setFoundClient(null)
         setClientSearchStatus('idle')
         return
       }
 
       const sanitizedCIN = sanitizeCIN(cin)
-      if (!sanitizedCIN || sanitizedCIN.length < 2) {
+      if (!sanitizedCIN || sanitizedCIN.length < 8) {
         setFoundClient(null)
         setClientSearchStatus('idle')
         return
@@ -749,90 +750,49 @@ export function Clients() {
             {/* CIN Field - First Field */}
             <div className="space-y-1.5 sm:space-y-2">
               <Label htmlFor="cin" className="text-xs sm:text-sm">رقم الهوية *</Label>
-              <div className="relative">
-                <Input
-                  id="cin"
-                  value={form.cin}
-                  onChange={(e) => {
-                    const newCIN = e.target.value
-                    setForm({ ...form, cin: newCIN })
-                    // Clear found client if CIN changes
-                    if (foundClient && newCIN !== foundClient.cin) {
-                      setFoundClient(null)
-                      setClientSearchStatus('idle')
-                    }
-                    // Trigger search only if not editing
-                    debouncedCINSearch(newCIN, !!editingClient)
-                  }}
-                  maxLength={50}
-                  placeholder="رقم الهوية"
-                  className={`h-9 ${searchingClient ? 'pr-10' : ''} ${clientSearchStatus === 'found' ? 'border-green-500' : clientSearchStatus === 'not_found' ? 'border-blue-300' : ''}`}
-                  autoFocus={!editingClient}
-                  disabled={!!editingClient}
-                />
-                {searchingClient && (
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                    <div className="h-4 w-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
-                  </div>
-                )}
-                {!searchingClient && form.cin && form.cin.trim().length >= 2 && !editingClient && (
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                    {clientSearchStatus === 'found' && (
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                    )}
-                    {clientSearchStatus === 'not_found' && (
-                      <XCircle className="h-4 w-4 text-blue-500" />
-                    )}
-                  </div>
-                )}
-              </div>
-              {foundClient && form.cin && form.cin.trim().length >= 2 && !editingClient && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-2.5 mt-1">
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
-                    <div className="text-xs text-green-800 flex-1">
-                      <p className="font-medium mb-0.5">✓ تم العثور على عميل: {foundClient.name}</p>
-                      <p className="text-xs">CIN: {foundClient.cin} {foundClient.phone && `| الهاتف: ${foundClient.phone}`}</p>
-                      <p className="text-xs mt-1">تم ملء البيانات تلقائياً. يمكنك تعديلها أو المتابعة.</p>
-                    </div>
-                  </div>
-                </div>
+              <Input
+                id="cin"
+                value={form.cin}
+                onChange={(e) => {
+                  const newCIN = e.target.value
+                  setForm({ ...form, cin: newCIN })
+                  // Clear found client if CIN changes
+                  if (foundClient && newCIN !== foundClient.cin) {
+                    setFoundClient(null)
+                    setClientSearchStatus('idle')
+                  }
+                  // Trigger search only if not editing and CIN is 8+ chars
+                  debouncedCINSearch(newCIN, !!editingClient)
+                }}
+                maxLength={50}
+                placeholder="رقم الهوية (8 أرقام)"
+                className={`h-9 ${clientSearchStatus === 'found' ? 'border-green-500' : ''}`}
+                autoFocus={!editingClient}
+                disabled={!!editingClient}
+              />
+              {searchingClient && form.cin.trim().length >= 8 && (
+                <p className="text-xs text-gray-500 mt-1">جاري البحث...</p>
               )}
-              {clientSearchStatus === 'not_found' && !foundClient && form.cin && form.cin.trim().length >= 4 && !editingClient && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 mt-1">
-                  <div className="flex items-start gap-2">
-                    <XCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                    <div className="text-xs text-blue-800">
-                      <p className="font-medium mb-0.5">لا يوجد عميل بهذا الرقم</p>
-                      <p className="text-xs">يمكنك المتابعة لإضافة عميل جديد.</p>
-                    </div>
-                  </div>
-                </div>
+              {foundClient && form.cin.trim().length >= 8 && !editingClient && (
+                <p className="text-xs text-green-600 mt-1">
+                  ✓ تم العثور على عميل: {foundClient.name} | CIN: {foundClient.cin} {foundClient.phone && `| الهاتف: ${foundClient.phone}`}
+                </p>
+              )}
+              {clientSearchStatus === 'not_found' && !foundClient && form.cin.trim().length >= 8 && !editingClient && (
+                <p className="text-xs text-blue-600 mt-1">
+                  لا يوجد عميل بهذا الرقم - يمكنك المتابعة لإضافة عميل جديد
+                </p>
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              <div className="space-y-1.5 sm:space-y-2">
-                <Label htmlFor="name" className="text-xs sm:text-sm">الاسم *</Label>
-                <Input
-                  id="name"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  maxLength={255}
-                />
-              </div>
-              <div className="space-y-1.5 sm:space-y-2">
-                <Label htmlFor="client_type" className="text-xs sm:text-sm">النوع</Label>
-                <select
-                  id="client_type"
-                  value={form.client_type}
-                  onChange={(e) => setForm({ ...form, client_type: e.target.value as 'Individual' | 'Company' })}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="Individual">فردي</option>
-                  <option value="Company">شركة</option>
-                </select>
-              </div>
+            <div className="space-y-1.5 sm:space-y-2">
+              <Label htmlFor="name" className="text-xs sm:text-sm">الاسم *</Label>
+              <Input
+                id="name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                maxLength={255}
+              />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-1.5 sm:space-y-2">
@@ -874,6 +834,18 @@ export function Clients() {
                 maxLength={5000}
                 className="min-h-[80px] sm:min-h-[100px]"
               />
+            </div>
+            <div className="space-y-1.5 sm:space-y-2">
+              <Label htmlFor="client_type" className="text-xs sm:text-sm">النوع</Label>
+              <select
+                id="client_type"
+                value={form.client_type}
+                onChange={(e) => setForm({ ...form, client_type: e.target.value as 'Individual' | 'Company' })}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="Individual">فردي</option>
+                <option value="Company">شركة</option>
+              </select>
             </div>
             {errorMessage && (
               <div className="bg-destructive/10 border-2 border-destructive/30 text-destructive p-3 sm:p-4 rounded-lg text-xs sm:text-sm flex items-start gap-2 shadow-md">

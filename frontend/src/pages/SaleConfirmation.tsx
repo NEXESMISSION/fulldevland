@@ -523,7 +523,13 @@ export function SaleConfirmation() {
       const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || (companyFeePercentage ? parseFloat(String(companyFeePercentage)) : 0) || 0
       const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
       const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
-      const remainingAmount = totalPayablePerPiece - reservationPerPiece
+      
+      // For PromiseOfSale, also subtract initial payment already received
+      let remainingAmount = totalPayablePerPiece - reservationPerPiece
+      if (sale.payment_type === 'PromiseOfSale') {
+        const initialPaymentPerPiece = (sale.promise_initial_payment || 0) / pieceCount
+        remainingAmount = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
+      }
       setReceivedAmount(remainingAmount.toFixed(2))
       
       // Set company fee percentage for display
@@ -763,6 +769,7 @@ export function SaleConfirmation() {
       const received = parseFloat(receivedAmount) || 0
       
       // For full payment, check against remaining amount (not total)
+      // Allow for small rounding differences (1 DT tolerance)
       if (confirmationType === 'full') {
         let remainingAmount = totalPayablePerPiece - reservationPerPiece
         if (selectedSale.payment_type === 'PromiseOfSale') {
@@ -770,10 +777,11 @@ export function SaleConfirmation() {
           const initialPaymentPerPiece = (selectedSale.promise_initial_payment || 0) / pieceCount
           remainingAmount = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
         }
-        if (received < remainingAmount) {
-        setError(`المبلغ المستلم (${formatCurrency(received)}) أقل من المبلغ المتبقي (${formatCurrency(remainingAmount)})`)
-        setConfirming(false)
-        return
+        // Allow 1 DT tolerance for rounding
+        if (received < remainingAmount - 1) {
+          setError(`المبلغ المستلم (${formatCurrency(received)}) أقل من المبلغ المتبقي (${formatCurrency(remainingAmount)})`)
+          setConfirming(false)
+          return
         }
       } else if (confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
         // For installment, use advance amount from offer
@@ -1215,8 +1223,14 @@ export function SaleConfirmation() {
     } catch (err) {
       const error = err as Error
       console.error('Error confirming sale:', error)
-      setError('حدث خطأ أثناء تأكيد البيع: ' + error.message)
-      showNotification('حدث خطأ أثناء تأكيد البيع: ' + error.message, 'error')
+      // Check for the specific "Confirmed" enum error
+      let errorMessage = error.message
+      if (error.message.includes('sale_status') && error.message.includes('Confirmed')) {
+        errorMessage = 'خطأ في قاعدة البيانات: يرجى تشغيل السكريبت fix_sale_status_confirmed_error.sql لإصلاح المشكلة'
+        console.error('DATABASE TRIGGER ISSUE: There is likely a trigger trying to set sale status to "Confirmed" which is not a valid enum value.')
+      }
+      setError('حدث خطأ أثناء تأكيد البيع: ' + errorMessage)
+      showNotification('حدث خطأ أثناء تأكيد البيع: ' + errorMessage, 'error')
     } finally {
       setConfirming(false)
     }

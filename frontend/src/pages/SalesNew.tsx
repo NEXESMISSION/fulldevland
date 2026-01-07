@@ -724,7 +724,6 @@ export function SalesNew() {
             monthly_installment_amount: monthlyAmount,
             installment_start_date: installmentStartDate,
             status: 'Pending', // Use 'Pending' for ongoing installments (database enum doesn't have 'InstallmentsOngoing')
-            is_confirmed: true,
             sale_date: sale.sale_date,
             notes: sale.notes,
           }] as any)
