@@ -429,6 +429,41 @@ export const translations = {
       update: 'تحديث',
       delete: 'حذف',
     },
+    // Download / PWA
+    download: {
+      title: 'تحميل التطبيق',
+      subtitle: 'تطبيق إدارة الأراضي والعقارات',
+      version: 'الإصدار',
+      lastUpdated: 'آخر تحديث',
+      installApp: 'تثبيت التطبيق',
+      shareApp: 'مشاركة التطبيق',
+      alreadyInstalled: 'التطبيق مثبت بالفعل',
+      alreadyInstalledDesc: 'يمكنك الوصول إلى التطبيق من الشاشة الرئيسية',
+      installNotAvailable: 'استخدم قائمة المتصفح لإضافة التطبيق إلى الشاشة الرئيسية',
+      installationInstructions: 'تعليمات التثبيت',
+      androidStep1: 'افتح الموقع في Chrome',
+      androidStep2: 'اضغط على القائمة (⋮) في الأعلى',
+      androidStep3: 'اختر "تثبيت التطبيق" أو "إضافة إلى الشاشة الرئيسية"',
+      iosStep1: 'افتح الموقع في Safari',
+      iosStep2: 'اضغط على زر المشاركة (□↑)',
+      iosStep3: 'اختر "إضافة إلى الشاشة الرئيسية"',
+      desktopStep1: 'في Chrome/Edge: اضغط على أيقونة التثبيت في شريط العنوان',
+      desktopStep2: 'أو من القائمة: More tools → Create shortcut',
+      features: 'المميزات',
+      feature1: 'إدارة الأراضي والعقارات',
+      feature2: 'تتبع المبيعات والأقساط',
+      feature3: 'إدارة العملاء',
+      feature4: 'التقارير المالية',
+      requirements: 'المتطلبات',
+      requirement1: 'متصفح حديث (Chrome, Safari, Edge)',
+      requirement2: 'اتصال بالإنترنت',
+      requirement3: 'حساب مستخدم نشط',
+      pwaBenefits: 'مميزات PWA',
+      benefit1: 'يعمل بدون تحميل من متجر التطبيقات',
+      benefit2: 'يعمل في وضع عدم الاتصال (Offline)',
+      benefit3: 'تحديثات تلقائية',
+      benefit4: 'أداء سريع وتجربة مثل التطبيق الأصلي',
+    },
     // Login
     login: {
       title: 'LandDev',
@@ -884,6 +919,41 @@ export const translations = {
       successCreating: 'Appel ajouté avec succès',
       requiredFields: 'Veuillez remplir tous les champs requis',
     },
+    // Download / PWA
+    download: {
+      title: 'Télécharger l\'Application',
+      subtitle: 'Application de Gestion Immobilière',
+      version: 'Version',
+      lastUpdated: 'Dernière Mise à Jour',
+      installApp: 'Installer l\'Application',
+      shareApp: 'Partager l\'Application',
+      alreadyInstalled: 'Application Déjà Installée',
+      alreadyInstalledDesc: 'Vous pouvez accéder à l\'application depuis l\'écran d\'accueil',
+      installNotAvailable: 'Utilisez le menu du navigateur pour ajouter l\'application à l\'écran d\'accueil',
+      installationInstructions: 'Instructions d\'Installation',
+      androidStep1: 'Ouvrez le site dans Chrome',
+      androidStep2: 'Appuyez sur le menu (⋮) en haut',
+      androidStep3: 'Sélectionnez "Installer l\'application" ou "Ajouter à l\'écran d\'accueil"',
+      iosStep1: 'Ouvrez le site dans Safari',
+      iosStep2: 'Appuyez sur le bouton de partage (□↑)',
+      iosStep3: 'Sélectionnez "Ajouter à l\'écran d\'accueil"',
+      desktopStep1: 'Dans Chrome/Edge: Cliquez sur l\'icône d\'installation dans la barre d\'adresse',
+      desktopStep2: 'Ou depuis le menu: Plus d\'outils → Créer un raccourci',
+      features: 'Fonctionnalités',
+      feature1: 'Gestion des Terres et Immobilier',
+      feature2: 'Suivi des Ventes et Versements',
+      feature3: 'Gestion des Clients',
+      feature4: 'Rapports Financiers',
+      requirements: 'Exigences',
+      requirement1: 'Navigateur moderne (Chrome, Safari, Edge)',
+      requirement2: 'Connexion Internet',
+      requirement3: 'Compte utilisateur actif',
+      pwaBenefits: 'Avantages PWA',
+      benefit1: 'Fonctionne sans téléchargement depuis le magasin d\'applications',
+      benefit2: 'Fonctionne hors ligne (Offline)',
+      benefit3: 'Mises à jour automatiques',
+      benefit4: 'Performance rapide et expérience comme une application native',
+    },
     // Security
     security: {
       title: 'Sécurité et Protection',
@@ -908,6 +978,70 @@ export const translations = {
       email: 'Email',
       password: 'Mot de Passe',
       enterEmail: 'Entrez votre email',
+      enterPassword: 'Entrez votre mot de passe',
+      signIn: 'Se Connecter',
+      signingIn: 'Connexion...',
+      unexpectedError: 'Une erreur inattendue s\'est produite',
+    },
+  },
+}
+
+// Helper function to get nested translation
+export function getTranslation(lang: 'ar' | 'fr', key: string): string {
+  const keys = key.split('.')
+  let value: any = translations[lang]
+  
+  for (const k of keys) {
+    value = value?.[k]
+    if (value === undefined) {
+      // Fallback to Arabic if translation not found
+      let fallback: any = translations.ar
+      for (const fk of keys) {
+        fallback = fallback?.[fk]
+        if (fallback === undefined) return key
+      }
+      return fallback || key
+    }
+  }
+  
+  return typeof value === 'string' ? value : key
+}
+
+    login: {
+      title: 'LandDev',
+      subtitle: 'Système de Gestion des Terres et Immobilier',
+      email: 'Email',
+      password: 'Mot de Passe',
+      enterEmail: 'Entrez votre email',
+      enterPassword: 'Entrez votre mot de passe',
+      signIn: 'Se Connecter',
+      signingIn: 'Connexion...',
+      unexpectedError: 'Une erreur inattendue s\'est produite',
+    },
+  },
+}
+
+// Helper function to get nested translation
+export function getTranslation(lang: 'ar' | 'fr', key: string): string {
+  const keys = key.split('.')
+  let value: any = translations[lang]
+  
+  for (const k of keys) {
+    value = value?.[k]
+    if (value === undefined) {
+      // Fallback to Arabic if translation not found
+      let fallback: any = translations.ar
+      for (const fk of keys) {
+        fallback = fallback?.[fk]
+        if (fallback === undefined) return key
+      }
+      return fallback || key
+    }
+  }
+  
+  return typeof value === 'string' ? value : key
+}
+
       enterPassword: 'Entrez votre mot de passe',
       signIn: 'Se Connecter',
       signingIn: 'Connexion...',
