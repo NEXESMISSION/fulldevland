@@ -2250,8 +2250,8 @@ export function LandManagement() {
   const openPriceEditDialog = (batchId: string, piece: LandPiece) => {
     setEditingPricePiece(piece)
     setPriceForm({
-      selling_price_full: piece.selling_price_full.toString(),
-      selling_price_installment: piece.selling_price_installment.toString(),
+      selling_price_full: (piece.selling_price_full || 0).toString(),
+      selling_price_installment: (piece.selling_price_installment || 0).toString(),
     })
     setPriceEditDialogOpen(true)
   }
@@ -2284,13 +2284,28 @@ export function LandManagement() {
 
     setError(null)
     try {
-      const oldFull = editingPricePiece.selling_price_full
-      const oldInstallment = editingPricePiece.selling_price_installment
-      const newFull = parseFloat(priceForm.selling_price_full)
-      const newInstallment = parseFloat(priceForm.selling_price_installment)
-
-      if (isNaN(newFull) || isNaN(newInstallment) || newFull < 0 || newInstallment < 0) {
+      const oldFull = editingPricePiece.selling_price_full || 0
+      const oldInstallment = editingPricePiece.selling_price_installment || 0
+      
+      // Trim and validate input
+      const fullPriceStr = (priceForm.selling_price_full || '').trim().replace(/,/g, '')
+      const installmentPriceStr = (priceForm.selling_price_installment || '').trim().replace(/,/g, '')
+      
+      if (!fullPriceStr || !installmentPriceStr) {
         setError('يرجى إدخال أسعار صحيحة')
+        return
+      }
+      
+      const newFull = parseFloat(fullPriceStr)
+      const newInstallment = parseFloat(installmentPriceStr)
+
+      if (isNaN(newFull) || isNaN(newInstallment)) {
+        setError('يرجى إدخال أرقام صحيحة')
+        return
+      }
+      
+      if (newFull < 0 || newInstallment < 0) {
+        setError('الأسعار يجب أن تكون أكبر من أو تساوي صفر')
         return
       }
 
@@ -5448,8 +5463,12 @@ export function LandManagement() {
                   id="selling_price_full"
                   type="number"
                   step="0.01"
-                  value={priceForm.selling_price_full}
-                  onChange={(e) => setPriceForm({ ...priceForm, selling_price_full: e.target.value })}
+                  min="0"
+                  value={priceForm.selling_price_full || ''}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    setPriceForm({ ...priceForm, selling_price_full: value })
+                  }}
                   placeholder="0.00"
                 />
               </div>
@@ -5459,8 +5478,12 @@ export function LandManagement() {
                   id="selling_price_installment"
                   type="number"
                   step="0.01"
-                  value={priceForm.selling_price_installment}
-                  onChange={(e) => setPriceForm({ ...priceForm, selling_price_installment: e.target.value })}
+                  min="0"
+                  value={priceForm.selling_price_installment || ''}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    setPriceForm({ ...priceForm, selling_price_installment: value })
+                  }}
                   placeholder="0.00"
                 />
               </div>
