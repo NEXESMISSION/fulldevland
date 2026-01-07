@@ -964,8 +964,11 @@ export function Calendar() {
                       )}
                       {offer.advance_amount > 0 && (
                         <div>
-                          <span className="font-medium">التسبقة:</span> {formatCurrency(offer.advance_amount)}
-                          {offer.advance_is_percentage && <span> ({offer.advance_amount}%)</span>}
+                          <span className="font-medium">التسبقة:</span> {
+                            offer.advance_is_percentage 
+                              ? `${offer.advance_amount}%`
+                              : formatCurrency(offer.advance_amount)
+                          }
                         </div>
                       )}
                       {offer.monthly_payment && (
