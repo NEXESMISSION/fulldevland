@@ -31,11 +31,21 @@ import {
 } from '@/components/ui/table'
 import type { Sale, Client, LandPiece, PaymentOffer } from '@/types/database'
 
+interface Rendezvous {
+  id: string
+  sale_id: string
+  rendezvous_date: string
+  rendezvous_time: string
+  notes: string | null
+  status: string
+}
+
 interface SaleWithDetails extends Sale {
   client: Client | null
   land_pieces: LandPiece[]
   _totalBigAdvancePaid?: number
   _totalPaid?: number
+  rendezvous?: Rendezvous[]
 }
 
 export function SaleConfirmation() {
@@ -78,6 +88,21 @@ export function SaleConfirmation() {
 
   // Check permissions - anyone with edit_sales or sale_confirm permission
   const canAccess = hasPermission('edit_sales') || hasPermission('sale_confirm')
+  
+  // Helper function to format rendezvous date and time in a clean, readable way
+  const formatRendezvousDateTime = (date: string, time: string): string => {
+    const dateObj = new Date(date)
+    const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+    const day = dateObj.getDate()
+    const month = months[dateObj.getMonth()]
+    const year = dateObj.getFullYear()
+    
+    // Format time (HH:MM)
+    const [hours, minutes] = time.split(':')
+    const formattedTime = `${hours}:${minutes}`
+    
+    return `${day} ${month} ${year} • ${formattedTime}`
+  }
   
   const openClientDetails = async (client: Client) => {
     setSelectedClientForDetails(client)
@@ -136,6 +161,9 @@ export function SaleConfirmation() {
       setRendezvousTime('')
       setRendezvousNotes('')
       setSelectedSaleForRendezvous(null)
+      
+      // Refresh sales to show the new rendezvous
+      await fetchSales()
     } catch (err) {
       console.error('Error creating rendezvous:', err)
       showNotification('حدث خطأ أثناء إنشاء الموعد', 'error')
@@ -306,6 +334,24 @@ export function SaleConfirmation() {
           } else {
             salesNeedingConfirmation.forEach((sale: any) => {
               sale.land_pieces = []
+            })
+          }
+          
+          // Fetch rendezvous data for all sales
+          const { data: rendezvousData, error: rendezvousError } = await supabase
+            .from('sale_rendezvous')
+            .select('*')
+            .in('sale_id', salesNeedingConfirmation.map((s: any) => s.id))
+            .eq('status', 'scheduled')
+            .order('rendezvous_date', { ascending: true })
+            .order('rendezvous_time', { ascending: true })
+          
+          if (rendezvousError) {
+            console.warn('Error fetching rendezvous:', rendezvousError)
+          } else {
+            // Attach rendezvous to each sale
+            salesNeedingConfirmation.forEach((sale: any) => {
+              sale.rendezvous = (rendezvousData || []).filter((r: any) => r.sale_id === sale.id)
             })
           }
         }
@@ -1321,6 +1367,17 @@ export function SaleConfirmation() {
                           دفعة كبيرة: {formatCurrency(sale._totalBigAdvancePaid || 0)} / {formatCurrency(sale.big_advance_amount)}
                         </Badge>
                       )}
+                      {sale.rendezvous && sale.rendezvous.length > 0 && (() => {
+                        const latestRendezvous = sale.rendezvous[0]
+                        return (
+                          <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded-md">
+                            <Calendar className="h-3.5 w-3.5 text-blue-600" />
+                            <span className="text-xs font-medium text-blue-700">
+                              {formatRendezvousDateTime(latestRendezvous.rendezvous_date, latestRendezvous.rendezvous_time)}
+                            </span>
+                          </div>
+                        )
+                      })()}
                       <span className="text-xs text-muted-foreground">{formatDateTime(sale.created_at || sale.sale_date)}</span>
                     </div>
                   </div>
