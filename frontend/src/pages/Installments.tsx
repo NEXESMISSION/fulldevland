@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { debounce } from '@/lib/throttle'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -200,6 +201,7 @@ function InstallmentCountdown({ dueDate }: { dueDate: string }) {
 
 export function Installments() {
   const { hasPermission, user } = useAuth()
+  const { t } = useLanguage()
   const [installments, setInstallments] = useState<InstallmentWithRelations[]>([])
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false) // Track refresh state separately

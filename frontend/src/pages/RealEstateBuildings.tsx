@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,6 +31,7 @@ import {
   Upload,
   ChevronRight,
   ChevronLeft,
+  ArrowRight,
 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
@@ -67,6 +69,7 @@ interface BoxExpense {
 
 export function RealEstateBuildings() {
   const { user } = useAuth()
+  const { t } = useLanguage()
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -121,7 +124,43 @@ export function RealEstateBuildings() {
         .order('created_at', { ascending: false })
       
       if (error) throw error
-      setProjects(data || [])
+      
+      // Fetch boxes and expenses statistics for each project
+      const projectsWithStats = await Promise.all(
+        (data || []).map(async (project) => {
+          // Get boxes for this project
+          const { data: boxesData } = await supabase
+            .from('project_boxes')
+            .select('id')
+            .eq('project_id', project.id)
+          
+          const boxesCount = boxesData?.length || 0
+          
+          // Get all expenses for all boxes in this project
+          let totalExpenses = 0
+          let expensesCount = 0
+          
+          if (boxesData && boxesData.length > 0) {
+            const boxIds = boxesData.map(b => b.id)
+            const { data: expensesData } = await supabase
+              .from('box_expenses')
+              .select('amount')
+              .in('box_id', boxIds)
+            
+            expensesCount = expensesData?.length || 0
+            totalExpenses = expensesData?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0
+          }
+          
+          return {
+            ...project,
+            _boxesCount: boxesCount,
+            _expensesCount: expensesCount,
+            _totalExpenses: totalExpenses
+          }
+        })
+      )
+      
+      setProjects(projectsWithStats as any)
     } catch (err: any) {
       console.error('Error fetching projects:', err)
       setError(err.message || 'خطأ في تحميل المشاريع')
@@ -504,36 +543,58 @@ export function RealEstateBuildings() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
+          {currentView !== 'projects' && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => {
+                if (currentView === 'expenses') {
+                  setCurrentView('boxes')
+                  setSelectedBox(null)
+                  setExpenses([])
+                  window.history.pushState({ view: 'boxes' }, '')
+                } else if (currentView === 'boxes') {
+                  setCurrentView('projects')
+                  setSelectedProject(null)
+                  setBoxes([])
+                }
+              }} 
+              className="gap-2 hidden md:flex"
+            >
+              <ArrowRight className="h-4 w-4" />
+              {t('common.back')}
+            </Button>
+          )}
           <div>
             <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
               <Building2 className="h-6 w-6 md:h-8 md:w-8 text-primary" />
-              {currentView === 'projects' && 'التطوير والبناء'}
-              {currentView === 'boxes' && selectedProject && `صناديق: ${selectedProject.name}`}
-              {currentView === 'expenses' && selectedBox && `مصروفات: ${selectedBox.name}`}
+              {currentView === 'projects' && t('realEstate.title')}
+              {currentView === 'boxes' && selectedProject && `${t('realEstate.boxes')}: ${selectedProject.name}`}
+              {currentView === 'expenses' && selectedBox && `${t('realEstate.expenses')}: ${selectedBox.name}`}
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
-              {currentView === 'projects' && 'إدارة المشاريع والصناديق والمصروفات'}
-              {currentView === 'boxes' && 'إدارة الصناديق في هذا المشروع'}
-              {currentView === 'expenses' && 'تتبع المصروفات لهذا الصندوق'}
+              {currentView === 'projects' && t('realEstate.subtitle')}
+              {currentView === 'boxes' && t('realEstate.boxes')}
+              {currentView === 'expenses' && t('realEstate.expenses')}
             </p>
           </div>
         </div>
         {currentView === 'projects' && (
           <Button onClick={() => openProjectDialog()} size="lg" className="gap-2">
             <Plus className="h-5 w-5" />
-            مشروع جديد
+            {t('realEstate.newProject')}
           </Button>
         )}
         {currentView === 'boxes' && selectedProject && (
           <Button onClick={() => openBoxDialog()} size="lg" className="gap-2">
             <Plus className="h-5 w-5" />
-            صندوق جديد
+            {t('realEstate.newBox')}
           </Button>
         )}
         {currentView === 'expenses' && selectedBox && (
           <Button onClick={() => openExpenseDialog()} size="lg" className="gap-2">
             <Plus className="h-5 w-5" />
-            مصروف جديد
+            {t('realEstate.newExpense')}
           </Button>
         )}
       </div>
@@ -553,50 +614,86 @@ export function RealEstateBuildings() {
           {projects.length === 0 ? (
             <div className="col-span-full text-center py-12">
               <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-              <p className="text-muted-foreground mb-4">لا توجد مشاريع بعد</p>
+              <p className="text-muted-foreground mb-4">{t('common.noData')}</p>
               <Button onClick={() => openProjectDialog()} className="gap-2" variant="outline">
                 <Plus className="h-4 w-4" />
-                إضافة مشروع جديد
+                {t('realEstate.newProject')}
               </Button>
             </div>
           ) : (
-            projects.map((project) => (
-              <Card key={project.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => handleViewProject(project)}>
+            projects.map((project: any) => (
+              <Card key={project.id} className="hover:shadow-md transition-shadow">
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
-                    <span>{project.name}</span>
-                    <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+                    <span className="flex-1">{project.name}</span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openProjectDialog(project)
+                        }}
+                        className="h-7 w-7"
+                        title={t('common.edit')}
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setItemToDelete({ type: 'project', id: project.id })
+                          setDeleteConfirmOpen(true)
+                        }}
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        title={t('common.delete')}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {project.description && (
-                    <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{project.description}</p>
-                  )}
-                  <div className="flex items-center justify-end gap-1 pt-2 border-t">
+                  <div className="space-y-3">
+                    {project.description && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">{t('realEstate.projectDescription')}:</p>
+                        <p className="text-sm text-foreground">{project.description}</p>
+                      </div>
+                    )}
+                    
+                    <div className="grid grid-cols-2 gap-3 pt-2 border-t">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">{t('realEstate.boxesCount')}:</p>
+                        <p className="text-sm font-semibold">{project._boxesCount || 0}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">{t('realEstate.expensesCount')}:</p>
+                        <p className="text-sm font-semibold">{project._expensesCount || 0}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-xs text-muted-foreground mb-1">{t('realEstate.totalExpenses')}:</p>
+                        <p className="text-sm font-semibold text-primary">{formatCurrency(project._totalExpenses || 0)}</p>
+                      </div>
+                    </div>
+                    
+                    {project.created_at && (
+                      <div className="pt-2 border-t">
+                        <p className="text-xs text-muted-foreground mb-1">{t('realEstate.createdAt')}:</p>
+                        <p className="text-xs text-foreground">{formatDate(project.created_at)}</p>
+                      </div>
+                    )}
+                    
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openProjectDialog(project)
-                      }}
-                      className="h-7 w-7"
-                      title="تعديل"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleViewProject(project)}
+                      className="w-full mt-2"
                     >
-                      <Edit className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setItemToDelete({ type: 'project', id: project.id })
-                        setDeleteConfirmOpen(true)
-                      }}
-                      className="h-7 w-7 text-destructive hover:text-destructive"
-                      title="حذف"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Eye className="h-3.5 w-3.5 ml-1" />
+                      {t('realEstate.viewBoxes')}
                     </Button>
                   </div>
                 </CardContent>
@@ -612,10 +709,10 @@ export function RealEstateBuildings() {
           {boxes.length === 0 ? (
             <div className="col-span-full text-center py-12">
               <Box className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-              <p className="text-muted-foreground mb-4">لا توجد صناديق بعد</p>
+              <p className="text-muted-foreground mb-4">{t('common.noData')}</p>
               <Button onClick={() => openBoxDialog()} className="gap-2" variant="outline">
                 <Plus className="h-4 w-4" />
-                إضافة صندوق جديد
+                {t('realEstate.newBox')}
               </Button>
             </div>
           ) : (
@@ -633,7 +730,7 @@ export function RealEstateBuildings() {
                           openBoxDialog(box)
                         }}
                         className="h-7 w-7"
-                        title="تعديل"
+                        title={t('common.edit')}
                       >
                         <Edit className="h-3.5 w-3.5" />
                       </Button>
@@ -646,7 +743,7 @@ export function RealEstateBuildings() {
                           setDeleteBoxConfirmOpen(true)
                         }}
                         className="h-7 w-7 text-destructive hover:text-destructive"
-                        title="حذف"
+                        title={t('common.delete')}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -657,18 +754,18 @@ export function RealEstateBuildings() {
                   <div className="space-y-3">
                     {box.description && (
                       <div>
-                        <p className="text-xs text-muted-foreground mb-1">الوصف:</p>
+                        <p className="text-xs text-muted-foreground mb-1">{t('realEstate.boxDescription')}:</p>
                         <p className="text-sm text-foreground">{box.description}</p>
                       </div>
                     )}
                     
                     <div className="grid grid-cols-2 gap-3 pt-2 border-t">
                       <div>
-                        <p className="text-xs text-muted-foreground mb-1">عدد المصروفات:</p>
+                        <p className="text-xs text-muted-foreground mb-1">{t('realEstate.expensesCount')}:</p>
                         <p className="text-sm font-semibold">{box._expensesCount || 0}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground mb-1">إجمالي المصروفات:</p>
+                        <p className="text-xs text-muted-foreground mb-1">{t('realEstate.totalExpenses')}:</p>
                         <p className="text-sm font-semibold text-primary">{formatCurrency(box._totalExpenses || 0)}</p>
                       </div>
                     </div>
@@ -680,7 +777,7 @@ export function RealEstateBuildings() {
                       className="w-full mt-2"
                     >
                       <Eye className="h-3.5 w-3.5 ml-1" />
-                      عرض المصروفات
+                      {t('realEstate.viewExpenses')}
                     </Button>
                   </div>
                 </CardContent>
@@ -696,7 +793,7 @@ export function RealEstateBuildings() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
-                <span>المصروفات</span>
+                <span>{t('realEstate.expenses')}</span>
                 <Badge variant="outline" className="text-lg">
                   {formatCurrency(totalExpenses)}
                 </Badge>
@@ -706,10 +803,10 @@ export function RealEstateBuildings() {
               {expenses.length === 0 ? (
                 <div className="text-center py-12">
                   <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                  <p className="text-muted-foreground mb-4">لا توجد مصروفات بعد</p>
+                  <p className="text-muted-foreground mb-4">{t('common.noData')}</p>
                   <Button onClick={() => openExpenseDialog()} className="gap-2" variant="outline">
                     <Plus className="h-4 w-4" />
-                    إضافة مصروف جديد
+                    {t('realEstate.newExpense')}
                   </Button>
                 </div>
               ) : (
@@ -721,32 +818,32 @@ export function RealEstateBuildings() {
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 space-y-2">
                               <div>
-                                <p className="text-xs text-muted-foreground mb-1">المبلغ:</p>
+                                <p className="text-xs text-muted-foreground mb-1">{t('realEstate.amount')}:</p>
                                 <div className="font-bold text-lg text-primary">
                                   {formatCurrency(expense.amount)}
                                 </div>
                               </div>
                               
                               <div>
-                                <p className="text-xs text-muted-foreground mb-1">التاريخ:</p>
+                                <p className="text-xs text-muted-foreground mb-1">{t('common.date')}:</p>
                                 <p className="text-sm font-medium">{formatDate(expense.expense_date)}</p>
                               </div>
                               
                               <div>
-                                <p className="text-xs text-muted-foreground mb-1">الوصف:</p>
+                                <p className="text-xs text-muted-foreground mb-1">{t('realEstate.expenseDescription')}:</p>
                                 <p className="text-sm font-medium">{expense.description}</p>
                               </div>
                               
                               {expense.notes && (
                                 <div>
-                                  <p className="text-xs text-muted-foreground mb-1">ملاحظات:</p>
+                                  <p className="text-xs text-muted-foreground mb-1">{t('common.notes')}:</p>
                                   <p className="text-xs text-foreground">{expense.notes}</p>
                                 </div>
                               )}
                               
                               {expense.image_url && (
                                 <div>
-                                  <p className="text-xs text-muted-foreground mb-1">صورة الدليل:</p>
+                                  <p className="text-xs text-muted-foreground mb-1">{t('realEstate.image')}:</p>
                                   <img
                                     src={expense.image_url}
                                     alt="Expense proof"
@@ -763,7 +860,7 @@ export function RealEstateBuildings() {
                                 size="icon"
                                 onClick={() => openExpenseDialog(expense)}
                                 className="h-7 w-7"
-                                title="تعديل"
+                                title={t('common.edit')}
                               >
                                 <Edit className="h-3.5 w-3.5" />
                               </Button>
@@ -775,7 +872,7 @@ export function RealEstateBuildings() {
                                   setDeleteExpenseConfirmOpen(true)
                                 }}
                                 className="h-7 w-7 text-destructive hover:text-destructive"
-                                title="حذف"
+                                title={t('common.delete')}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
@@ -796,34 +893,34 @@ export function RealEstateBuildings() {
       <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editingProject ? 'تعديل المشروع' : 'مشروع جديد'}</DialogTitle>
+            <DialogTitle>{editingProject ? t('realEstate.editProject') : t('realEstate.newProject')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>اسم المشروع *</Label>
+              <Label>{t('realEstate.projectName')} *</Label>
               <Input
                 value={projectForm.name}
                 onChange={(e) => setProjectForm({ ...projectForm, name: e.target.value })}
-                placeholder="أدخل اسم المشروع"
+                placeholder={t('realEstate.projectName')}
               />
             </div>
             <div className="space-y-2">
-              <Label>الوصف</Label>
+              <Label>{t('realEstate.projectDescription')}</Label>
               <Textarea
                 value={projectForm.description}
                 onChange={(e) => setProjectForm({ ...projectForm, description: e.target.value })}
                 rows={3}
-                placeholder="أدخل وصف المشروع"
+                placeholder={t('realEstate.projectDescription')}
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setProjectDialogOpen(false)}>
-              إلغاء
+              {t('common.cancel')}
             </Button>
             <Button onClick={saveProject} className="gap-2">
               <Save className="h-4 w-4" />
-              حفظ
+              {t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -833,34 +930,34 @@ export function RealEstateBuildings() {
       <Dialog open={boxDialogOpen} onOpenChange={setBoxDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editingBox ? 'تعديل الصندوق' : 'صندوق جديد'}</DialogTitle>
+            <DialogTitle>{editingBox ? t('realEstate.editBox') : t('realEstate.newBox')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>اسم الصندوق *</Label>
+              <Label>{t('realEstate.boxName')} *</Label>
               <Input
                 value={boxForm.name}
                 onChange={(e) => setBoxForm({ ...boxForm, name: e.target.value })}
-                placeholder="مثال: شركة البناء، محمد العامل، إلخ..."
+                placeholder={t('realEstate.boxName')}
               />
             </div>
             <div className="space-y-2">
-              <Label>الوصف</Label>
+              <Label>{t('realEstate.boxDescription')}</Label>
               <Textarea
                 value={boxForm.description}
                 onChange={(e) => setBoxForm({ ...boxForm, description: e.target.value })}
                 rows={3}
-                placeholder="أدخل وصف الصندوق (اختياري)"
+                placeholder={t('realEstate.boxDescription')}
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBoxDialogOpen(false)}>
-              إلغاء
+              {t('common.cancel')}
             </Button>
             <Button onClick={saveBox} className="gap-2">
               <Save className="h-4 w-4" />
-              حفظ
+              {t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -870,20 +967,20 @@ export function RealEstateBuildings() {
       <Dialog open={expenseDialogOpen} onOpenChange={setExpenseDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingExpense ? 'تعديل المصروف' : 'مصروف جديد'}</DialogTitle>
+            <DialogTitle>{editingExpense ? t('realEstate.editExpense') : t('realEstate.newExpense')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>الوصف *</Label>
+              <Label>{t('realEstate.expenseDescription')} *</Label>
               <Input
                 value={expenseForm.description}
                 onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
-                placeholder="أدخل وصف المصروف"
+                placeholder={t('realEstate.expenseDescription')}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>المبلغ (DT) *</Label>
+                <Label>{t('realEstate.amount')} (DT) *</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -893,7 +990,7 @@ export function RealEstateBuildings() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>التاريخ *</Label>
+                <Label>{t('realEstate.expenseDate')} *</Label>
                 <Input
                   type="date"
                   value={expenseForm.expense_date}
@@ -902,16 +999,16 @@ export function RealEstateBuildings() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>ملاحظات</Label>
+              <Label>{t('common.notes')}</Label>
               <Textarea
                 value={expenseForm.notes}
                 onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
                 rows={2}
-                placeholder="أدخل ملاحظات إضافية"
+                placeholder={t('common.notes')}
               />
             </div>
             <div className="space-y-2">
-              <Label>صورة الدليل (اختياري)</Label>
+              <Label>{t('realEstate.image')}</Label>
               <div className="space-y-2">
                 <input
                   ref={fileInputRef}
@@ -928,7 +1025,7 @@ export function RealEstateBuildings() {
                   disabled={uploadingImage}
                 >
                   <Upload className="h-4 w-4" />
-                  {expenseImage ? 'تغيير الصورة' : 'اختر صورة'}
+                  {expenseImage ? t('common.edit') : t('common.add')}
                 </Button>
 
                 {/* Image Preview */}
@@ -961,11 +1058,11 @@ export function RealEstateBuildings() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setExpenseDialogOpen(false)}>
-              إلغاء
+              {t('common.cancel')}
             </Button>
             <Button onClick={saveExpense} className="gap-2" disabled={uploadingImage}>
               <Save className="h-4 w-4" />
-              {uploadingImage ? 'جاري الحفظ...' : 'حفظ'}
+              {uploadingImage ? t('common.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -976,22 +1073,22 @@ export function RealEstateBuildings() {
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
         onConfirm={deleteItem}
-        title="حذف المشروع"
-        description="هل أنت متأكد من حذف هذا المشروع؟ سيتم حذف جميع الصناديق والمصروفات المرتبطة به."
+        title={t('common.delete')}
+        description={t('realEstate.deleteProjectConfirm')}
       />
       <ConfirmDialog
         open={deleteBoxConfirmOpen}
         onOpenChange={setDeleteBoxConfirmOpen}
         onConfirm={deleteItem}
-        title="حذف الصندوق"
-        description="هل أنت متأكد من حذف هذا الصندوق؟ سيتم حذف جميع المصروفات المرتبطة به."
+        title={t('common.delete')}
+        description={t('realEstate.deleteBoxConfirm')}
       />
       <ConfirmDialog
         open={deleteExpenseConfirmOpen}
         onOpenChange={setDeleteExpenseConfirmOpen}
         onConfirm={deleteItem}
-        title="حذف المصروف"
-        description="هل أنت متأكد من حذف هذا المصروف؟"
+        title={t('common.delete')}
+        description={t('realEstate.deleteExpenseConfirm')}
       />
     </div>
   )

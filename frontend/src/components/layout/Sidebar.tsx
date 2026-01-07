@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 import { NotificationBell } from '@/components/ui/notification-bell'
 import {
   LayoutDashboard,
@@ -18,24 +19,28 @@ import {
   Receipt,
   Building2,
   MessageSquare,
+  Languages,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Select } from '@/components/ui/select'
 
 // Nav items with pageId for access control
 // pageId must match the IDs used in Users.tsx ALL_PAGES and stored in allowed_pages
-const navItems = [
-  { to: '/land', icon: Map, label: 'إدارة الأراضي', permission: 'view_land', pageId: 'land' },
-  { to: '/clients', icon: Users, label: 'العملاء', permission: 'view_clients', pageId: 'clients' },
-  { to: '/sales', icon: ShoppingCart, label: 'السجل', permission: 'view_sales', pageId: 'sales' },
-  { to: '/sale-confirmation', icon: CheckCircle2, label: 'تأكيد المبيعات', permission: 'edit_sales', pageId: 'confirm-sales' },
-  { to: '/installments', icon: CreditCard, label: 'الأقساط', permission: 'view_installments', pageId: 'installments' },
-  { to: '/financial', icon: DollarSign, label: 'المالية', permission: 'view_financial', pageId: 'finance' },
-  { to: '/expenses', icon: Receipt, label: 'المصاريف', permission: 'view_financial', pageId: 'expenses' },
-  { to: '/debts', icon: TrendingDown, label: 'الديون', permission: null, pageId: 'debts' },
-  { to: '/real-estate-buildings', icon: Building2, label: 'التطوير والبناء', permission: null, pageId: 'real-estate' },
-  { to: '/messages', icon: MessageSquare, label: 'الرسائل', permission: 'view_messages', pageId: 'messages' },
-  { to: '/users', icon: Settings, label: 'المستخدمين', permission: 'manage_users', pageId: 'users' },
-  { to: '/security', icon: Shield, label: 'الأمان', permission: 'view_audit_logs', pageId: 'security' },
+// Labels will be translated using useLanguage hook
+const getNavItems = (t: (key: string) => string) => [
+  { to: '/', icon: LayoutDashboard, label: t('nav.home'), permission: null, pageId: 'home' },
+  { to: '/land', icon: Map, label: t('nav.land'), permission: 'view_land', pageId: 'land' },
+  { to: '/clients', icon: Users, label: t('nav.clients'), permission: 'view_clients', pageId: 'clients' },
+  { to: '/sales', icon: ShoppingCart, label: t('nav.sales'), permission: 'view_sales', pageId: 'sales' },
+  { to: '/sale-confirmation', icon: CheckCircle2, label: t('nav.confirmSales'), permission: 'edit_sales', pageId: 'confirm-sales' },
+  { to: '/installments', icon: CreditCard, label: t('nav.installments'), permission: 'view_installments', pageId: 'installments' },
+  { to: '/financial', icon: DollarSign, label: t('nav.financial'), permission: 'view_financial', pageId: 'finance' },
+  { to: '/expenses', icon: Receipt, label: t('nav.expenses'), permission: 'view_financial', pageId: 'expenses' },
+  { to: '/debts', icon: TrendingDown, label: t('nav.debts'), permission: null, pageId: 'debts' },
+  { to: '/real-estate-buildings', icon: Building2, label: t('nav.realEstate'), permission: null, pageId: 'real-estate' },
+  { to: '/messages', icon: MessageSquare, label: t('nav.messages'), permission: 'view_messages', pageId: 'messages' },
+  { to: '/users', icon: Settings, label: t('nav.users'), permission: 'manage_users', pageId: 'users' },
+  { to: '/security', icon: Shield, label: t('nav.security'), permission: 'view_audit_logs', pageId: 'security' },
 ]
 
 interface SidebarProps {
@@ -44,6 +49,7 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const { profile, isReady, signOut, hasPermission, hasPageAccess } = useAuth()
+  const { language, setLanguage, t } = useLanguage()
 
   const handleNavClick = () => {
     if (onClose) {
@@ -69,6 +75,9 @@ export function Sidebar({ onClose }: SidebarProps) {
   // Don't render navigation items until profile is fully loaded
   // This prevents flash of unauthorized content
   const shouldRenderNav = isReady && !!profile
+
+  // Get nav items with translations
+  const navItems = getNavItems(t)
 
   // Filter and sort navigation items based on user's custom order
   const getOrderedNavItems = () => {
@@ -130,7 +139,8 @@ export function Sidebar({ onClose }: SidebarProps) {
           return 1 // b comes first
         } else {
           // Both not in order, maintain original order
-          return navItems.indexOf(a) - navItems.indexOf(b)
+          const currentNavItems = getNavItems(t)
+          return currentNavItems.findIndex(item => item.pageId === a.pageId) - currentNavItems.findIndex(item => item.pageId === b.pageId)
         }
       })
     }
@@ -181,6 +191,35 @@ export function Sidebar({ onClose }: SidebarProps) {
       </nav>
 
       <div className="border-t p-4 shrink-0 bg-card">
+        {/* Language Selector */}
+        <div className="mb-3 px-3">
+          <label className="text-xs text-muted-foreground mb-2 block">{t('common.language')}</label>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setLanguage('ar')}
+              className={`flex-1 flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                language === 'ar'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+              }`}
+            >
+              <Languages className="h-3.5 w-3.5" />
+              {t('common.arabic')}
+            </button>
+            <button
+              onClick={() => setLanguage('fr')}
+              className={`flex-1 flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                language === 'fr'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+              }`}
+            >
+              <Languages className="h-3.5 w-3.5" />
+              {t('common.french')}
+            </button>
+          </div>
+        </div>
+        
         <div className="mb-3 px-3">
           <p className="text-sm font-medium">{profile?.name}</p>
           <p className="text-xs text-muted-foreground">
@@ -194,7 +233,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           <LogOut className="h-5 w-5" />
-          تسجيل الخروج
+          {t('common.logout')}
         </button>
       </div>
     </aside>

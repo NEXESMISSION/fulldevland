@@ -16,10 +16,12 @@ import {
   UserCog
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 export function Home() {
   const navigate = useNavigate()
   const { profile, isReady, hasPermission, hasPageAccess } = useAuth()
+  const { t } = useLanguage()
 
   // Get allowed_pages from profile
   const allowedPages = (profile as any)?.allowed_pages as string[] | null | undefined
@@ -34,7 +36,7 @@ export function Home() {
 
   const allItems = [
     {
-      title: 'إدارة الأراضي',
+      title: t('nav.land'),
       icon: Map,
       color: 'bg-blue-500',
       route: '/land',
@@ -42,7 +44,7 @@ export function Home() {
       pageId: 'land',
     },
     {
-      title: 'العملاء',
+      title: t('nav.clients'),
       icon: Users,
       color: 'bg-purple-500',
       route: '/clients',
@@ -50,7 +52,7 @@ export function Home() {
       pageId: 'clients',
     },
     {
-      title: 'السجل',
+      title: t('nav.sales'),
       icon: ShoppingCart,
       color: 'bg-green-500',
       route: '/sales',
@@ -58,7 +60,7 @@ export function Home() {
       pageId: 'sales',
     },
     {
-      title: 'تأكيد المبيعات',
+      title: t('nav.confirmSales'),
       icon: CheckCircle2,
       color: 'bg-emerald-500',
       route: '/sale-confirmation',
@@ -66,7 +68,7 @@ export function Home() {
       pageId: 'confirm-sales',
     },
     {
-      title: 'الأقساط',
+      title: t('nav.installments'),
       icon: CreditCard,
       color: 'bg-indigo-500',
       route: '/installments',
@@ -74,7 +76,7 @@ export function Home() {
       pageId: 'installments',
     },
     {
-      title: 'المالية',
+      title: t('nav.financial'),
       icon: DollarSign,
       color: 'bg-yellow-500',
       route: '/financial',
@@ -82,7 +84,7 @@ export function Home() {
       pageId: 'finance',
     },
     {
-      title: 'المصاريف',
+      title: t('nav.expenses'),
       icon: Receipt,
       color: 'bg-rose-500',
       route: '/expenses',
@@ -90,7 +92,7 @@ export function Home() {
       pageId: 'expenses',
     },
     {
-      title: 'الديون',
+      title: t('nav.debts'),
       icon: TrendingDown,
       color: 'bg-red-500',
       route: '/debts',
@@ -98,7 +100,7 @@ export function Home() {
       pageId: 'debts',
     },
     {
-      title: 'التطوير والبناء',
+      title: t('nav.realEstate'),
       icon: Building2,
       color: 'bg-teal-500',
       route: '/real-estate-buildings',
@@ -106,7 +108,7 @@ export function Home() {
       pageId: 'real-estate',
     },
     {
-      title: 'الرسائل',
+      title: t('nav.messages'),
       icon: MessageSquare,
       color: 'bg-cyan-500',
       route: '/messages',
@@ -114,15 +116,7 @@ export function Home() {
       pageId: 'messages',
     },
     {
-      title: 'العمال',
-      icon: UserCog,
-      color: 'bg-violet-500',
-      route: '/workers',
-      permission: 'view_workers',
-      pageId: 'workers',
-    },
-    {
-      title: 'المستخدمين',
+      title: t('nav.users'),
       icon: Settings,
       color: 'bg-gray-500',
       route: '/users',
@@ -130,7 +124,7 @@ export function Home() {
       pageId: 'users',
     },
     {
-      title: 'الأمان',
+      title: t('nav.security'),
       icon: Shield,
       color: 'bg-orange-500',
       route: '/security',

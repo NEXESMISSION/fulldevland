@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -72,6 +73,7 @@ interface UserStats {
 
 export function Users() {
   const { hasPermission, profile, refreshProfile } = useAuth()
+  const { t } = useLanguage()
   const [users, setUsers] = useState<UserType[]>([])
   const [userStats, setUserStats] = useState<Map<string, UserStats>>(new Map())
   const [loading, setLoading] = useState(true)

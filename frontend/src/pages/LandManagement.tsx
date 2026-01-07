@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback, memo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -214,6 +215,7 @@ function ImageZoomViewer({ src, alt, onError }: { src: string; alt: string; onEr
 
 export function LandManagement() {
   const { hasPermission, user } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const [batches, setBatches] = useState<LandBatchWithPieces[]>([])
   const [loading, setLoading] = useState(true)
@@ -3997,6 +3999,27 @@ export function LandManagement() {
                           </div>
                             
                             <div className="font-semibold text-green-600 text-sm mb-2">{formatCurrency(piece.selling_price_full || 0)}</div>
+                            <div className="font-semibold text-blue-600 text-sm mb-2">
+                              {(() => {
+                                // Only show installment price for reserved pieces with selected offer
+                                if (piece.status === 'Reserved') {
+                                  const sale = reservedSales.find(s => 
+                                    s.land_piece_ids && s.land_piece_ids.includes(piece.id) && 
+                                    s.payment_type === 'Installment'
+                                  )
+                                  if (sale && sale.selected_offer) {
+                                    const offer = sale.selected_offer as PaymentOffer
+                                    if (offer.price_per_m2_installment) {
+                                      const installmentPrice = piece.surface_area * offer.price_per_m2_installment
+                                      const companyFee = (installmentPrice * (offer.company_fee_percentage || 0)) / 100
+                                      return formatCurrency(installmentPrice + companyFee)
+                                    }
+                                  }
+                                }
+                                // For available pieces or reserved without offer, show dash
+                                return <span className="text-muted-foreground text-xs">-</span>
+                              })()}
+                            </div>
                           
                             {/* Show sale info for reserved pieces */}
                             {piece.status === 'Reserved' && (() => {
@@ -4108,6 +4131,7 @@ export function LandManagement() {
                             <TableHead className="py-2 text-center">قطعة</TableHead>
                             <TableHead className="py-2 text-center">م²</TableHead>
                             <TableHead className="py-2 text-right">بالحاضر</TableHead>
+                            <TableHead className="py-2 text-right">بالتقسيط</TableHead>
                             <TableHead className="py-2 text-center">الحالة</TableHead>
                             <TableHead className="py-2 text-center">إجراءات</TableHead>
                       </TableRow>
@@ -4141,6 +4165,27 @@ export function LandManagement() {
                               <TableCell className="py-2 font-medium text-center">{piece.piece_number}</TableCell>
                               <TableCell className="py-2 text-center">{piece.surface_area}</TableCell>
                               <TableCell className="py-2 text-green-600 font-medium text-right">{formatCurrency(piece.selling_price_full || 0)}</TableCell>
+                              <TableCell className="py-2 text-blue-600 font-medium text-right">
+                                {(() => {
+                                  // Only show installment price for reserved pieces with selected offer
+                                  if (piece.status === 'Reserved') {
+                                    const sale = reservedSales.find(s => 
+                                      s.land_piece_ids && s.land_piece_ids.includes(piece.id) && 
+                                      s.payment_type === 'Installment'
+                                    )
+                                    if (sale && sale.selected_offer) {
+                                      const offer = sale.selected_offer as PaymentOffer
+                                      if (offer.price_per_m2_installment) {
+                                        const installmentPrice = piece.surface_area * offer.price_per_m2_installment
+                                        const companyFee = (installmentPrice * (offer.company_fee_percentage || 0)) / 100
+                                        return formatCurrency(installmentPrice + companyFee)
+                                      }
+                                    }
+                                  }
+                                  // For available pieces or reserved without offer, show dash
+                                  return <span className="text-muted-foreground">-</span>
+                                })()}
+                              </TableCell>
                               <TableCell className="py-2 text-center">
                                 <Badge variant={statusColors[piece.status]} className="text-xs">
                               {piece.status === 'Available' ? 'متاح' :

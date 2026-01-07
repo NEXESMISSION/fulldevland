@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
+import { LanguageProvider } from '@/contexts/LanguageContext'
 import { MainLayout } from '@/components/layout/MainLayout'
 import { Login } from '@/pages/Login'
 import { LandManagement } from '@/pages/LandManagement'
@@ -277,10 +278,12 @@ function AppRoutes() {
 function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <NotificationContainer />
-        <AppRoutes />
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <NotificationContainer />
+          <AppRoutes />
+        </AuthProvider>
+      </LanguageProvider>
     </BrowserRouter>
   )
 }

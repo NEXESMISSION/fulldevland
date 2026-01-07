@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -100,6 +101,7 @@ type PaymentTypeFilter = 'Installment' | 'SmallAdvance' | 'Full' | 'BigAdvance' 
 
 export function Financial() {
   const { hasPermission } = useAuth()
+  const { t } = useLanguage()
   const [sales, setSales] = useState<SaleWithClient[]>([])
   const [payments, setPayments] = useState<PaymentWithDetails[]>([])
   const [landPieces, setLandPieces] = useState<Array<LandPiece & { land_batch?: LandBatch }>>([])
@@ -1353,7 +1355,7 @@ export function Financial() {
 
       {/* Payment Details Dialog - Matching Company Fee Design */}
       <Dialog open={paymentDetailDialogOpen} onOpenChange={setPaymentDetailDialogOpen}>
-        <DialogContent className="w-[95vw] sm:w-full max-w-6xl max-h-[95vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] sm:w-full max-w-7xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <DollarSign className="h-5 w-5 text-blue-600" />
@@ -1694,7 +1696,7 @@ export function Financial() {
 
       {/* Company Fee Details Dialog */}
       <Dialog open={companyFeeDialogOpen} onOpenChange={setCompanyFeeDialogOpen}>
-        <DialogContent className="w-[95vw] sm:w-full max-w-6xl max-h-[95vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] sm:w-full max-w-7xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-indigo-600" />

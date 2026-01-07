@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useLanguage } from '@/contexts/LanguageContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -80,6 +81,7 @@ interface ClientMonthlySummary {
 
 export function SalesNew() {
   const { hasPermission, user } = useAuth()
+  const { t } = useLanguage()
   const [sales, setSales] = useState<Sale[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [pieces, setPieces] = useState<LandPiece[]>([])
