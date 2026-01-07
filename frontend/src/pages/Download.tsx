@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Smartphone, CheckCircle2, AlertCircle, Download as InstallIcon, Share2, Globe } from 'lucide-react'
+import { Smartphone, CheckCircle2, AlertCircle, Download as DownloadIcon, Share2, Globe as GlobeIcon } from 'lucide-react'
 import { showNotification } from '@/components/ui/notification'
 
 interface BeforeInstallPromptEvent extends Event {
