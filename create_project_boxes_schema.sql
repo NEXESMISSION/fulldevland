@@ -112,12 +112,15 @@ END;
 $$ language 'plpgsql';
 
 -- Triggers for updated_at
+DROP TRIGGER IF EXISTS update_projects_updated_at ON projects;
 CREATE TRIGGER update_projects_updated_at BEFORE UPDATE ON projects
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_project_boxes_updated_at ON project_boxes;
 CREATE TRIGGER update_project_boxes_updated_at BEFORE UPDATE ON project_boxes
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_box_expenses_updated_at ON box_expenses;
 CREATE TRIGGER update_box_expenses_updated_at BEFORE UPDATE ON box_expenses
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

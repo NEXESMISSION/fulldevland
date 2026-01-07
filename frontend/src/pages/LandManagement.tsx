@@ -3997,27 +3997,6 @@ export function LandManagement() {
                           </div>
                             
                             <div className="font-semibold text-green-600 text-sm mb-2">{formatCurrency(piece.selling_price_full || 0)}</div>
-                            <div className="font-semibold text-blue-600 text-sm mb-2">
-                              {(() => {
-                                // For reserved pieces, calculate installment price from selected offer
-                                if (piece.status === 'Reserved') {
-                                  const sale = reservedSales.find(s => 
-                                    s.land_piece_ids && s.land_piece_ids.includes(piece.id) && 
-                                    s.payment_type === 'Installment'
-                                  )
-                                  if (sale && sale.selected_offer) {
-                                    const offer = sale.selected_offer as PaymentOffer
-                                    if (offer.price_per_m2_installment) {
-                                      const installmentPrice = piece.surface_area * offer.price_per_m2_installment
-                                      const companyFee = (installmentPrice * (offer.company_fee_percentage || 0)) / 100
-                                      return formatCurrency(installmentPrice + companyFee)
-                                    }
-                                  }
-                                }
-                                // For available pieces or if no offer, use stored value
-                                return formatCurrency(piece.selling_price_installment || 0)
-                              })()}
-                            </div>
                           
                             {/* Show sale info for reserved pieces */}
                             {piece.status === 'Reserved' && (() => {
@@ -4129,7 +4108,6 @@ export function LandManagement() {
                             <TableHead className="py-2">قطعة</TableHead>
                             <TableHead className="py-2">م²</TableHead>
                             <TableHead className="py-2">كامل</TableHead>
-                            <TableHead className="py-2">أقساط</TableHead>
                             <TableHead className="py-2">الحالة</TableHead>
                             <TableHead className="py-2">إجراءات</TableHead>
                       </TableRow>
@@ -4163,27 +4141,6 @@ export function LandManagement() {
                               <TableCell className="py-2 font-medium">{piece.piece_number}</TableCell>
                               <TableCell className="py-2">{piece.surface_area}</TableCell>
                               <TableCell className="py-2 text-green-600 font-medium">{formatCurrency(piece.selling_price_full || 0)}</TableCell>
-                              <TableCell className="py-2 text-blue-600">
-                                {(() => {
-                                  // For reserved pieces, calculate installment price from selected offer
-                                  if (piece.status === 'Reserved') {
-                                    const sale = reservedSales.find(s => 
-                                      s.land_piece_ids && s.land_piece_ids.includes(piece.id) && 
-                                      s.payment_type === 'Installment'
-                                    )
-                                    if (sale && sale.selected_offer) {
-                                      const offer = sale.selected_offer as PaymentOffer
-                                      if (offer.price_per_m2_installment) {
-                                        const installmentPrice = piece.surface_area * offer.price_per_m2_installment
-                                        const companyFee = (installmentPrice * (offer.company_fee_percentage || 0)) / 100
-                                        return formatCurrency(installmentPrice + companyFee)
-                                      }
-                                    }
-                                  }
-                                  // For available pieces or if no offer, use stored value
-                                  return formatCurrency(piece.selling_price_installment || 0)
-                                })()}
-                              </TableCell>
                               <TableCell className="py-2">
                                 <Badge variant={statusColors[piece.status]} className="text-xs">
                               {piece.status === 'Available' ? 'متاح' :

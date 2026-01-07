@@ -96,12 +96,10 @@ export function RealEstateBuildings() {
     amount: '',
     expense_date: new Date().toISOString().split('T')[0],
     notes: '',
-    image_url: '', // Direct URL input
   })
   const [expenseImage, setExpenseImage] = useState<File | null>(null)
   const [expenseImagePreview, setExpenseImagePreview] = useState<string | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
-  const [imageInputMode, setImageInputMode] = useState<'upload' | 'url'>('url') // Default to URL
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Delete confirmations
@@ -301,11 +299,9 @@ export function RealEstateBuildings() {
         amount: expense.amount.toString(),
         expense_date: expense.expense_date,
         notes: expense.notes || '',
-        image_url: expense.image_url || '',
       })
       setExpenseImagePreview(expense.image_url)
       setExpenseImage(null)
-      setImageInputMode(expense.image_url ? 'url' : 'upload')
     } else {
       setEditingExpense(null)
       setExpenseForm({
@@ -313,11 +309,9 @@ export function RealEstateBuildings() {
         amount: '',
         expense_date: new Date().toISOString().split('T')[0],
         notes: '',
-        image_url: '',
       })
       setExpenseImagePreview(null)
       setExpenseImage(null)
-      setImageInputMode('url')
     }
     setError(null)
     setExpenseDialogOpen(true)
@@ -332,20 +326,6 @@ export function RealEstateBuildings() {
         setExpenseImagePreview(reader.result as string)
       }
       reader.readAsDataURL(file)
-      setExpenseForm({ ...expenseForm, image_url: '' }) // Clear URL when file is selected
-    }
-  }
-
-  const handleImageUrlChange = (url: string) => {
-    setExpenseForm({ ...expenseForm, image_url: url })
-    if (url.trim()) {
-      setExpenseImagePreview(url)
-      setExpenseImage(null) // Clear file when URL is entered
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    } else {
-      setExpenseImagePreview(null)
     }
   }
 
@@ -359,10 +339,8 @@ export function RealEstateBuildings() {
     try {
       let imageUrl: string | null = null
 
-      // Priority: URL input > File upload
-      if (expenseForm.image_url && expenseForm.image_url.trim()) {
-        imageUrl = expenseForm.image_url.trim()
-      } else if (expenseImage) {
+      // Upload file if selected
+      if (expenseImage) {
         const uploadedUrl = await uploadImage(expenseImage)
         if (uploadedUrl) {
           imageUrl = uploadedUrl
@@ -869,69 +847,23 @@ export function RealEstateBuildings() {
             <div className="space-y-2">
               <Label>صورة الدليل (اختياري)</Label>
               <div className="space-y-2">
-                {/* Toggle between URL and Upload */}
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant={imageInputMode === 'url' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => {
-                      setImageInputMode('url')
-                      setExpenseImage(null)
-                      if (fileInputRef.current) {
-                        fileInputRef.current.value = ''
-                      }
-                    }}
-                    className="flex-1"
-                  >
-                    رابط URL
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={imageInputMode === 'upload' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => {
-                      setImageInputMode('upload')
-                      setExpenseForm({ ...expenseForm, image_url: '' })
-                    }}
-                    className="flex-1"
-                  >
-                    رفع ملف
-                  </Button>
-                </div>
-
-                {/* URL Input Mode */}
-                {imageInputMode === 'url' && (
-                  <Input
-                    type="url"
-                    value={expenseForm.image_url}
-                    onChange={(e) => handleImageUrlChange(e.target.value)}
-                    placeholder="أدخل رابط الصورة (URL)"
-                  />
-                )}
-
-                {/* File Upload Mode */}
-                {imageInputMode === 'upload' && (
-                  <>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageSelect}
-                      className="hidden"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full gap-2"
-                      disabled={uploadingImage}
-                    >
-                      <Upload className="h-4 w-4" />
-                      {expenseImage ? 'تغيير الصورة' : 'اختر صورة'}
-                    </Button>
-                  </>
-                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full gap-2"
+                  disabled={uploadingImage}
+                >
+                  <Upload className="h-4 w-4" />
+                  {expenseImage ? 'تغيير الصورة' : 'اختر صورة'}
+                </Button>
 
                 {/* Image Preview */}
                 {expenseImagePreview && (
@@ -947,7 +879,6 @@ export function RealEstateBuildings() {
                       size="sm"
                       onClick={() => {
                         setExpenseImage(null)
-                        setExpenseForm({ ...expenseForm, image_url: '' })
                         setExpenseImagePreview(null)
                         if (fileInputRef.current) {
                           fileInputRef.current.value = ''
