@@ -247,18 +247,24 @@ export function Download() {
                 </Button>
               </div>
 
-              {/* Info Alert */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 max-w-md">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                  <div className="text-xs text-blue-800 space-y-1">
-                    <p><strong>ملاحظة:</strong> إذا لم يعمل التحميل، تأكد من:</p>
-                    <ul className="list-disc list-inside mr-2 space-y-0.5">
-                      <li>ملف APK موجود في Supabase Storage (bucket: app-downloads)</li>
-                      <li>أو في مجلد public باسم app.apk</li>
-                      <li>المتصفح يسمح بتحميل الملفات</li>
-                    </ul>
-                  </div>
+              {/* Setup Instructions */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md">
+                <h4 className="font-semibold mb-2 text-sm flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-blue-600" />
+                  إعداد التحميل
+                </h4>
+                <div className="text-xs text-blue-800 space-y-2">
+                  <p><strong>لتفعيل التحميل:</strong></p>
+                  <ol className="list-decimal list-inside mr-2 space-y-1">
+                    <li>اذهب إلى Supabase Dashboard → Storage</li>
+                    <li>أنشئ bucket جديد باسم: <code className="bg-blue-100 px-1 rounded">app-downloads</code></li>
+                    <li>فعّل "Public bucket"</li>
+                    <li>شغّل ملف <code className="bg-blue-100 px-1 rounded">create_app_downloads_bucket.sql</code></li>
+                    <li>ارفع ملف APK باسم <code className="bg-blue-100 px-1 rounded">app.apk</code></li>
+                  </ol>
+                  <p className="mt-2 text-blue-700">
+                    <strong>أو:</strong> ضع ملف APK في <code className="bg-blue-100 px-1 rounded">frontend/public/app.apk</code>
+                  </p>
                 </div>
               </div>
             </div>
