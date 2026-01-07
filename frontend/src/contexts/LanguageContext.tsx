@@ -7,7 +7,7 @@ export type Language = 'ar' | 'fr'
 interface LanguageContextType {
   language: Language
   setLanguage: (lang: Language) => void
-  t: (key: string) => string
+  t: (key: string, params?: Record<string, string | number>) => string
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined)
@@ -42,9 +42,15 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = storedLang
   }, [])
 
-  // Translation function
-  const t = (key: string): string => {
-    return getTranslation(language, key)
+  // Translation function with parameter support
+  const t = (key: string, params?: Record<string, string | number>): string => {
+    let translation = getTranslation(language, key)
+    if (params) {
+      Object.keys(params).forEach(param => {
+        translation = translation.replace(`{${param}}`, String(params[param]))
+      })
+    }
+    return translation
   }
 
   return (

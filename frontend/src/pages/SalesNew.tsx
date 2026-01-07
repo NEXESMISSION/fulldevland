@@ -319,7 +319,7 @@ export function SalesNew() {
           batchName: piece.land_batch?.name || '',
           surfaceArea: piece.surface_area,
           clientId: sale.client_id,
-          clientName: client?.name || 'غير معروف',
+          clientName: client?.name || t('sales.unknown'),
           paymentType: isInstallment ? 'Installment' : 'Full',
           price: pricePerPiece,
           cost: costPerPiece,
@@ -1151,7 +1151,7 @@ export function SalesNew() {
           </Button>
           <div className="flex items-center gap-2 border rounded-md px-2 min-w-[140px]">
             <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            <Input
+        <Input
               type="date"
               value={selectedDate}
               onChange={(e) => {
@@ -1181,30 +1181,30 @@ export function SalesNew() {
               }}
             />
             {selectedDate && (
-              <Button
+            <Button
                 variant="ghost"
-                size="sm"
+              size="sm"
                 onClick={(e) => {
                   e.stopPropagation()
                   setSelectedDate('')
                   setTimePeriodFilter('all')
                 }}
                 className="h-6 w-6 p-0 flex-shrink-0"
-              >
+            >
                 <X className="h-3 w-3" />
-              </Button>
-            )}
+            </Button>
+        )}
           </div>
         </div>
       </div>
 
       {/* Compact Stats - Inline */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm">
-        <span className="text-muted-foreground">إجمالي: <strong className="text-blue-600">{filteredAndSortedSales.length}</strong></span>
-        <span className="text-muted-foreground">مباع: <strong className="text-green-600">{filteredAndSortedSales.filter(s => s.status === 'Completed').length}</strong></span>
-        <span className="text-muted-foreground">بالحاضر: <strong className="text-blue-600">{filteredAndSortedSales.filter(s => s.paymentType === 'Full' && s.status !== 'Completed').length}</strong></span>
-        <span className="text-muted-foreground">بالتقسيط: <strong className="text-purple-600">{filteredAndSortedSales.filter(s => s.paymentType === 'Installment' && s.status !== 'Completed').length}</strong></span>
-        <span className="text-muted-foreground">محجوز: <strong className="text-orange-600">{filteredAndSortedSales.filter(s => s.status === 'Pending' && !(s as any).is_confirmed).length}</strong></span>
+        <span className="text-muted-foreground">{t('sales.total')}: <strong className="text-blue-600">{filteredAndSortedSales.length}</strong></span>
+        <span className="text-muted-foreground">{t('sales.sold')}: <strong className="text-green-600">{filteredAndSortedSales.filter(s => s.status === 'Completed').length}</strong></span>
+        <span className="text-muted-foreground">{t('sales.full')}: <strong className="text-blue-600">{filteredAndSortedSales.filter(s => s.paymentType === 'Full' && s.status !== 'Completed').length}</strong></span>
+        <span className="text-muted-foreground">{t('sales.installment')}: <strong className="text-purple-600">{filteredAndSortedSales.filter(s => s.paymentType === 'Installment' && s.status !== 'Completed').length}</strong></span>
+        <span className="text-muted-foreground">{t('sales.reserved')}: <strong className="text-orange-600">{filteredAndSortedSales.filter(s => s.status === 'Pending' && !(s as any).is_confirmed).length}</strong></span>
       </div>
 
 
@@ -1312,55 +1312,55 @@ export function SalesNew() {
                       
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <span className="text-muted-foreground">النوع:</span>
+                          <span className="text-muted-foreground">{t('sales.type')}:</span>
                           <Badge variant={sale.paymentType === 'Full' ? 'success' : 'secondary'} className="text-xs ml-1">
-                            {sale.paymentType === 'Full' ? 'بالحاضر' : 'بالتقسيط'}
+                            {sale.paymentType === 'Full' ? t('sales.full') : t('sales.installment')}
                           </Badge>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">السعر:</span>
+                          <span className="text-muted-foreground">{t('sales.price')}:</span>
                           <span className="font-medium ml-1">{formatCurrency(sale.price)}</span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">عربون:</span>
+                          <span className="text-muted-foreground">{t('sales.reservation')}:</span>
                           <span className="font-medium text-green-600 ml-1">{formatCurrency(sale.reservationAmount)}</span>
                         </div>
                         {sale.paymentType === 'Installment' && (
                           <div>
-                            <span className="text-muted-foreground">الدفعة الأولى:</span>
+                            <span className="text-muted-foreground">{t('sales.firstPayment')}:</span>
                             <span className="font-medium text-blue-600 ml-1">{formatCurrency(bigAdvancePaid)}</span>
                           </div>
                         )}
                         <div className="col-span-2">
-                          <span className="text-muted-foreground">المتبقي:</span>
+                          <span className="text-muted-foreground">{t('sales.remaining')}:</span>
                           <span className="font-medium ml-1">{formatCurrency((sale as any).remainingAmount ?? sale.price)}</span>
                         </div>
                       </div>
                       
                       {sale.companyFeeAmount && sale.companyFeeAmount > 0 && (
                         <div className="text-xs bg-blue-50 p-2 rounded border border-blue-200">
-                          <span className="text-blue-700">عمولة الشركة: {formatCurrency(sale.companyFeeAmount)}</span>
+                          <span className="text-blue-700">{t('sales.companyFee')}: {formatCurrency(sale.companyFeeAmount)}</span>
                         </div>
                       )}
                       
                       {/* Seller Account Name */}
                       {(confirmedByUser || createdByUser) && (
                         <div className="text-xs text-muted-foreground pt-2 border-t">
-                          <div className="font-medium">البائع:</div>
-                          <div className="text-blue-600">{confirmedByUser?.name || createdByUser?.name || 'غير معروف'}</div>
+                          <div className="font-medium">{t('sales.seller')}:</div>
+                          <div className="text-blue-600">{confirmedByUser?.name || createdByUser?.name || t('sales.unknown')}</div>
                         </div>
                       )}
                       
                       {user?.role === 'Owner' && (createdByUser || confirmedByUser) && (
                         <div className="text-xs text-muted-foreground pt-2 border-t">
-                          {createdByUser && <div>أنشأ: {createdByUser.name}</div>}
-                          {confirmedByUser && <div className="text-green-600">أكد: {confirmedByUser.name}</div>}
+                          {createdByUser && <div>{t('sales.created')}: {createdByUser.name}</div>}
+                          {confirmedByUser && <div className="text-green-600">{t('sales.confirmed')}: {confirmedByUser.name}</div>}
                         </div>
                       )}
                       
                       {/* Date and Time */}
                       <div className="text-xs text-muted-foreground pt-2 border-t">
-                        <div className="font-medium">تاريخ الإتمام:</div>
+                        <div className="font-medium">{t('sales.completionDate')}:</div>
                         <div>{formatDateTime(sale.updatedAt || sale.createdAt || sale.saleDate)}</div>
                       </div>
                     </div>
@@ -1377,17 +1377,17 @@ export function SalesNew() {
               <Table className="min-w-full">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[150px] text-right">العميل</TableHead>
-                    <TableHead className="w-[120px] text-right">القطعة</TableHead>
-                    <TableHead className="w-[80px] text-center">النوع</TableHead>
-                    <TableHead className="w-[100px] text-right">السعر</TableHead>
-                    <TableHead className="w-[100px] text-right">عربون</TableHead>
-                    <TableHead className="w-[120px] text-right">الدفعة الأولى</TableHead>
-                    <TableHead className="w-[100px] text-right">المتبقي</TableHead>
-                    <TableHead className="w-[100px] text-center">الحالة</TableHead>
-                    <TableHead className="w-[180px] text-right">البائع والتاريخ</TableHead>
+                    <TableHead className="w-[150px] text-right">{t('sales.client')}</TableHead>
+                    <TableHead className="w-[120px] text-right">{t('sales.piece')}</TableHead>
+                    <TableHead className="w-[80px] text-center">{t('sales.type')}</TableHead>
+                    <TableHead className="w-[100px] text-right">{t('sales.price')}</TableHead>
+                    <TableHead className="w-[100px] text-right">{t('sales.reservation')}</TableHead>
+                    <TableHead className="w-[120px] text-right">{t('sales.bigAdvance')}</TableHead>
+                    <TableHead className="w-[100px] text-right">{t('sales.remaining')}</TableHead>
+                    <TableHead className="w-[100px] text-center">{t('sales.status')}</TableHead>
+                    <TableHead className="w-[180px] text-right">{t('sales.seller')}</TableHead>
                     {user?.role === 'Owner' && (
-                      <TableHead className="w-[120px]">المستخدم</TableHead>
+                      <TableHead className="w-[120px]">{t('sales.user')}</TableHead>
                     )}
                   </TableRow>
                 </TableHeader>
@@ -1558,21 +1558,21 @@ export function SalesNew() {
           {selectedSale && (
             <div className="space-y-3 sm:space-y-4">
               <div className="bg-muted/50 p-3 sm:p-4 rounded-lg space-y-2 text-xs sm:text-sm">
-                <p><strong>العميل:</strong> {selectedSale.clientName}</p>
-                <p><strong>القطعة:</strong> {selectedSale.batchName} - {selectedSale.pieceName}</p>
-                <p><strong>السعر:</strong> {formatCurrency(selectedSale.price)}</p>
+                <p><strong>{t('sales.client')}:</strong> {selectedSale.clientName}</p>
+                <p><strong>{t('sales.piece')}:</strong> {selectedSale.batchName} - {selectedSale.pieceName}</p>
+                <p><strong>{t('sales.price')}:</strong> {formatCurrency(selectedSale.price)}</p>
               </div>
               <p className="text-xs sm:text-sm text-muted-foreground">
-                سيتم تأكيد استلام الدفعة الكاملة وتحويل حالة القطعة إلى "مباعة".
+                {t('sales.confirmFullPayment')}
               </p>
             </div>
           )}
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setConfirmFullOpen(false)} className="w-full sm:w-auto">
-              إلغاء
+              {t('sales.cancel')}
             </Button>
             <Button onClick={confirmFullPayment} disabled={isSubmitting} className="bg-green-600 w-full sm:w-auto">
-              {isSubmitting ? 'جاري التأكيد...' : 'تأكيد الدفع'}
+              {isSubmitting ? t('sales.confirming') : t('sales.confirmPayment')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1582,16 +1582,16 @@ export function SalesNew() {
       <Dialog open={confirmBigAdvanceOpen} onOpenChange={setConfirmBigAdvanceOpen}>
         <DialogContent className="w-[95vw] sm:w-full max-w-lg max-h-[95vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>تأكيد الدفعة الأولى وإنشاء جدول الأقساط</DialogTitle>
+            <DialogTitle>{t('sales.confirmFirstPayment')}</DialogTitle>
           </DialogHeader>
           {selectedSale && (
             <div className="space-y-3 sm:space-y-4">
               <div className="bg-muted/50 p-3 sm:p-4 rounded-lg space-y-2 text-xs sm:text-sm">
-                <p><strong>العميل:</strong> {selectedSale.clientName}</p>
-                <p><strong>القطعة:</strong> {selectedSale.batchName} - {selectedSale.pieceName}</p>
-                <p><strong>السعر الإجمالي:</strong> {formatCurrency(selectedSale.price)}</p>
+                <p><strong>{t('sales.client')}:</strong> {selectedSale.clientName}</p>
+                <p><strong>{t('sales.piece')}:</strong> {selectedSale.batchName} - {selectedSale.pieceName}</p>
+                <p><strong>{t('sales.totalPrice')}:</strong> {formatCurrency(selectedSale.price)}</p>
                 {selectedSale.bigAdvanceDueDate && (
-                  <p><strong>تاريخ استحقاق الدفعة:</strong> {formatDate(selectedSale.bigAdvanceDueDate)}</p>
+                  <p><strong>{t('sales.dueDate')}:</strong> {formatDate(selectedSale.bigAdvanceDueDate)}</p>
                 )}
               </div>
 
@@ -1622,13 +1622,13 @@ export function SalesNew() {
                     className="rounded"
                   />
                   <Label htmlFor="applyCompanyFeeInstallment" className="font-medium cursor-pointer">
-                    تطبيق عمولة الشركة
+                    {t('sales.applyCompanyFee')}
                   </Label>
                 </div>
                 {applyCompanyFee && (
                   <div className="space-y-2 pr-6">
                     <div className="flex items-center gap-2">
-                      <Label htmlFor="companyFeePercentageInstallment" className="text-sm">النسبة المئوية:</Label>
+                      <Label htmlFor="companyFeePercentageInstallment" className="text-sm">{t('sales.percentage')}:</Label>
                       <Input
                         id="companyFeePercentageInstallment"
                         type="number"
@@ -1643,17 +1643,17 @@ export function SalesNew() {
                     </div>
                     <div className="space-y-1 text-sm border-t pt-2 mt-2">
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">سعر البيع:</span>
+                        <span className="text-muted-foreground">{t('sales.sellingPrice')}:</span>
                         <span className="font-medium">{formatCurrency(selectedSale.price)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">عمولة الشركة ({companyFeePercentage}%):</span>
+                        <span className="text-muted-foreground">{t('sales.companyFeePercent', { percent: companyFeePercentage })}:</span>
                         <span className="font-medium text-blue-600">
                           {formatCurrency((selectedSale.price * parseFloat(companyFeePercentage || '2')) / 100)}
                         </span>
                       </div>
                       <div className="flex justify-between font-bold text-lg pt-1 border-t">
-                        <span>المبلغ الإجمالي المستحق:</span>
+                        <span>{t('sales.totalAmountDue')}:</span>
                         <span className="text-green-600">
                           {formatCurrency(selectedSale.price + (selectedSale.price * parseFloat(companyFeePercentage || '2')) / 100)}
                         </span>
@@ -1664,27 +1664,27 @@ export function SalesNew() {
               </div>
 
               <div className="space-y-2">
-                <Label>مبلغ الدفعة الأولى المستلم</Label>
+                <Label>{t('sales.firstPaymentReceived')}</Label>
                 <Input
                   type="number"
                   value={bigAdvancePaidAmount}
                   onChange={e => setBigAdvancePaidAmount(e.target.value)}
-                  placeholder="أدخل المبلغ المستلم"
+                  placeholder={t('sales.enterAmountReceived')}
                 />
                 <p className="text-xs text-muted-foreground">
-                  مبلغ الدفعة الأولى فقط (بدون العربون وبدون عمولة الشركة)
+                  {t('sales.firstPaymentOnly')}
                 </p>
               </div>
 
               <div className="space-y-2">
-                <Label>تاريخ أول قسط شهري</Label>
+                <Label>{t('sales.firstMonthlyInstallmentDate')}</Label>
                 <Input
                   type="date"
                   value={installmentStartDate}
                   onChange={e => setInstallmentStartDate(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  سيتم حساب الأقساط الشهرية ابتداءً من هذا التاريخ
+                  {t('sales.monthlyInstallmentsCalculatedFrom')}
                 </p>
               </div>
 
@@ -1692,16 +1692,16 @@ export function SalesNew() {
                 <div className="bg-blue-50 p-3 rounded-lg space-y-1">
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-blue-800">العربون:</span>
+                      <span className="text-blue-800">{t('sales.reservation')}:</span>
                       <span className="font-medium text-blue-800">{formatCurrency(selectedSale.reservationAmount)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-blue-800">مبلغ الدفعة الأولى:</span>
+                      <span className="text-blue-800">{t('sales.firstPaymentAmount')}:</span>
                       <span className="font-medium text-blue-800">{formatCurrency(parseFloat(bigAdvancePaidAmount))}</span>
                     </div>
                     {applyCompanyFee && (
                       <div className="flex justify-between">
-                        <span className="text-blue-800">عمولة الشركة ({companyFeePercentage}%):</span>
+                        <span className="text-blue-800">{t('sales.companyFeePercent', { percent: companyFeePercentage })}:</span>
                         <span className="font-medium text-blue-800">
                           {formatCurrency((selectedSale.price * parseFloat(companyFeePercentage || '2')) / 100)}
                         </span>
@@ -1710,7 +1710,7 @@ export function SalesNew() {
                   </div>
                   <div className="border-t pt-2 mt-2">
                     <p className="text-sm text-blue-800 font-bold">
-                      <strong>الدفعة الأولى الإجمالية (تشمل العربون + الدفعة الأولى + عمولة الشركة):</strong>{' '}
+                      <strong>{t('sales.totalFirstPayment')}:</strong>{' '}
                       {formatCurrency(
                         parseFloat(bigAdvancePaidAmount) + 
                         selectedSale.reservationAmount + 
@@ -1720,11 +1720,11 @@ export function SalesNew() {
                   </div>
                   <div className="border-t pt-2 mt-2 space-y-1">
                   <p className="text-sm text-blue-800">
-                      <strong>المبلغ المتبقي (بعد الدفعة الأولى والعربون):</strong>{' '}
+                      <strong>{t('sales.remainingAfterFirstPayment')}:</strong>{' '}
                     {formatCurrency(selectedSale.price - parseFloat(bigAdvancePaidAmount) - selectedSale.reservationAmount)}
                   </p>
                   <p className="text-sm text-blue-800">
-                    <strong>القسط الشهري:</strong>{' '}
+                    <strong>{t('sales.monthlyInstallment')}:</strong>{' '}
                     {formatCurrency(
                         (selectedSale.price - parseFloat(bigAdvancePaidAmount) - selectedSale.reservationAmount) / parseInt(numberOfInstallments || '12')
                     )}
@@ -1883,27 +1883,27 @@ export function SalesNew() {
                 {/* Client Information */}
                 <Card>
                   <CardContent className="p-4">
-                    <h3 className="font-semibold mb-3 text-lg">معلومات العميل</h3>
+                    <h3 className="font-semibold mb-3 text-lg">{t('sales.clientInfo')}</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <p className="text-sm text-muted-foreground">الاسم</p>
-                        <p className="font-medium">{client?.name || 'غير معروف'}</p>
+                        <p className="text-sm text-muted-foreground">{t('sales.clientName')}</p>
+                        <p className="font-medium">{client?.name || t('sales.unknown')}</p>
               </div>
                       <div>
-                        <p className="text-sm text-muted-foreground">رقم CIN</p>
+                        <p className="text-sm text-muted-foreground">{t('sales.cin')}</p>
                         <p className="font-medium">{client?.cin || '-'}</p>
             </div>
                       <div>
-                        <p className="text-sm text-muted-foreground">رقم الهاتف</p>
+                        <p className="text-sm text-muted-foreground">{t('sales.phone')}</p>
                         <p className="font-medium">{client?.phone || '-'}</p>
               </div>
                       <div>
-                        <p className="text-sm text-muted-foreground">البريد الإلكتروني</p>
+                        <p className="text-sm text-muted-foreground">{t('sales.email')}</p>
                         <p className="font-medium">{client?.email || '-'}</p>
               </div>
                       {client?.address && (
                         <div className="sm:col-span-2">
-                          <p className="text-sm text-muted-foreground">العنوان</p>
+                          <p className="text-sm text-muted-foreground">{t('sales.address')}</p>
                           <p className="font-medium">{client.address}</p>
             </div>
                       )}
@@ -1955,11 +1955,11 @@ export function SalesNew() {
                         {selectedSaleForDetails.companyFeeAmount && selectedSaleForDetails.companyFeeAmount > 0 && (
                           <>
                             <div>
-                              <p className="text-sm text-muted-foreground">عمولة الشركة (%)</p>
+                              <p className="text-sm text-muted-foreground">{t('sales.companyFeePercent', { percent: selectedSaleForDetails.companyFeePercentage || 0 })}</p>
                               <p className="font-medium">{selectedSaleForDetails.companyFeePercentage || 0}%</p>
                             </div>
                             <div>
-                              <p className="text-sm text-muted-foreground">مبلغ العمولة</p>
+                              <p className="text-sm text-muted-foreground">{t('sales.companyFeeAmount')}</p>
                               <p className="font-medium text-blue-600">{formatCurrency(selectedSaleForDetails.companyFeeAmount)}</p>
                             </div>
                             <div className="sm:col-span-2">
@@ -2222,24 +2222,24 @@ export function SalesNew() {
             <div className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">الاسم</p>
+                  <p className="text-sm text-muted-foreground">{t('sales.clientName')}</p>
                   <p className="font-medium">{selectedClientForDetails.name}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">رقم CIN</p>
+                  <p className="text-sm text-muted-foreground">{t('sales.cin')}</p>
                   <p className="font-medium">{selectedClientForDetails.cin}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">رقم الهاتف</p>
+                  <p className="text-sm text-muted-foreground">{t('sales.phone')}</p>
                   <p className="font-medium">{selectedClientForDetails.phone || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">البريد الإلكتروني</p>
+                  <p className="text-sm text-muted-foreground">{t('sales.email')}</p>
                   <p className="font-medium">{selectedClientForDetails.email || '-'}</p>
                 </div>
                 {selectedClientForDetails.address && (
                   <div className="sm:col-span-2">
-                    <p className="text-sm text-muted-foreground">العنوان</p>
+                    <p className="text-sm text-muted-foreground">{t('sales.address')}</p>
                     <p className="font-medium">{selectedClientForDetails.address}</p>
                   </div>
                 )}
@@ -2247,15 +2247,15 @@ export function SalesNew() {
 
               {clientSales.length > 0 && (
                 <div>
-                  <h4 className="font-semibold mb-2">سجل المبيعات</h4>
+                  <h4 className="font-semibold mb-2">{t('sales.salesHistory')}</h4>
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>التاريخ</TableHead>
-                          <TableHead>النوع</TableHead>
-                          <TableHead>السعر</TableHead>
-                          <TableHead>الحالة</TableHead>
+                          <TableHead>{t('sales.saleDate')}</TableHead>
+                          <TableHead>{t('sales.saleType')}</TableHead>
+                          <TableHead>{t('sales.salePrice')}</TableHead>
+                          <TableHead>{t('sales.saleStatus')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2274,7 +2274,7 @@ export function SalesNew() {
                               }}
                             >
                             <TableCell>{formatDate(sale.sale_date)}</TableCell>
-                            <TableCell>{sale.payment_type === 'Full' ? 'بالحاضر' : 'بالتقسيط'}</TableCell>
+                            <TableCell>{sale.payment_type === 'Full' ? t('sales.full') : t('sales.installment')}</TableCell>
                             <TableCell>{formatCurrency(sale.total_selling_price)}</TableCell>
                             <TableCell>
                               <Badge

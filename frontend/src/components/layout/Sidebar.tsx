@@ -20,6 +20,8 @@ import {
   Building2,
   MessageSquare,
   Languages,
+  Calendar as CalendarIcon,
+  Briefcase,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/select'
@@ -33,11 +35,13 @@ const getNavItems = (t: (key: string) => string) => [
   { to: '/clients', icon: Users, label: t('nav.clients'), permission: 'view_clients', pageId: 'clients' },
   { to: '/sales', icon: ShoppingCart, label: t('nav.sales'), permission: 'view_sales', pageId: 'sales' },
   { to: '/sale-confirmation', icon: CheckCircle2, label: t('nav.confirmSales'), permission: 'edit_sales', pageId: 'confirm-sales' },
+  { to: '/calendar', icon: CalendarIcon, label: t('nav.calendar'), permission: 'edit_sales', pageId: 'calendar' },
   { to: '/installments', icon: CreditCard, label: t('nav.installments'), permission: 'view_installments', pageId: 'installments' },
   { to: '/financial', icon: DollarSign, label: t('nav.financial'), permission: 'view_financial', pageId: 'finance' },
   { to: '/expenses', icon: Receipt, label: t('nav.expenses'), permission: 'view_financial', pageId: 'expenses' },
   { to: '/debts', icon: TrendingDown, label: t('nav.debts'), permission: null, pageId: 'debts' },
   { to: '/real-estate-buildings', icon: Building2, label: t('nav.realEstate'), permission: null, pageId: 'real-estate' },
+  { to: '/workers', icon: Briefcase, label: t('nav.workers'), permission: 'view_workers', pageId: 'workers' },
   { to: '/messages', icon: MessageSquare, label: t('nav.messages'), permission: 'view_messages', pageId: 'messages' },
   { to: '/users', icon: Settings, label: t('nav.users'), permission: 'manage_users', pageId: 'users' },
   { to: '/security', icon: Shield, label: t('nav.security'), permission: 'view_audit_logs', pageId: 'security' },

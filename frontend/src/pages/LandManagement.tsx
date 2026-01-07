@@ -4340,7 +4340,7 @@ export function LandManagement() {
                     نسبة عمولة الشركة للدفع بالحاضر (اختياري). سيتم تطبيقها على جميع المبيعات بالحاضر لهذه الدفعة.
                   </p>
                 </div>
-            </div>
+              </div>
             
             {/* Payment Offers Management */}
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-4">

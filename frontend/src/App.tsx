@@ -18,6 +18,7 @@ import { Expenses } from '@/pages/Expenses'
 import { RealEstateBuildings } from '@/pages/RealEstateBuildings'
 import { Workers } from '@/pages/Workers'
 import { Messages } from '@/pages/Messages'
+import { Calendar } from '@/pages/Calendar'
 import { AccountDisabled } from '@/pages/AccountDisabled'
 import { LoadingProgress } from '@/components/ui/loading-progress'
 import { NotificationContainer } from '@/components/ui/notification'
@@ -269,6 +270,14 @@ function AppRoutes() {
             </PermissionProtectedRoute>
           } 
         />
+        <Route 
+          path="calendar" 
+          element={
+            <PermissionProtectedRoute permission="edit_sales" pageId="calendar">
+              <Calendar />
+            </PermissionProtectedRoute>
+          } 
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -279,10 +288,10 @@ function App() {
   return (
     <BrowserRouter>
       <LanguageProvider>
-        <AuthProvider>
-          <NotificationContainer />
-          <AppRoutes />
-        </AuthProvider>
+      <AuthProvider>
+        <NotificationContainer />
+        <AppRoutes />
+      </AuthProvider>
       </LanguageProvider>
     </BrowserRouter>
   )

@@ -47,14 +47,16 @@ const roleColors: Record<UserRole, 'default' | 'secondary' | 'destructive'> = {
 
 // All available pages in the system - IDs must match Sidebar.tsx pageId values
 const ALL_PAGES = [
+  { id: 'home', name: 'الرئيسية', icon: Home, description: 'الصفحة الرئيسية' },
   { id: 'land', name: 'إدارة الأراضي', icon: MapIcon, description: 'إدارة قطع الأراضي' },
   { id: 'clients', name: 'العملاء', icon: UsersIcon, description: 'إدارة العملاء' },
   { id: 'sales', name: 'المبيعات', icon: ShoppingCart, description: 'إدارة المبيعات' },
   { id: 'confirm-sales', name: 'تأكيد المبيعات', icon: CheckCircle2, description: 'تأكيد عمليات البيع' },
-  { id: 'installments', name: 'الأقساط', icon: Calendar, description: 'إدارة الأقساط' },
-  { id: 'finance', name: 'المالية', icon: TrendingUp, description: 'التقارير المالية' },
+  { id: 'calendar', name: 'تقويم المواعيد', icon: Calendar, description: 'تقويم مواعيد البيع' },
+  { id: 'installments', name: 'الأقساط', icon: CreditCard, description: 'إدارة الأقساط' },
+  { id: 'finance', name: 'المالية', icon: DollarSign, description: 'التقارير المالية' },
   { id: 'expenses', name: 'المصاريف', icon: Wallet, description: 'إدارة المصاريف' },
-  { id: 'debts', name: 'الديون', icon: CreditCard, description: 'إدارة الديون' },
+  { id: 'debts', name: 'الديون', icon: FileText, description: 'إدارة الديون' },
   { id: 'real-estate', name: 'التطوير والبناء', icon: Building, description: 'المشاريع العقارية' },
   { id: 'workers', name: 'العمال', icon: Briefcase, description: 'إدارة العمال' },
   { id: 'messages', name: 'الرسائل', icon: MessageSquare, description: 'الرسائل والمحادثات' },

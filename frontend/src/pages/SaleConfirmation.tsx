@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { retryWithBackoff, isRetryableError } from '@/lib/retry'
-import { CheckCircle, XCircle, Clock, DollarSign, AlertTriangle } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, DollarSign, AlertTriangle, Calendar } from 'lucide-react'
 import { showNotification } from '@/components/ui/notification'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
@@ -68,6 +68,13 @@ export function SaleConfirmation() {
   const [clientDetailsOpen, setClientDetailsOpen] = useState(false)
   const [selectedClientForDetails, setSelectedClientForDetails] = useState<Client | null>(null)
   const [clientSales, setClientSales] = useState<Sale[]>([])
+  
+  // Rendez-vous dialog
+  const [rendezvousDialogOpen, setRendezvousDialogOpen] = useState(false)
+  const [rendezvousDate, setRendezvousDate] = useState('')
+  const [rendezvousTime, setRendezvousTime] = useState('')
+  const [rendezvousNotes, setRendezvousNotes] = useState('')
+  const [selectedSaleForRendezvous, setSelectedSaleForRendezvous] = useState<SaleWithDetails | null>(null)
 
   // Check permissions - anyone with edit_sales or sale_confirm permission
   const canAccess = hasPermission('edit_sales') || hasPermission('sale_confirm')
@@ -89,6 +96,49 @@ export function SaleConfirmation() {
     } catch (err) {
       console.error('Error fetching client sales:', err)
       setClientSales([])
+    }
+  }
+
+  const openRendezvousDialog = (sale: SaleWithDetails) => {
+    setSelectedSaleForRendezvous(sale)
+    // Set default date to tomorrow
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    setRendezvousDate(tomorrow.toISOString().split('T')[0])
+    setRendezvousTime('09:00')
+    setRendezvousNotes('')
+    setRendezvousDialogOpen(true)
+  }
+
+  const handleCreateRendezvous = async () => {
+    if (!selectedSaleForRendezvous || !rendezvousDate || !rendezvousTime) {
+      showNotification('يرجى إدخال التاريخ والوقت', 'error')
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('sale_rendezvous')
+        .insert([{
+          sale_id: selectedSaleForRendezvous.id,
+          rendezvous_date: rendezvousDate,
+          rendezvous_time: rendezvousTime,
+          notes: rendezvousNotes || null,
+          status: 'scheduled',
+          created_by: user?.id || null,
+        }])
+
+      if (error) throw error
+
+      showNotification('تم إنشاء الموعد بنجاح', 'success')
+      setRendezvousDialogOpen(false)
+      setRendezvousDate('')
+      setRendezvousTime('')
+      setRendezvousNotes('')
+      setSelectedSaleForRendezvous(null)
+    } catch (err) {
+      console.error('Error creating rendezvous:', err)
+      showNotification('حدث خطأ أثناء إنشاء الموعد', 'error')
     }
   }
   
@@ -1254,6 +1304,15 @@ export function SaleConfirmation() {
                               
                               <div className="flex flex-wrap gap-2 pt-2 border-t">
                                 <Button
+                                  onClick={() => openRendezvousDialog(sale)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs h-8 flex-1"
+                                >
+                                  <Calendar className="ml-1 h-3 w-3" />
+                                  موعد
+                                </Button>
+                                <Button
                                   onClick={() => handleCancelPiece(sale, piece)}
                                   variant="destructive"
                                   size="sm"
@@ -1331,6 +1390,15 @@ export function SaleConfirmation() {
                               <TableCell className="text-right py-2 text-xs text-green-600">{formatCurrency(reservationPerPiece)}</TableCell>
                               <TableCell className="py-2">
                                 <div className="flex flex-wrap gap-1">
+                                  <Button
+                                    onClick={() => openRendezvousDialog(sale)}
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-xs px-2 h-7"
+                                  >
+                                    <Calendar className="ml-1 h-3 w-3" />
+                                    موعد
+                                  </Button>
                                   <Button
                                     onClick={() => handleCancelPiece(sale, piece)}
                                     variant="destructive"
@@ -1703,6 +1771,65 @@ export function SaleConfirmation() {
         confirmText="نعم، متأكد"
         cancelText="إلغاء"
       />
+
+      {/* Rendez-vous Dialog */}
+      <Dialog open={rendezvousDialogOpen} onOpenChange={setRendezvousDialogOpen}>
+        <DialogContent className="w-[95vw] sm:w-full max-w-md">
+          <DialogHeader>
+            <DialogTitle>موعد البيع (Rendez-vous de vente)</DialogTitle>
+          </DialogHeader>
+          {selectedSaleForRendezvous && (
+            <div className="space-y-4">
+              <div className="bg-muted/50 p-3 rounded-lg">
+                <p className="text-sm font-medium">العميل: {selectedSaleForRendezvous.client?.name || 'غير معروف'}</p>
+                <p className="text-xs text-muted-foreground">رقم البيع: #{selectedSaleForRendezvous.id.slice(0, 8)}</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="rendezvous-date">التاريخ *</Label>
+                <Input
+                  id="rendezvous-date"
+                  type="date"
+                  value={rendezvousDate}
+                  onChange={(e) => setRendezvousDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="rendezvous-time">الوقت *</Label>
+                <Input
+                  id="rendezvous-time"
+                  type="time"
+                  value={rendezvousTime}
+                  onChange={(e) => setRendezvousTime(e.target.value)}
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="rendezvous-notes">ملاحظات</Label>
+                <Textarea
+                  id="rendezvous-notes"
+                  value={rendezvousNotes}
+                  onChange={(e) => setRendezvousNotes(e.target.value)}
+                  placeholder="ملاحظات إضافية حول الموعد..."
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRendezvousDialogOpen(false)}>
+              إلغاء
+            </Button>
+            <Button onClick={handleCreateRendezvous}>
+              حفظ الموعد
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
