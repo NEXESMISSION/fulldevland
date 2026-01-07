@@ -24,7 +24,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText, CreditCard, Home, Building, Wallet, DollarSign, Lock, Eye, EyeOff, AlertCircle, Briefcase, MessageSquare, XCircle, ArrowUp, ArrowDown, Phone } from 'lucide-react'
+import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText, CreditCard, Home, Building, Wallet, DollarSign, Lock, Eye, EyeOff, AlertCircle, Briefcase, MessageSquare, XCircle, ArrowUp, ArrowDown, Phone, Download } from 'lucide-react'
 import type { User as UserType, UserRole, Sale, WorkerProfile } from '@/types/database'
 import { sanitizeText, sanitizeEmail } from '@/lib/sanitize'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -54,6 +54,7 @@ const ALL_PAGES = [
   { id: 'confirm-sales', name: 'تأكيد المبيعات', icon: CheckCircle2, description: 'تأكيد عمليات البيع' },
   { id: 'calendar', name: 'تقويم المواعيد', icon: Calendar, description: 'تقويم مواعيد البيع' },
   { id: 'phone-calls', name: 'مكالمات', icon: Phone, description: 'تتبع مكالمات المواعيد' },
+  { id: 'download', name: 'تحميل التطبيق', icon: Download, description: 'تحميل تطبيق Android' },
   { id: 'installments', name: 'الأقساط', icon: CreditCard, description: 'إدارة الأقساط' },
   { id: 'finance', name: 'المالية', icon: DollarSign, description: 'التقارير المالية' },
   { id: 'expenses', name: 'المصاريف', icon: Wallet, description: 'إدارة المصاريف' },

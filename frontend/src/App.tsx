@@ -20,6 +20,7 @@ import { Workers } from '@/pages/Workers'
 import { Messages } from '@/pages/Messages'
 import { Calendar } from '@/pages/Calendar'
 import { PhoneCalls } from '@/pages/PhoneCalls'
+import { Download } from '@/pages/Download'
 import { AccountDisabled } from '@/pages/AccountDisabled'
 import { LoadingProgress } from '@/components/ui/loading-progress'
 import { NotificationContainer } from '@/components/ui/notification'
@@ -284,6 +285,14 @@ function AppRoutes() {
           element={
             <PermissionProtectedRoute permission={null} pageId="phone-calls">
               <PhoneCalls />
+            </PermissionProtectedRoute>
+          } 
+        />
+        <Route 
+          path="download" 
+          element={
+            <PermissionProtectedRoute permission={null} pageId="download">
+              <Download />
             </PermissionProtectedRoute>
           } 
         />

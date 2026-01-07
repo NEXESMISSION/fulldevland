@@ -23,6 +23,7 @@ import {
   Calendar as CalendarIcon,
   Briefcase,
   Phone,
+  Download as DownloadIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/select'
@@ -38,6 +39,7 @@ const getNavItems = (t: (key: string) => string) => [
   { to: '/sale-confirmation', icon: CheckCircle2, label: t('nav.confirmSales'), permission: 'edit_sales', pageId: 'confirm-sales' },
   { to: '/calendar', icon: CalendarIcon, label: t('nav.calendar'), permission: 'edit_sales', pageId: 'calendar' },
   { to: '/phone-calls', icon: Phone, label: t('nav.phoneCalls'), permission: null, pageId: 'phone-calls' },
+  { to: '/download', icon: DownloadIcon, label: t('nav.download'), permission: null, pageId: 'download' },
   { to: '/installments', icon: CreditCard, label: t('nav.installments'), permission: 'view_installments', pageId: 'installments' },
   { to: '/financial', icon: DollarSign, label: t('nav.financial'), permission: 'view_financial', pageId: 'finance' },
   { to: '/expenses', icon: Receipt, label: t('nav.expenses'), permission: 'view_financial', pageId: 'expenses' },
