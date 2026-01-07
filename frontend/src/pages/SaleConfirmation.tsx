@@ -738,7 +738,29 @@ export function SaleConfirmation() {
       fetchSales()
     } catch (err) {
       console.error('Error cancelling piece:', err)
-      setError('حدث خطأ أثناء إلغاء القطعة: ' + ((err as Error).message || 'خطأ غير معروف'))
+      const error = err as any
+      let errorMessage = error.message || 'خطأ غير معروف'
+      
+      // Log full error details for debugging
+      if (error.details) {
+        console.error('Error details:', error.details)
+        errorMessage = error.details
+      }
+      if (error.hint) {
+        console.error('Error hint:', error.hint)
+      }
+      if (error.code) {
+        console.error('Error code:', error.code)
+      }
+      
+      // Check for the specific "Confirmed" enum error
+      if (errorMessage.includes('sale_status') && errorMessage.includes('Confirmed')) {
+        errorMessage = 'خطأ في قاعدة البيانات: يرجى تشغيل السكريبت fix_sale_status_confirmed_error.sql في Supabase SQL Editor لإصلاح المشكلة'
+        console.error('DATABASE TRIGGER ISSUE: A trigger is trying to set sale status to "Confirmed" which is not a valid enum value.')
+      }
+      
+      setError('حدث خطأ أثناء إلغاء القطعة: ' + errorMessage)
+      showNotification('حدث خطأ أثناء إلغاء القطعة: ' + errorMessage, 'error')
     }
   }
 
@@ -1214,14 +1236,28 @@ export function SaleConfirmation() {
       await new Promise(resolve => setTimeout(resolve, 300))
       await fetchSales()
     } catch (err) {
-      const error = err as Error
+      const error = err as any
       console.error('Error confirming sale:', error)
-      // Check for the specific "Confirmed" enum error
-      let errorMessage = error.message
-      if (error.message.includes('sale_status') && error.message.includes('Confirmed')) {
-        errorMessage = 'خطأ في قاعدة البيانات: يرجى تشغيل السكريبت fix_sale_status_confirmed_error.sql لإصلاح المشكلة'
-        console.error('DATABASE TRIGGER ISSUE: There is likely a trigger trying to set sale status to "Confirmed" which is not a valid enum value.')
+      
+      // Log full error details for debugging
+      if (error.details) {
+        console.error('Error details:', error.details)
       }
+      if (error.hint) {
+        console.error('Error hint:', error.hint)
+      }
+      if (error.code) {
+        console.error('Error code:', error.code)
+      }
+      
+      // Check for the specific "Confirmed" enum error
+      let errorMessage = error.message || error.details || 'خطأ غير معروف'
+      if (errorMessage.includes('sale_status') && errorMessage.includes('Confirmed')) {
+        errorMessage = 'خطأ في قاعدة البيانات: يرجى تشغيل السكريبت fix_sale_status_confirmed_error.sql في Supabase SQL Editor لإصلاح المشكلة'
+        console.error('DATABASE TRIGGER ISSUE: A trigger is trying to set sale status to "Confirmed" which is not a valid enum value.')
+        console.error('Full error object:', JSON.stringify(error, null, 2))
+      }
+      
       setError('حدث خطأ أثناء تأكيد البيع: ' + errorMessage)
       showNotification('حدث خطأ أثناء تأكيد البيع: ' + errorMessage, 'error')
     } finally {
