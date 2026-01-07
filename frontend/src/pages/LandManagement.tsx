@@ -3062,14 +3062,43 @@ export function LandManagement() {
       let sellingPriceFull = 0
       let sellingPriceInstallment = 0
       
-      if (editingPiece && pieceForm.selling_price_full && pieceForm.selling_price_installment) {
+      if (editingPiece && pieceForm.selling_price_full) {
         // Editing: use provided prices
-        sellingPriceFull = parseFloat(pieceForm.selling_price_full)
-        sellingPriceInstallment = parseFloat(pieceForm.selling_price_installment)
+        // Clean and parse the input values
+        const fullPriceStr = (pieceForm.selling_price_full || '').trim().replace(/,/g, '')
+        const installmentPriceStr = (pieceForm.selling_price_installment || '').trim().replace(/,/g, '')
         
-        if (isNaN(sellingPriceFull) || sellingPriceFull <= 0 || isNaN(sellingPriceInstallment) || sellingPriceInstallment <= 0) {
-          setError('يرجى إدخال أسعار صحيحة')
+        if (!fullPriceStr) {
+          setError('يرجى إدخال سعر بالحاضر صحيح')
           return
+        }
+        
+        sellingPriceFull = parseFloat(fullPriceStr)
+        
+        if (isNaN(sellingPriceFull)) {
+          setError('يرجى إدخال رقم صحيح للسعر بالحاضر')
+          return
+        }
+        
+        if (sellingPriceFull < 0) {
+          setError('السعر بالحاضر يجب أن يكون أكبر من أو يساوي صفر')
+          return
+        }
+        
+        // For installment price: use provided value if exists, otherwise keep the old value
+        if (installmentPriceStr) {
+          sellingPriceInstallment = parseFloat(installmentPriceStr)
+          if (isNaN(sellingPriceInstallment)) {
+            setError('يرجى إدخال رقم صحيح للسعر بالتقسيط')
+            return
+          }
+          if (sellingPriceInstallment < 0) {
+            setError('السعر بالتقسيط يجب أن يكون أكبر من أو يساوي صفر')
+            return
+          }
+        } else {
+          // Keep the old installment price if not provided
+          sellingPriceInstallment = editingPiece.selling_price_installment || 0
         }
       } else {
         // New piece or no prices provided: auto-calculate
@@ -4967,14 +4996,15 @@ export function LandManagement() {
                     id="selling_price_full"
                   type="number"
                     step="0.01"
-                    value={pieceForm.selling_price_full}
+                    min="0"
+                    value={pieceForm.selling_price_full || ''}
                     onChange={(e) => {
                       const totalPrice = e.target.value
-                      const surface = parseFloat(pieceForm.surface_area) || 0
+                      const surface = parseFloat(pieceForm.surface_area || '0') || 0
                       setPieceForm({ 
                         ...pieceForm, 
                         selling_price_full: totalPrice,
-                        price_per_m2_full: surface > 0 && totalPrice ? (parseFloat(totalPrice) / surface).toFixed(2) : pieceForm.price_per_m2_full
+                        price_per_m2_full: surface > 0 && totalPrice && !isNaN(parseFloat(totalPrice)) ? (parseFloat(totalPrice) / surface).toFixed(2) : pieceForm.price_per_m2_full
                       })
                     }}
                     placeholder="0.00"
