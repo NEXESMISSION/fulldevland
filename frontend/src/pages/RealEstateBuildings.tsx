@@ -416,13 +416,6 @@ export function RealEstateBuildings() {
     window.history.pushState({ view: 'expenses' }, '')
   }
 
-  const handleViewProject = (project: Project) => {
-    setSelectedProject(project)
-    fetchBoxes(project.id)
-    setCurrentView('boxes')
-    // Push state to enable back navigation
-    window.history.pushState({ view: 'boxes' }, '')
-  }
 
   // Handle browser back button for internal navigation
   useEffect(() => {
