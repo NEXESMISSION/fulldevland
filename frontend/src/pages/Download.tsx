@@ -1,7 +1,7 @@
 import { useLanguage } from '@/contexts/LanguageContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Download, Smartphone, CheckCircle2 } from 'lucide-react'
+import { Download as DownloadIcon, Smartphone, CheckCircle2 } from 'lucide-react'
 
 export function Download() {
   const { t } = useLanguage()
@@ -63,7 +63,7 @@ export function Download() {
                 size="lg"
                 className="w-full sm:w-auto min-w-[200px] bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-lg"
               >
-                <Download className="h-5 w-5 ml-2" />
+                <DownloadIcon className="h-5 w-5 ml-2" />
                 تحميل APK للأندرويد
               </Button>
               <p className="text-xs text-muted-foreground text-center max-w-md">
