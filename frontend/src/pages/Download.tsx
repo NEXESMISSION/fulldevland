@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Smartphone, CheckCircle2, AlertCircle, Download as InstallIcon, Share2 } from 'lucide-react'
+import { Smartphone, CheckCircle2, AlertCircle, Download as DownloadIcon, Share2, Globe as GlobeIcon } from 'lucide-react'
 import { showNotification } from '@/components/ui/notification'
 
 interface BeforeInstallPromptEvent extends Event {
@@ -113,7 +113,7 @@ export function Download() {
   }
 
   const appVersion = '1.0.0'
-  const lastUpdated = new Date().toLocaleDateString(locale, {
+  const lastUpdated = new Date().toLocaleDateString(language === 'fr' ? 'fr-FR' : 'ar-TN', {
     year: 'numeric',
     month: 'long',
     day: 'numeric'
@@ -169,7 +169,7 @@ export function Download() {
                   size="lg"
                   className="w-full sm:w-auto min-w-[250px] bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-lg"
                 >
-                  <DownloadIcon className="h-5 w-5 ml-2" />
+                  <Download className="h-5 w-5 ml-2" />
                   {t('download.installApp')}
                 </Button>
               ) : (
@@ -263,5 +263,7 @@ export function Download() {
     </div>
   )
 }
+
+
 
 
