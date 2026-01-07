@@ -769,14 +769,65 @@ export function LandManagement() {
 
       const batchesData = (data as any[]) || []
       
-      // Attach offers to batches and pieces
+      // Fetch all completed sales to check which pieces are fully sold
+      const { data: completedSalesData } = await supabase
+        .from('sales')
+        .select('id, land_piece_ids, status')
+        .eq('status', 'Completed')
+      
+      // Create a set of piece IDs that have completed sales
+      const soldPieceIds = new Set<string>()
+      if (completedSalesData) {
+        completedSalesData.forEach((sale: any) => {
+          if (sale.land_piece_ids && Array.isArray(sale.land_piece_ids)) {
+            sale.land_piece_ids.forEach((pieceId: string) => {
+              soldPieceIds.add(pieceId)
+            })
+          }
+        })
+      }
+      
+      // Sync piece statuses in database: update pieces with Completed sales to 'Sold'
+      if (soldPieceIds.size > 0) {
+        // Update pieces in batches to 'Sold' if they have completed sales
+        const piecesToUpdate: string[] = []
+        batchesData.forEach(batch => {
+          (batch.land_pieces || []).forEach((piece: any) => {
+            if (soldPieceIds.has(piece.id) && piece.status !== 'Sold') {
+              piecesToUpdate.push(piece.id)
+            }
+          })
+        })
+        
+        // Update pieces in database (fire and forget - don't wait for it)
+        if (piecesToUpdate.length > 0) {
+          supabase
+            .from('land_pieces')
+            .update({ status: 'Sold' } as any)
+            .in('id', piecesToUpdate)
+            .then(({ error }) => {
+              if (error) {
+                console.warn('Error syncing piece statuses:', error)
+              } else {
+                console.log(`Synced ${piecesToUpdate.length} piece statuses to Sold`)
+              }
+            })
+        }
+      }
+      
+      // Attach offers to batches and pieces, and update status for fully sold pieces
       const batchesWithOffers = batchesData.map(batch => {
         const batchOffers = (batch.payment_offers || []) as PaymentOffer[]
         const pieces = (batch.land_pieces || []).map((piece: any) => {
           const pieceOffers = (piecesData || []).find((p: any) => p.id === piece.id)?.payment_offers || []
+          
+          // If piece has a completed sale, mark it as Sold
+          const displayStatus = soldPieceIds.has(piece.id) ? 'Sold' : piece.status
+          
           return {
             ...piece,
-            payment_offers: pieceOffers as PaymentOffer[]
+            payment_offers: pieceOffers as PaymentOffer[],
+            status: displayStatus // Override status for display
           }
         })
         
