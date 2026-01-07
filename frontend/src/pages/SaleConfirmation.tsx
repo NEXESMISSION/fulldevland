@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { retryWithBackoff, isRetryableError } from '@/lib/retry'
 import { CheckCircle, XCircle, Clock, DollarSign, AlertTriangle, Calendar } from 'lucide-react'
 import { showNotification } from '@/components/ui/notification'
@@ -537,11 +537,25 @@ export function SaleConfirmation() {
     const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
     const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
     
+    // Calculate advance amount (التسبقة) from offer if available
+    let advancePerPiece = 0
+    if (sale.payment_type === 'Installment' && offerToUse) {
+      if (offerToUse.advance_is_percentage) {
+        advancePerPiece = (pricePerPiece * offerToUse.advance_amount) / 100
+      } else {
+        advancePerPiece = offerToUse.advance_amount
+      }
+    } else if (sale.payment_type === 'Installment' && sale.big_advance_amount) {
+      // Fallback to sale's big_advance_amount if no offer
+      advancePerPiece = sale.big_advance_amount / pieceCount
+    }
+    
     return {
       pricePerPiece,
       reservationPerPiece,
       companyFeePerPiece,
       totalPayablePerPiece,
+      advancePerPiece,
       feePercentage,
       offer: offerToUse
     }
@@ -1307,7 +1321,7 @@ export function SaleConfirmation() {
                           دفعة كبيرة: {formatCurrency(sale._totalBigAdvancePaid || 0)} / {formatCurrency(sale.big_advance_amount)}
                         </Badge>
                       )}
-                      <span className="text-xs text-muted-foreground">{formatDate(sale.sale_date)}</span>
+                      <span className="text-xs text-muted-foreground">{formatDateTime(sale.created_at || sale.sale_date)}</span>
                     </div>
                   </div>
                 </CardHeader>
@@ -1315,7 +1329,7 @@ export function SaleConfirmation() {
                   {/* Mobile Card View / Desktop Table View for Pieces */}
                   <div className="md:hidden space-y-2">
                     {pieces.map((piece: any) => {
-                      const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(sale, piece)
+                      const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece, advancePerPiece } = calculatePieceValues(sale, piece)
                       
                       return (
                         <Card key={piece.id} className="bg-muted/30">
@@ -1347,6 +1361,12 @@ export function SaleConfirmation() {
                                   <span className="text-muted-foreground">العربون:</span>
                                   <div className="font-medium text-green-600">{formatCurrency(reservationPerPiece)}</div>
                                 </div>
+                                {sale.payment_type === 'Installment' && advancePerPiece > 0 && (
+                                  <div>
+                                    <span className="text-muted-foreground">التسبقة:</span>
+                                    <div className="font-medium text-purple-600">{formatCurrency(advancePerPiece)}</div>
+                                  </div>
+                                )}
                               </div>
                               
                               <div className="flex flex-wrap gap-2 pt-2 border-t">
@@ -1416,12 +1436,15 @@ export function SaleConfirmation() {
                           <TableHead className="text-right text-xs">العمولة</TableHead>
                           <TableHead className="text-right text-xs">الإجمالي</TableHead>
                           <TableHead className="text-right text-xs">العربون</TableHead>
+                          {sale.payment_type === 'Installment' && (
+                            <TableHead className="text-right text-xs">التسبقة</TableHead>
+                          )}
                           <TableHead className="text-xs">إجراء</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {pieces.map((piece: any) => {
-                          const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(sale, piece, (sale as any).selected_offer)
+                          const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece, advancePerPiece } = calculatePieceValues(sale, piece, (sale as any).selected_offer)
                           
                           return (
                             <TableRow key={piece.id} className="hover:bg-gray-50">
@@ -1435,6 +1458,9 @@ export function SaleConfirmation() {
                               <TableCell className="text-right py-2 text-xs text-blue-600">{formatCurrency(companyFeePerPiece)}</TableCell>
                               <TableCell className="text-right py-2 font-bold text-xs text-green-600">{formatCurrency(totalPayablePerPiece)}</TableCell>
                               <TableCell className="text-right py-2 text-xs text-green-600">{formatCurrency(reservationPerPiece)}</TableCell>
+                              {sale.payment_type === 'Installment' && (
+                                <TableCell className="text-right py-2 text-xs text-purple-600">{formatCurrency(advancePerPiece)}</TableCell>
+                              )}
                               <TableCell className="py-2">
                                 <div className="flex flex-wrap gap-1">
                                   <Button
