@@ -768,18 +768,11 @@ export function SaleConfirmation() {
       const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(selectedSale, selectedPiece)
       const received = parseFloat(receivedAmount) || 0
       
-      // For full payment, check against remaining amount (not total)
-      // Allow for small rounding differences (1 DT tolerance)
+      // For full payment, just ensure the amount is positive
+      // The amount is auto-calculated by the system, so we don't need strict validation
       if (confirmationType === 'full') {
-        let remainingAmount = totalPayablePerPiece - reservationPerPiece
-        if (selectedSale.payment_type === 'PromiseOfSale') {
-          const pieceCount = selectedSale.land_piece_ids.length
-          const initialPaymentPerPiece = (selectedSale.promise_initial_payment || 0) / pieceCount
-          remainingAmount = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
-        }
-        // Allow 1 DT tolerance for rounding
-        if (received < remainingAmount - 1) {
-          setError(`المبلغ المستلم (${formatCurrency(received)}) أقل من المبلغ المتبقي (${formatCurrency(remainingAmount)})`)
+        if (received <= 0) {
+          setError('المبلغ المستلم يجب أن يكون أكبر من صفر')
           setConfirming(false)
           return
         }

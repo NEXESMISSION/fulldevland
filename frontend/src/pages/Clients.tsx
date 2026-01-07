@@ -685,7 +685,7 @@ export function Clients() {
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8"
+                                className="h-8 w-8"
                             onClick={(e) => {
                               e.preventDefault()
                               e.stopPropagation()
@@ -748,7 +748,7 @@ export function Clients() {
           </DialogHeader>
           <div className="space-y-3 sm:space-y-4">
             {/* CIN Field - First Field */}
-            <div className="space-y-1.5 sm:space-y-2">
+              <div className="space-y-1.5 sm:space-y-2">
               <Label htmlFor="cin" className="text-xs sm:text-sm">رقم الهوية *</Label>
               <Input
                 id="cin"
@@ -787,12 +787,12 @@ export function Clients() {
 
             <div className="space-y-1.5 sm:space-y-2">
               <Label htmlFor="name" className="text-xs sm:text-sm">الاسم *</Label>
-              <Input
-                id="name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                maxLength={255}
-              />
+                <Input
+                  id="name"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  maxLength={255}
+                />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-1.5 sm:space-y-2">
@@ -859,8 +859,8 @@ export function Clients() {
               type="button"
               variant="outline" 
               onClick={() => {
-                setDialogOpen(false)
-                setErrorMessage(null)
+              setDialogOpen(false)
+              setErrorMessage(null)
                 setFoundClient(null)
                 setClientSearchStatus('idle')
               }} 
