@@ -830,8 +830,8 @@ export function Financial() {
               {filterLabels[filter]}
             </Button>
           ))}
-          <div className="flex items-center gap-2 border rounded-md px-2">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center gap-2 border rounded-md px-2 min-w-[140px]">
+            <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
             <Input
               type="date"
               value={selectedDate}
@@ -841,17 +841,23 @@ export function Financial() {
                   setDateFilter('custom')
                 }
               }}
-              className="h-8 w-auto text-xs border-0 focus-visible:ring-0 p-0"
+              onClick={(e) => {
+                e.stopPropagation()
+                e.currentTarget.showPicker?.()
+              }}
+              className="h-8 w-full min-w-[120px] text-xs border-0 focus-visible:ring-0 p-0 cursor-pointer"
+              style={{ WebkitAppearance: 'none' }}
             />
             {selectedDate && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation()
                   setSelectedDate('')
                   setDateFilter('today')
                 }}
-                className="h-6 w-6 p-0"
+                className="h-6 w-6 p-0 flex-shrink-0"
               >
                 <X className="h-3 w-3" />
               </Button>

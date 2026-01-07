@@ -52,41 +52,53 @@ ALTER TABLE project_boxes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE box_expenses ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for projects
+DROP POLICY IF EXISTS "Users can view all projects" ON projects;
 CREATE POLICY "Users can view all projects" ON projects
     FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Users can create projects" ON projects;
 CREATE POLICY "Users can create projects" ON projects
     FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Users can update projects" ON projects;
 CREATE POLICY "Users can update projects" ON projects
     FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS "Users can delete projects" ON projects;
 CREATE POLICY "Users can delete projects" ON projects
     FOR DELETE USING (true);
 
 -- RLS Policies for project_boxes
+DROP POLICY IF EXISTS "Users can view all boxes" ON project_boxes;
 CREATE POLICY "Users can view all boxes" ON project_boxes
     FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Users can create boxes" ON project_boxes;
 CREATE POLICY "Users can create boxes" ON project_boxes
     FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Users can update boxes" ON project_boxes;
 CREATE POLICY "Users can update boxes" ON project_boxes
     FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS "Users can delete boxes" ON project_boxes;
 CREATE POLICY "Users can delete boxes" ON project_boxes
     FOR DELETE USING (true);
 
 -- RLS Policies for box_expenses
+DROP POLICY IF EXISTS "Users can view all expenses" ON box_expenses;
 CREATE POLICY "Users can view all expenses" ON box_expenses
     FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Users can create expenses" ON box_expenses;
 CREATE POLICY "Users can create expenses" ON box_expenses
     FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Users can update expenses" ON box_expenses;
 CREATE POLICY "Users can update expenses" ON box_expenses
     FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS "Users can delete expenses" ON box_expenses;
 CREATE POLICY "Users can delete expenses" ON box_expenses
     FOR DELETE USING (true);
 
