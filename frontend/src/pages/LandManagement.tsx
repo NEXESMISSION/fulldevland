@@ -4037,7 +4037,18 @@ export function LandManagement() {
                             </Badge>
                           </div>
                             
-                            <div className="font-semibold text-green-600 text-sm mb-2">{formatCurrency(piece.selling_price_full || 0)}</div>
+                            <div className="font-semibold text-green-600 text-sm mb-2">
+                              {(() => {
+                                // For Available pieces, calculate from batch price_per_m2_full
+                                // For Reserved/Sold pieces, use stored selling_price_full
+                                if (piece.status === 'Available' && (batch as any).price_per_m2_full) {
+                                  const calculatedPrice = piece.surface_area * parseFloat((batch as any).price_per_m2_full)
+                                  return formatCurrency(calculatedPrice)
+                                } else {
+                                  return formatCurrency(piece.selling_price_full || 0)
+                                }
+                              })()}
+                            </div>
                             <div className="font-semibold text-blue-600 text-sm mb-2">
                               {(() => {
                                 // Only show installment price for reserved pieces with selected offer
