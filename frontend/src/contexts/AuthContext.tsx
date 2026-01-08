@@ -11,12 +11,15 @@ interface AuthContextType {
   loading: boolean
   profileLoading: boolean  // True while profile is being fetched
   isReady: boolean         // True when auth AND profile are fully loaded
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>
+  signIn: (email: string, password: string, captchaVerified?: boolean) => Promise<{ error: Error | null; requiresCaptcha?: boolean; failedAttempts?: number }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>  // Refresh profile from database
   hasPermission: (permission: string) => boolean
   hasPageAccess: (pageId: string) => boolean
   getPermissionDeniedMessage: (permission: string) => string
+  getFailedAttemptsCount: (email: string) => Promise<number>  // Get failed attempts from database
+  requiresReAuth: () => boolean  // Check if re-authentication is required for sensitive operations
+  updateLastAuthTime: () => void  // Update last authentication time (after sensitive operations)
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -83,10 +86,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
-  // Session timeout: 24 hours
-  const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1000
-  // Inactivity timeout: 30 minutes
-  const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000
+  // Session timeout: 8 hours (reduced from 24 hours for better security)
+  const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000
+  // Inactivity timeout: 15 minutes (reduced from 30 minutes for better security)
+  const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000
+  // Token refresh interval: Refresh token 5 minutes before expiry
+  const TOKEN_REFRESH_INTERVAL_MS = 7 * 60 * 60 * 1000 // 7 hours (refresh before 8h expiry)
+  // Re-authentication required timeout: 1 hour (force re-auth for sensitive operations)
+  const REAUTH_REQUIRED_TIMEOUT_MS = 60 * 60 * 1000
 
   useEffect(() => {
     // Prevent double initialization in StrictMode
@@ -413,22 +420,114 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
   
-  // Reset session timeout (24 hours)
+  // Track last authentication time for re-authentication requirement
+  const lastAuthTimeRef = useRef<number>(Date.now())
+  const tokenRefreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  
+  // Reset session timeout (8 hours)
   const resetSessionTimeout = () => {
     if (sessionTimeoutRef.current) {
       clearTimeout(sessionTimeoutRef.current)
     }
     
     if (user) {
+      // Update last authentication time
+      lastAuthTimeRef.current = Date.now()
+      
       sessionTimeoutRef.current = setTimeout(() => {
-        // Force logout after 24 hours
+        // Force logout after 8 hours
         signOut()
       }, SESSION_TIMEOUT_MS)
     }
   }
 
-  // Track login attempts in localStorage (client-side rate limiting)
-  const getFailedAttempts = (email: string): number => {
+  // Refresh token before expiry
+  const refreshToken = async () => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession()
+      if (error) {
+        console.error('Token refresh error:', error)
+        // If refresh fails, sign out
+        if (error.message?.includes('refresh_token_not_found') || 
+            error.message?.includes('invalid_grant')) {
+          signOut()
+        }
+      } else if (data?.session) {
+        setSession(data.session)
+        setUser(data.session.user)
+        // Update last auth time on successful refresh
+        lastAuthTimeRef.current = Date.now()
+      }
+    } catch (error) {
+      console.error('Token refresh exception:', error)
+    }
+  }
+
+  // Setup token refresh interval
+  const setupTokenRefresh = () => {
+    if (tokenRefreshIntervalRef.current) {
+      clearInterval(tokenRefreshIntervalRef.current)
+    }
+    
+    if (user) {
+      // Refresh token every 7 hours (before 8h expiry)
+      tokenRefreshIntervalRef.current = setInterval(() => {
+        refreshToken()
+      }, TOKEN_REFRESH_INTERVAL_MS)
+    }
+  }
+
+  // Check if re-authentication is required for sensitive operations
+  const requiresReAuth = (): boolean => {
+    if (!user) return true
+    const timeSinceLastAuth = Date.now() - lastAuthTimeRef.current
+    return timeSinceLastAuth > REAUTH_REQUIRED_TIMEOUT_MS
+  }
+
+  // Update last authentication time (call this after successful sensitive operations)
+  const updateLastAuthTime = () => {
+    lastAuthTimeRef.current = Date.now()
+  }
+
+  // Get client IP address (for rate limiting)
+  const getClientIP = async (): Promise<string | null> => {
+    try {
+      // Try to get IP from a service (fire and forget)
+      const response = await fetch('https://api.ipify.org?format=json')
+      const data = await response.json()
+      return data.ip || null
+    } catch {
+      // Fallback: use a placeholder or null
+      return null
+    }
+  }
+
+  // Get user agent (for tracking)
+  const getUserAgent = (): string => {
+    return typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown'
+  }
+
+  // Get failed attempts from database (server-side rate limiting)
+  const getFailedAttemptsFromDB = async (email: string): Promise<number> => {
+    try {
+      const { data, error } = await supabase.rpc('get_failed_attempts', {
+        email_address: email.toLowerCase()
+      })
+      
+      if (error) {
+        // Fallback to localStorage if database function fails
+        return getFailedAttemptsLocal(email)
+      }
+      
+      return data || 0
+    } catch {
+      // Fallback to localStorage
+      return getFailedAttemptsLocal(email)
+    }
+  }
+
+  // Get failed attempts from localStorage (client-side fallback)
+  const getFailedAttemptsLocal = (email: string): number => {
     try {
       const key = `login_attempts_${email.toLowerCase()}`
       const data = localStorage.getItem(key)
@@ -446,73 +545,132 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const recordFailedAttempt = (email: string) => {
+  // Check if account should be locked (from database)
+  const shouldLockAccount = async (email: string): Promise<boolean> => {
     try {
-      const key = `login_attempts_${email.toLowerCase()}`
+      const { data, error } = await supabase.rpc('should_lock_account', {
+        email_address: email.toLowerCase()
+      })
+      
+      if (error) {
+        // Fallback: check localStorage
+        return getFailedAttemptsLocal(email) >= 5
+      }
+      
+      return data === true
+    } catch {
+      // Fallback: check localStorage
+      return getFailedAttemptsLocal(email) >= 5
+    }
+  }
+
+  // Record failed attempt (both database and localStorage)
+  const recordFailedAttempt = async (email: string) => {
+    const normalizedEmail = email.toLowerCase()
+    
+    // Update localStorage (client-side tracking)
+    try {
+      const key = `login_attempts_${normalizedEmail}`
       const data = localStorage.getItem(key)
       const attempts = data ? JSON.parse(data).attempts : []
       attempts.push(Date.now())
       localStorage.setItem(key, JSON.stringify({ attempts }))
+    } catch {
+      // Silent fail
+    }
+    
+    // Log to database (server-side tracking)
+    try {
+      const ipAddress = await getClientIP()
+      const userAgent = getUserAgent()
       
-      // Also log to database if possible (for audit)
-      // Fire and forget - don't await to avoid blocking
-      Promise.resolve(supabase.from('login_attempts').insert([{
-        email: email.toLowerCase(),
+      await supabase.from('login_attempts').insert([{
+        email: normalizedEmail,
+        ip_address: ipAddress,
         success: false,
         attempted_at: new Date().toISOString(),
-      }])).catch(() => {
-        // Silent fail - table might not exist yet
-      })
+        user_agent: userAgent,
+      }])
     } catch {
-      // Silent fail
+      // Silent fail - table might not exist or RLS blocks it
     }
   }
 
-  const clearFailedAttempts = (email: string) => {
+  // Clear failed attempts (both database and localStorage)
+  const clearFailedAttempts = async (email: string) => {
+    const normalizedEmail = email.toLowerCase()
+    
+    // Clear localStorage
     try {
-      const key = `login_attempts_${email.toLowerCase()}`
+      const key = `login_attempts_${normalizedEmail}`
       localStorage.removeItem(key)
-      
-      // Log successful login
-      // Fire and forget - don't await to avoid blocking
-      // Only log if we have permission (avoid 401 errors)
-      Promise.resolve(
-        supabase.from('login_attempts').insert([{
-          email: email.toLowerCase(),
-          success: true,
-          attempted_at: new Date().toISOString(),
-        }])
-      ).catch(() => {
-        // Silent fail - table might not exist or RLS blocks it
-      })
     } catch {
       // Silent fail
     }
+    
+    // Log successful login to database
+    try {
+      const ipAddress = await getClientIP()
+      const userAgent = getUserAgent()
+      
+      await supabase.from('login_attempts').insert([{
+        email: normalizedEmail,
+        ip_address: ipAddress,
+        success: true,
+        attempted_at: new Date().toISOString(),
+        user_agent: userAgent,
+      }])
+    } catch {
+      // Silent fail - table might not exist or RLS blocks it
+    }
   }
 
-  const signIn = async (email: string, password: string) => {
+  // Get failed attempts count (public method)
+  const getFailedAttemptsCount = async (email: string): Promise<number> => {
+    return await getFailedAttemptsFromDB(email)
+  }
+
+  const signIn = async (email: string, password: string, captchaVerified: boolean = false) => {
     try {
       // Validate inputs before attempting login
       if (!email || !email.trim()) {
         return { 
-          error: new Error('البريد الإلكتروني مطلوب') 
+          error: new Error('البريد الإلكتروني مطلوب'),
+          requiresCaptcha: false,
+          failedAttempts: 0
         }
       }
       
       if (!password || !password.trim()) {
         return { 
-          error: new Error('كلمة المرور مطلوبة') 
+          error: new Error('كلمة المرور مطلوبة'),
+          requiresCaptcha: false,
+          failedAttempts: 0
         }
       }
 
       // Normalize email
       const normalizedEmail = email.trim().toLowerCase()
 
-      // Check for account lockout (5 failed attempts in 15 minutes)
-      const failedAttempts = getFailedAttempts(normalizedEmail)
-      if (failedAttempts >= 5) {
+      // Check for account lockout (5 failed attempts in 15 minutes) - from database
+      const isLocked = await shouldLockAccount(normalizedEmail)
+      if (isLocked) {
         return { 
-          error: new Error('تم حظر الحساب مؤقتاً بسبب محاولات تسجيل دخول فاشلة متعددة. يرجى المحاولة بعد 15 دقيقة.') 
+          error: new Error('تم حظر الحساب مؤقتاً بسبب محاولات تسجيل دخول فاشلة متعددة. يرجى المحاولة بعد 15 دقيقة.'),
+          requiresCaptcha: false,
+          failedAttempts: 5
+        }
+      }
+
+      // Get failed attempts count
+      const failedAttempts = await getFailedAttemptsFromDB(normalizedEmail)
+      
+      // Require CAPTCHA after 3 failed attempts
+      if (failedAttempts >= 3 && !captchaVerified) {
+        return {
+          error: new Error('يرجى إكمال التحقق من الهوية (CAPTCHA)'),
+          requiresCaptcha: true,
+          failedAttempts: failedAttempts
         }
       }
 
@@ -555,7 +713,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       if (error) {
         // Record failed attempt
-        recordFailedAttempt(normalizedEmail)
+        await recordFailedAttempt(normalizedEmail)
+        
+        // Get updated failed attempts count
+        const newFailedAttempts = await getFailedAttemptsFromDB(normalizedEmail)
         
         // Check error type to provide appropriate message
         const errorCode = (error as any).status || (error as any).code || ''
@@ -564,22 +725,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Don't retry on 400 errors (invalid credentials) - they're not retryable
         if (errorCode === 400 || errorMsg.includes('invalid') || errorMsg.includes('credentials')) {
           // Generic error message to avoid leaking information
+          // Require CAPTCHA if we've reached 3+ failed attempts
+          const requiresCaptcha = newFailedAttempts >= 3
           return { 
-            error: new Error('البريد الإلكتروني أو كلمة المرور غير صحيحة') 
+            error: new Error('البريد الإلكتروني أو كلمة المرور غير صحيحة'),
+            requiresCaptcha: requiresCaptcha,
+            failedAttempts: newFailedAttempts
           }
         }
         
         // For other errors, provide generic message
         return { 
-          error: new Error('فشل تسجيل الدخول. يرجى المحاولة مرة أخرى.') 
+          error: new Error('فشل تسجيل الدخول. يرجى المحاولة مرة أخرى.'),
+          requiresCaptcha: newFailedAttempts >= 3,
+          failedAttempts: newFailedAttempts
         }
       } else {
         // Clear failed attempts on successful login
-        clearFailedAttempts(normalizedEmail)
+        await clearFailedAttempts(normalizedEmail)
         
         // Immediately update user and session state
         if (data?.user) {
           setUser(data.user)
+          // Update last authentication time on successful login
+          lastAuthTimeRef.current = Date.now()
         }
         if (data?.session) {
           setSession(data.session)
@@ -588,22 +757,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       
-      return { error: null }
+      return { 
+        error: null,
+        requiresCaptcha: false,
+        failedAttempts: 0
+      }
     } catch (error) {
       // Record failed attempt for unexpected errors too
       const normalizedEmail = email?.trim().toLowerCase() || ''
       if (normalizedEmail) {
-        recordFailedAttempt(normalizedEmail)
+        await recordFailedAttempt(normalizedEmail)
       }
       
       // Check if it's a network error
       if (isRetryableError(error as Error)) {
         return { 
-          error: new Error('فشل الاتصال بالخادم. يرجى التحقق من اتصالك بالإنترنت والمحاولة مرة أخرى.') 
+          error: new Error('فشل الاتصال بالخادم. يرجى التحقق من اتصالك بالإنترنت والمحاولة مرة أخرى.'),
+          requiresCaptcha: false,
+          failedAttempts: 0
         }
       }
       
-      return { error: error as Error }
+      return { 
+        error: error as Error,
+        requiresCaptcha: false,
+        failedAttempts: 0
+      }
     }
   }
   
@@ -634,6 +813,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Initialize timers when user logs in
     resetInactivityTimer()
     resetSessionTimeout()
+    setupTokenRefresh()  // Setup token refresh when user is logged in
     
     return () => {
       events.forEach(event => {
@@ -645,6 +825,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (sessionTimeoutRef.current) {
         clearTimeout(sessionTimeoutRef.current)
       }
+      if (tokenRefreshIntervalRef.current) {
+        clearInterval(tokenRefreshIntervalRef.current)
+      }
     }
   }, [user])
 
@@ -653,6 +836,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current)
       inactivityTimerRef.current = null
+    }
+    if (tokenRefreshIntervalRef.current) {
+      clearInterval(tokenRefreshIntervalRef.current)
+      tokenRefreshIntervalRef.current = null
     }
     if (sessionTimeoutRef.current) {
       clearTimeout(sessionTimeoutRef.current)
@@ -782,6 +969,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hasPermission,
         hasPageAccess,
         getPermissionDeniedMessage,
+        getFailedAttemptsCount,
+        requiresReAuth,
+        updateLastAuthTime,
       }}
     >
       {children}
@@ -796,3 +986,4 @@ export function useAuth() {
   }
   return context
 }
+

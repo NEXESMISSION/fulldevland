@@ -27,9 +27,10 @@
 2. Navigate to **Settings** → **Environment Variables**
 3. Add these variables:
    ```
-   VITE_SUPABASE_URL=https://wujiasjdtytzeptcmblv.supabase.co
-   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1amlhc2pkdHl0emVwdGNtYmx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNTYyMTYsImV4cCI6MjA4MjkzMjIxNn0.RRhQYorrs5EHIuzQmLTJIi9jZ-ORZSeYcmk77pKsn6g
+   VITE_SUPABASE_URL=https://xxxxx.supabase.co
+   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
    ```
+   **⚠️ IMPORTANT**: Replace `xxxxx` with your actual Supabase project URL and use your actual anon key. Never commit real credentials to version control!
 4. Make sure to select **Production**, **Preview**, and **Development** environments
 5. Click **Save**
 

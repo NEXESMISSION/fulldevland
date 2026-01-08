@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { sanitizeText, sanitizeEmail, sanitizePhone, sanitizeCIN, sanitizeNotes, validateLebanesePhone } from '@/lib/sanitize'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { debounce } from '@/lib/throttle'
+import { validatePermissionServerSide } from '@/lib/permissionValidation'
 import {
   Table,
   TableBody,
@@ -221,13 +222,26 @@ export function Clients() {
   const saveClient = async () => {
     if (saving) return // Prevent double submission
     
-    // Authorization check
+    // Client-side authorization check (UI only)
     if (editingClient && !hasPermission('edit_clients')) {
       setErrorMessage('ليس لديك صلاحية لتعديل العملاء')
       return
     }
     if (!editingClient && !hasPermission('edit_clients')) {
       setErrorMessage('ليس لديك صلاحية لإضافة عملاء')
+      return
+    }
+    
+    // Server-side authorization validation (prevents bypass)
+    try {
+      const hasServerPermission = await validatePermissionServerSide('edit_clients')
+      if (!hasServerPermission) {
+        setErrorMessage('ليس لديك صلاحية لتعديل العملاء')
+        return
+      }
+    } catch (error) {
+      console.error('Error validating permission:', error)
+      setErrorMessage('خطأ في التحقق من الصلاحيات')
       return
     }
     
@@ -326,8 +340,16 @@ export function Clients() {
     setErrorMessage(null)
 
     try {
-      // Check permissions
+      // Client-side permission check (UI only)
       if (!hasPermission('delete_clients')) {
+        setErrorMessage('ليس لديك صلاحية لحذف العملاء')
+        setDeleting(false)
+        return
+      }
+
+      // Server-side authorization validation (prevents bypass)
+      const hasServerPermission = await validatePermissionServerSide('delete_clients')
+      if (!hasServerPermission) {
         setErrorMessage('ليس لديك صلاحية لحذف العملاء')
         setDeleting(false)
         return

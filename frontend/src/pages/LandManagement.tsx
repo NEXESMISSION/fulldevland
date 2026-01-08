@@ -30,6 +30,7 @@ import { sanitizeText, sanitizeNotes, sanitizeEmail, sanitizePhone, sanitizeCIN 
 import { showNotification } from '@/components/ui/notification'
 import { debounce } from '@/lib/throttle'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { validatePermissionServerSide } from '@/lib/permissionValidation'
 import { Plus, Edit, Trash2, Map, ChevronDown, ChevronRight, Calculator, X, DollarSign, AlertTriangle, ShoppingCart, Upload, Image as ImageIcon, Settings, RotateCcw, CheckCircle, XCircle, Eye, User } from 'lucide-react'
 import type { LandBatch, LandPiece, LandStatus, Client, PaymentOffer } from '@/types/database'
 
@@ -1855,9 +1856,22 @@ export function LandManagement() {
   const saveBatch = async () => {
     if (savingBatch) return // Prevent double submission
     
-    // Authorization check
+    // Client-side authorization check (UI only)
     if (!hasPermission('edit_land')) {
       setError('ليس لديك صلاحية لتعديل الأراضي')
+      return
+    }
+    
+    // Server-side authorization validation (prevents bypass)
+    try {
+      const hasServerPermission = await validatePermissionServerSide('edit_land')
+      if (!hasServerPermission) {
+        setError('ليس لديك صلاحية لتعديل الأراضي')
+        return
+      }
+    } catch (error) {
+      console.error('Error validating permission:', error)
+      setError('خطأ في التحقق من الصلاحيات')
       return
     }
     
@@ -2258,7 +2272,7 @@ export function LandManagement() {
   }
 
   const deleteBatch = async (batchId: string) => {
-    // Authorization check
+    // Client-side authorization check (UI only)
     if (!hasPermission('delete_land')) {
       setError('ليس لديك صلاحية لحذف الأراضي')
       return
@@ -2270,6 +2284,23 @@ export function LandManagement() {
 
   const confirmDeleteBatch = async () => {
     if (!batchToDelete) return
+
+    // Server-side authorization validation (prevents bypass)
+    try {
+      const hasServerPermission = await validatePermissionServerSide('delete_land')
+      if (!hasServerPermission) {
+        setError('ليس لديك صلاحية لحذف الأراضي')
+        setBatchToDelete(null)
+        setDeleteConfirmOpen(false)
+        return
+      }
+    } catch (error) {
+      console.error('Error validating permission:', error)
+      setError('خطأ في التحقق من الصلاحيات')
+      setBatchToDelete(null)
+      setDeleteConfirmOpen(false)
+      return
+    }
 
     setError(null)
     try {
@@ -2289,6 +2320,7 @@ export function LandManagement() {
   }
 
   const deletePiece = (piece: LandPiece, batchId: string) => {
+    // Client-side authorization check (UI only)
     if (!hasPermission('edit_land')) {
       setError('ليس لديك صلاحية لحذف القطع')
       return
@@ -2299,6 +2331,23 @@ export function LandManagement() {
 
   const confirmDeletePiece = async () => {
     if (!pieceToDelete) return
+
+    // Server-side authorization validation (prevents bypass)
+    try {
+      const hasServerPermission = await validatePermissionServerSide('edit_land')
+      if (!hasServerPermission) {
+        setError('ليس لديك صلاحية لحذف القطع')
+        setPieceToDelete(null)
+        setDeletePieceConfirmOpen(false)
+        return
+      }
+    } catch (error) {
+      console.error('Error validating permission:', error)
+      setError('خطأ في التحقق من الصلاحيات')
+      setPieceToDelete(null)
+      setDeletePieceConfirmOpen(false)
+      return
+    }
 
     setError(null)
     try {

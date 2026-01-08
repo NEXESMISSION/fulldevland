@@ -29,6 +29,7 @@ import { sanitizeText, sanitizePhone, sanitizeCIN, sanitizeEmail, sanitizeNotes,
 import { debounce } from '@/lib/throttle'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { retryWithBackoff, isRetryableError } from '@/lib/retry'
+import { validatePermissionServerSide } from '@/lib/permissionValidation'
 import { Plus, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, AlertCircle, Calendar, ChevronDown, ChevronRight } from 'lucide-react'
 import type { Sale, Client, LandPiece, Installment } from '@/types/database'
 
@@ -527,9 +528,22 @@ export function SalesNew() {
   const confirmFullPayment = async () => {
     if (!selectedSale) return
     
-    // Authorization check
+    // Client-side authorization check (UI only)
     if (!hasPermission('edit_sales')) {
       setErrorMessage('ليس لديك صلاحية لتعديل المبيعات')
+      return
+    }
+    
+    // Server-side authorization validation (prevents bypass)
+    try {
+      const hasServerPermission = await validatePermissionServerSide('edit_sales')
+      if (!hasServerPermission) {
+        setErrorMessage('ليس لديك صلاحية لتعديل المبيعات')
+        return
+      }
+    } catch (error) {
+      console.error('Error validating permission:', error)
+      setErrorMessage('خطأ في التحقق من الصلاحيات')
       return
     }
     
@@ -685,9 +699,22 @@ export function SalesNew() {
       return
     }
     
-    // Authorization check
+    // Client-side authorization check (UI only)
     if (!hasPermission('edit_sales')) {
       setErrorMessage('ليس لديك صلاحية لتعديل المبيعات')
+      return
+    }
+    
+    // Server-side authorization validation (prevents bypass)
+    try {
+      const hasServerPermission = await validatePermissionServerSide('edit_sales')
+      if (!hasServerPermission) {
+        setErrorMessage('ليس لديك صلاحية لتعديل المبيعات')
+        return
+      }
+    } catch (error) {
+      console.error('Error validating permission:', error)
+      setErrorMessage('خطأ في التحقق من الصلاحيات')
       return
     }
     
@@ -912,9 +939,22 @@ export function SalesNew() {
   const cancelSale = async () => {
     if (!saleToCancel) return
     
-    // Authorization check
+    // Client-side authorization check (UI only)
     if (!hasPermission('edit_sales')) {
       setErrorMessage('ليس لديك صلاحية لتعديل المبيعات')
+      return
+    }
+
+    // Server-side authorization validation (prevents bypass)
+    try {
+      const hasServerPermission = await validatePermissionServerSide('edit_sales')
+      if (!hasServerPermission) {
+        setErrorMessage('ليس لديك صلاحية لتعديل المبيعات')
+        return
+      }
+    } catch (error) {
+      console.error('Error validating permission:', error)
+      setErrorMessage('خطأ في التحقق من الصلاحيات')
       return
     }
 

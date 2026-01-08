@@ -61,14 +61,18 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Enable RLS on login_attempts
 ALTER TABLE login_attempts ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist (to allow re-running this script)
+DROP POLICY IF EXISTS "Users can view own login attempts" ON login_attempts;
+DROP POLICY IF EXISTS "System can insert login attempts" ON login_attempts;
+
 -- Only authenticated users can view their own login attempts
--- Owners and Managers can view all login attempts
+-- Owners can view all login attempts
 CREATE POLICY "Users can view own login attempts"
     ON login_attempts FOR SELECT
     TO authenticated
     USING (
         email = (SELECT email FROM users WHERE id = auth.uid())
-        OR get_user_role() IN ('Owner', 'Manager')
+        OR get_user_role() = 'Owner'
     );
 
 -- Allow system to insert login attempts (via trigger or API)

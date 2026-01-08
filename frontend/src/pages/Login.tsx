@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Captcha } from '@/components/ui/captcha'
 import { Map } from 'lucide-react'
 
 export function Login() {
@@ -12,7 +13,10 @@ export function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const { signIn, user, loading: authLoading } = useAuth()
+  const [requiresCaptcha, setRequiresCaptcha] = useState(false)
+  const [captchaVerified, setCaptchaVerified] = useState(false)
+  const [failedAttempts, setFailedAttempts] = useState(0)
+  const { signIn, user, loading: authLoading, getFailedAttemptsCount } = useAuth()
   const navigate = useNavigate()
 
   // Navigate when user is loaded after login
@@ -22,22 +26,60 @@ export function Login() {
     }
   }, [user, authLoading, navigate])
 
+  // Check if CAPTCHA is required when email changes
+  useEffect(() => {
+    const checkCaptchaRequirement = async () => {
+      if (email.trim()) {
+        const attempts = await getFailedAttemptsCount(email.trim())
+        setFailedAttempts(attempts)
+        setRequiresCaptcha(attempts >= 3)
+        if (attempts < 3) {
+          setCaptchaVerified(false) // Reset CAPTCHA if attempts dropped below threshold
+        }
+      } else {
+        setRequiresCaptcha(false)
+        setCaptchaVerified(false)
+        setFailedAttempts(0)
+      }
+    }
+    
+    // Debounce the check
+    const timeoutId = setTimeout(checkCaptchaRequirement, 500)
+    return () => clearTimeout(timeoutId)
+  }, [email, getFailedAttemptsCount])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    
+    // Validate CAPTCHA if required
+    if (requiresCaptcha && !captchaVerified) {
+      setError('يرجى إكمال التحقق من الهوية (CAPTCHA)')
+      return
+    }
+    
     setLoading(true)
 
     try {
-      const { error } = await signIn(email, password)
-      if (error) {
-        setError(error.message)
+      const result = await signIn(email, password, captchaVerified)
+      if (result.error) {
+        setError(result.error.message)
+        setRequiresCaptcha(result.requiresCaptcha || false)
+        setFailedAttempts(result.failedAttempts || 0)
+        if (result.requiresCaptcha) {
+          setCaptchaVerified(false) // Reset CAPTCHA on error
+        }
         setLoading(false)
       } else {
+        // Clear CAPTCHA state on success
+        setRequiresCaptcha(false)
+        setCaptchaVerified(false)
+        setFailedAttempts(0)
         // Don't navigate here - let useEffect handle it when user is loaded
         // This ensures the profile is fetched before navigation
       }
     } catch {
-      setError('An unexpected error occurred')
+      setError('حدث خطأ غير متوقع')
       setLoading(false)
     }
   }
@@ -85,8 +127,26 @@ export function Login() {
                 required
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Signing in...' : 'Sign In'}
+            {requiresCaptcha && (
+              <div className="space-y-2">
+                <Captcha 
+                  onVerify={setCaptchaVerified}
+                  required={true}
+                />
+                {failedAttempts > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    محاولات فاشلة: {failedAttempts} من 5 (سيتم حظر الحساب بعد 5 محاولات)
+                  </p>
+                )}
+              </div>
+            )}
+            {failedAttempts >= 5 && (
+              <div className="rounded-md bg-yellow-500/10 p-3 text-sm text-yellow-600 dark:text-yellow-400">
+                تم حظر الحساب مؤقتاً. يرجى المحاولة بعد 15 دقيقة.
+              </div>
+            )}
+            <Button type="submit" className="w-full" disabled={loading || (requiresCaptcha && !captchaVerified)}>
+              {loading ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}
             </Button>
           </form>
         </CardContent>
