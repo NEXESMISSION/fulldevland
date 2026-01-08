@@ -4856,6 +4856,20 @@ export function LandManagement() {
                                       بيع
                                     </Button>
                                   )}
+                                  {/* Show sale details button for Reserved/Sold pieces */}
+                                  {(piece.status === 'Reserved' || piece.status === 'Sold') && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      {...createButtonHandler(() => {
+                                        openSaleDetailsDialog(piece)
+                                      })}
+                                      className="h-7 text-xs bg-white hover:bg-gray-50"
+                                    >
+                                      <Eye className="h-3 w-3 ml-1" />
+                                      تفاصيل
+                                    </Button>
+                                  )}
                           {hasPermission('edit_land') && (
                               <>
                               <Button
