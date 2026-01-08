@@ -293,7 +293,9 @@ export function LandManagement() {
   const [selectedPieces, setSelectedPieces] = useState<Set<string>>(new Set())
   const [clientDialogOpen, setClientDialogOpen] = useState(false)
   const [saleDialogOpen, setSaleDialogOpen] = useState(false)
+  const [closeSaleDialogConfirmOpen, setCloseSaleDialogConfirmOpen] = useState(false)
   const [newClient, setNewClient] = useState<Client | null>(null)
+  const [pendingSaleDialogOpen, setPendingSaleDialogOpen] = useState(false)
   const [clientForm, setClientForm] = useState({
     name: '',
     cin: '',
@@ -370,8 +372,7 @@ export function LandManagement() {
           .from('clients')
           .select('*')
           .eq('cin', sanitizedCIN)
-          .limit(1)
-          .single()
+          .maybeSingle()
 
         if (!error && data) {
           setFoundClient(data)
@@ -389,6 +390,17 @@ export function LandManagement() {
           setNewClient(data) // Set as selected client
         } else {
           setFoundClient(null)
+          setNewClient(null) // Clear selected client
+          // Clear form fields (keep CIN as user typed it)
+          setClientForm(prev => ({
+            ...prev,
+            name: '',
+            phone: '',
+            email: '',
+            address: '',
+            client_type: 'Individual',
+            notes: '',
+          }))
           // Only show "not found" if CIN is long enough to be valid
           if (sanitizedCIN.length >= 4) {
             setClientSearchStatus('not_found')
@@ -398,6 +410,17 @@ export function LandManagement() {
         }
       } catch (error) {
         setFoundClient(null)
+        setNewClient(null) // Clear selected client
+        // Clear form fields (keep CIN as user typed it)
+        setClientForm(prev => ({
+          ...prev,
+          name: '',
+          phone: '',
+          email: '',
+          address: '',
+          client_type: 'Individual',
+          notes: '',
+        }))
         if (sanitizedCIN.length >= 4) {
           setClientSearchStatus('not_found')
         } else {
@@ -433,8 +456,7 @@ export function LandManagement() {
           .from('clients')
           .select('*')
           .eq('cin', sanitizedCIN)
-          .limit(1)
-          .single()
+          .maybeSingle()
 
         if (!error && data) {
           setSaleClientFound(data)
@@ -488,6 +510,16 @@ export function LandManagement() {
   useEffect(() => {
     fetchClientsStats()
   }, [fetchClientsStats])
+  
+  // Effect to open sale dialog when newClient is set and pending
+  useEffect(() => {
+    console.log('[useEffect] Checking sale dialog open:', { pendingSaleDialogOpen, newClient: !!newClient, selectedPiecesSize: selectedPieces.size })
+    if (pendingSaleDialogOpen && newClient && selectedPieces.size > 0) {
+      console.log('[useEffect] Opening sale dialog!')
+      setSaleDialogOpen(true)
+      setPendingSaleDialogOpen(false)
+    }
+  }, [pendingSaleDialogOpen, newClient, selectedPieces.size])
 
   // Batch dialog
   const [batchDialogOpen, setBatchDialogOpen] = useState(false)
@@ -3652,33 +3684,45 @@ export function LandManagement() {
 
   // Handle create client
   const handleCreateClient = async () => {
-    if (savingClient) return
+    console.log('[handleCreateClient] Starting...', { savingClient, clientForm, selectedPieces: selectedPieces.size })
+    
+    if (savingClient) {
+      console.log('[handleCreateClient] Already saving, returning')
+      return
+    }
     
     setSavingClient(true)
     
     try {
       if (!clientForm.name.trim() || !clientForm.cin.trim() || !clientForm.phone.trim()) {
+        console.log('[handleCreateClient] Missing required fields')
         showNotification('يرجى ملء جميع الحقول المطلوبة', 'error')
         setSavingClient(false)
         return
       }
 
       const sanitizedCIN = sanitizeCIN(clientForm.cin)
+      console.log('[handleCreateClient] Sanitized CIN:', sanitizedCIN)
       if (!sanitizedCIN) {
+        console.log('[handleCreateClient] Invalid CIN')
         showNotification('رقم CIN غير صالح', 'error')
         setSavingClient(false)
         return
       }
 
       const sanitizedPhone = sanitizePhone(clientForm.phone)
+      console.log('[handleCreateClient] Sanitized phone:', sanitizedPhone)
       
       // Check for duplicate CIN - if found, use it instead of showing error
+      console.log('[handleCreateClient] Checking for existing client...')
       const { data: existingClients, error: checkError } = await supabase
         .from('clients')
         .select('*')
         .eq('cin', sanitizedCIN)
         .limit(1)
 
+      console.log('[handleCreateClient] Check result:', { existingClients, checkError })
+      
       if (existingClients && existingClients.length > 0) {
         const existingClient = existingClients[0]
         // Client exists - use it instead of creating new one
@@ -3693,10 +3737,16 @@ export function LandManagement() {
           client_type: existingClient.client_type,
           notes: existingClient.notes || '',
         })
-        setClientDialogOpen(false)
         if (selectedPieces.size > 0) {
           await loadOffersForSelectedPieces()
-          setSaleDialogOpen(true)
+          // Close client dialog first
+          setClientDialogOpen(false)
+          // Use setTimeout to ensure state updates are processed before setting pending flag
+          setTimeout(() => {
+            setPendingSaleDialogOpen(true)
+          }, 10)
+        } else {
+          setClientDialogOpen(false)
         }
         setSavingClient(false)
         return
@@ -3713,24 +3763,56 @@ export function LandManagement() {
         created_by: user?.id || null,
       }
 
-      const { data: newClientData, error } = await supabase
+      console.log('[handleCreateClient] Inserting new client:', clientData)
+      
+      // Insert client
+      const { error: insertError } = await supabase
         .from('clients')
         .insert([clientData])
-        .select()
-        .single()
 
-      if (error) throw error
+      console.log('[handleCreateClient] Insert error:', insertError)
+      
+      if (insertError) throw insertError
+      
+      // Fetch the newly created client by CIN (in case select() doesn't work due to RLS)
+      console.log('[handleCreateClient] Fetching created client by CIN:', sanitizedCIN)
+      const { data: fetchedClient, error: fetchError } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('cin', sanitizedCIN)
+        .maybeSingle()
 
+      console.log('[handleCreateClient] Fetched client:', { fetchedClient, fetchError })
+      
+      if (fetchError) throw fetchError
+      
+      if (!fetchedClient) {
+        throw new Error('فشل إنشاء العميل - لم يتم العثور على العميل بعد الإنشاء')
+      }
+      
+      const newClientData = fetchedClient
+      console.log('[handleCreateClient] Setting newClient:', newClientData)
+      // Set newClient first
       setNewClient(newClientData)
-      setClientDialogOpen(false)
       
       // Only open sale dialog if there are selected pieces
+      console.log('[handleCreateClient] Selected pieces:', selectedPieces.size)
       if (selectedPieces.size > 0) {
         // Load offers for selected pieces
         await loadOffersForSelectedPieces()
-        setSaleDialogOpen(true)
+        console.log('[handleCreateClient] Closing client dialog and setting pending flag')
+        // Close client dialog first
+        setClientDialogOpen(false)
+        // Use setTimeout to ensure state updates are processed before setting pending flag
+        setTimeout(() => {
+          console.log('[handleCreateClient] Setting pendingSaleDialogOpen to true')
+          setPendingSaleDialogOpen(true)
+        }, 10)
+      } else {
+        setClientDialogOpen(false)
+        // If no pieces selected, show notification to select pieces
+        showNotification('يرجى اختيار قطعة واحدة على الأقل لإنشاء البيع', 'warning')
       }
-      showNotification('تم إضافة العميل بنجاح', 'success')
     } catch (error: any) {
       console.error('Error creating client:', error)
       showNotification('خطأ في إضافة العميل: ' + (error.message || 'خطأ غير معروف'), 'error')
@@ -5797,8 +5879,29 @@ export function LandManagement() {
         cancelText="إلغاء"
       />
 
+      {/* Close Sale Dialog Confirmation */}
+      <ConfirmDialog
+        open={closeSaleDialogConfirmOpen}
+        onOpenChange={setCloseSaleDialogConfirmOpen}
+        onConfirm={() => {
+          setSaleDialogOpen(false)
+          setNewClient(null)
+          setSelectedPieces(new Set())
+          setSaleClientCIN('')
+          setSaleClientFound(null)
+          setSaleClientSearchStatus('idle')
+          setCloseSaleDialogConfirmOpen(false)
+        }}
+        title="تأكيد إغلاق النافذة"
+        description="هل أنت متأكد من إغلاق النافذة؟ سيتم فقدان البيانات غير المحفوظة."
+        variant="default"
+        confirmText="نعم، إغلاق"
+        cancelText="إلغاء"
+      />
+
       {/* New Client Dialog */}
       <Dialog open={clientDialogOpen} onOpenChange={(open) => {
+        console.log('[ClientDialog] onOpenChange called with:', open)
         setClientDialogOpen(open)
         if (!open) {
           // Reset form when dialog closes
@@ -5956,16 +6059,25 @@ export function LandManagement() {
             </Button>
             <Button 
               onClick={async () => {
+                console.log('[ClientButton] Clicked, foundClient:', foundClient, 'selectedPieces:', selectedPieces.size)
                 // If client found, use it directly, otherwise create new
                 if (foundClient) {
+                  console.log('[ClientButton] Using existing client')
+                  // Set newClient first
                   setNewClient(foundClient)
-                  setClientDialogOpen(false)
                   
                   // Load offers for selected pieces
                   await loadOffersForSelectedPieces()
                   
-                  setSaleDialogOpen(true)
+                  // Close client dialog first
+                  setClientDialogOpen(false)
+                  // Use setTimeout to ensure state updates are processed before setting pending flag
+                  setTimeout(() => {
+                    console.log('[ClientButton] Setting pendingSaleDialogOpen to true')
+                    setPendingSaleDialogOpen(true)
+                  }, 10)
                 } else {
+                  console.log('[ClientButton] Creating new client')
                   await handleCreateClient()
                 }
               }}
@@ -5981,28 +6093,27 @@ export function LandManagement() {
       <Dialog 
         open={saleDialogOpen} 
         onOpenChange={(open) => {
-          // Only allow closing if explicitly requested (not from internal clicks)
-          // This prevents accidental closes from event bubbling
+          console.log('[SaleDialog] onOpenChange called with:', open)
           if (!open) {
-            // Check if we have unsaved data
-            if (newClient && selectedPieces.size > 0) {
-              // Show confirmation if there's data
-              if (window.confirm('هل أنت متأكد من إغلاق النافذة؟ سيتم فقدان البيانات غير المحفوظة.')) {
-                setSaleDialogOpen(false)
-                setNewClient(null)
-                setSelectedPieces(new Set())
-                setSaleClientCIN('')
-                setSaleClientFound(null)
-                setSaleClientSearchStatus('idle')
-              }
-            } else {
-              setSaleDialogOpen(false)
-              setNewClient(null)
-              setSelectedPieces(new Set())
-              setSaleClientCIN('')
-              setSaleClientFound(null)
-              setSaleClientSearchStatus('idle')
-            }
+            // Close directly without confirmation
+            console.log('[SaleDialog] Closing')
+            setSaleDialogOpen(false)
+            setNewClient(null)
+            setSelectedPieces(new Set())
+            setSaleClientCIN('')
+            setSaleClientFound(null)
+            setSaleClientSearchStatus('idle')
+            // Reset sale form
+            setSaleForm({
+              payment_type: 'Full',
+              reservation_amount: '',
+              deadline_date: '',
+              selected_offer_id: '',
+              promise_initial_payment: '',
+            })
+          } else {
+            // When opening, don't reset newClient - it should already be set
+            setSaleDialogOpen(open)
           }
         }}
       >
@@ -6024,7 +6135,15 @@ export function LandManagement() {
           <DialogHeader>
             <DialogTitle>{t('land.createNewSale')}</DialogTitle>
           </DialogHeader>
-          {newClient && (
+          {!newClient ? (
+            <div className="p-4 text-center text-muted-foreground">
+              <p>يرجى اختيار عميل أولاً</p>
+            </div>
+          ) : selectedPieces.size === 0 ? (
+            <div className="p-4 text-center text-muted-foreground">
+              <p>يرجى اختيار قطعة واحدة على الأقل</p>
+            </div>
+          ) : (
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <p className="font-medium text-sm">العميل: {newClient.name}</p>
@@ -6096,15 +6215,9 @@ export function LandManagement() {
                   type="number"
                   step="0.01"
                   min="0"
-                  defaultValue={saleForm.reservation_amount}
-                  key={`reservation-${saleDialogOpen}`}
-                  onBlur={(e) => {
-                    e.stopPropagation()
-                    setSaleForm(prev => ({ ...prev, reservation_amount: e.target.value }))
-                  }}
+                  value={saleForm.reservation_amount}
                   onChange={(e) => {
                     e.stopPropagation()
-                    // Use functional update to avoid stale closure
                     setSaleForm(prev => ({ ...prev, reservation_amount: e.target.value }))
                   }}
                   onClick={(e) => {
@@ -6656,6 +6769,16 @@ export function LandManagement() {
                 setSaleDialogOpen(false)
                 setNewClient(null)
                 setSelectedPieces(new Set())
+                setSaleClientCIN('')
+                setSaleClientFound(null)
+                setSaleClientSearchStatus('idle')
+                setSaleForm({
+                  payment_type: 'Full',
+                  reservation_amount: '',
+                  deadline_date: '',
+                  selected_offer_id: '',
+                  promise_initial_payment: '',
+                })
               }}
             >
               إلغاء

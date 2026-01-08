@@ -345,10 +345,15 @@ export function Clients() {
         .from('clients')
         .select('id, name')
         .eq('id', clientToDelete)
-        .single()
+        .maybeSingle()
       
-      if (checkError || !clientCheck) {
-        console.error('Client not found:', checkError)
+      if (checkError) {
+        console.error('Error checking client:', checkError)
+        throw new Error('خطأ في التحقق من العميل')
+      }
+      
+      if (!clientCheck) {
+        console.error('Client not found')
         throw new Error('العميل غير موجود')
       }
       
@@ -370,10 +375,9 @@ export function Clients() {
         .from('clients')
         .select('id')
         .eq('id', clientToDelete)
-        .single()
+        .maybeSingle()
       
-      if (verifyError && verifyError.code !== 'PGRST116') {
-        // PGRST116 means no rows found, which is what we want
+      if (verifyError) {
         console.error('Verification error:', verifyError)
       }
       

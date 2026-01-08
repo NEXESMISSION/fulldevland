@@ -483,11 +483,12 @@ export function SaleConfirmation() {
     
     // Calculate number of months from offer if available
     if (offer && type === 'bigAdvance' && sale.payment_type === 'Installment') {
-      // Advance should be calculated from totalPayablePerPiece (price + company fee), not just price
+      // Advance is calculated from PRICE (without commission)
       const advanceAmount = offer.advance_is_percentage
-        ? (totalPayablePerPiece * offer.advance_amount) / 100
+        ? (calculatedPricePerPiece * offer.advance_amount) / 100
         : offer.advance_amount
-      const remainingAmount = totalPayablePerPiece - reservationPerPiece - advanceAmount
+      // Remaining for installments = Price - Reservation - Advance (commission is paid at confirmation)
+      const remainingAmount = calculatedPricePerPiece - reservationPerPiece - advanceAmount
       
       let numberOfMonths = 0
       if (offer.monthly_payment && offer.monthly_payment > 0) {
@@ -499,16 +500,18 @@ export function SaleConfirmation() {
       }
       setNumberOfInstallments(numberOfMonths.toString())
     } else {
-    setNumberOfInstallments(sale.number_of_installments?.toString() || '12')
+      setNumberOfInstallments(sale.number_of_installments?.toString() || '12')
     }
     
-    // Auto-fill received amount (advance) for installment from offer
+    // Auto-fill received amount (advance + commission) for installment from offer
     if (type === 'bigAdvance' && sale.payment_type === 'Installment' && offer) {
-      // Advance should be calculated from totalPayablePerPiece (price + company fee), not just price
+      // Advance is calculated from PRICE (without commission)
       const advanceAmount = offer.advance_is_percentage
-        ? (totalPayablePerPiece * offer.advance_amount) / 100
+        ? (calculatedPricePerPiece * offer.advance_amount) / 100
         : offer.advance_amount
-      setReceivedAmount(advanceAmount.toFixed(2))
+      // Total to receive = Advance + Commission
+      const totalToReceive = advanceAmount + companyFeePerPiece
+      setReceivedAmount(totalToReceive.toFixed(2))
     } else if (type === 'full') {
       // For PromiseOfSale
       if ((sale.payment_type as any) === 'PromiseOfSale') {
@@ -799,14 +802,20 @@ export function SaleConfirmation() {
   const handleConfirmation = async () => {
     if (!selectedSale || !selectedPiece) return
     
-    // Show pre-confirmation dialog first for installment sales
+    // Show pre-confirmation dialog for all sales
     if (confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
       // For installment, show confirmation dialog before proceeding
       setConfirmBeforeConfirmOpen(true)
       return
     }
     
-    // For full payment, proceed directly without pre-confirmation
+    // For full payment (including PromiseOfSale), show confirmation dialog
+    if (confirmationType === 'full') {
+      setConfirmBeforeConfirmOpen(true)
+      return
+    }
+    
+    // Fallback (shouldn't reach here)
     await proceedWithConfirmation()
   }
 
@@ -819,7 +828,9 @@ export function SaleConfirmation() {
     
     try {
       const pieceCount = selectedSale.land_piece_ids.length
-      const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(selectedSale, selectedPiece)
+      // Get the offer to use - prioritize selectedOffer state, then sale's selected_offer
+      const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
+      const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
       const received = parseFloat(receivedAmount) || 0
       
       // For full payment, just ensure the amount is positive
@@ -827,22 +838,29 @@ export function SaleConfirmation() {
       if (confirmationType === 'full') {
         if (received <= 0) {
           setError('المبلغ المستلم يجب أن يكون أكبر من صفر')
-        setConfirming(false)
-        return
+          setConfirming(false)
+          return
         }
       } else if (confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
         // For installment, use advance amount from offer
         // NOTE: Advance is calculated from PRICE (not including commission)
         // Commission is collected SEPARATELY at confirmation
-        if (selectedOffer) {
+        if (offerToUse) {
           // Advance calculated from pricePerPiece (WITHOUT commission)
-          const advanceAmount = selectedOffer.advance_is_percentage
-            ? (pricePerPiece * selectedOffer.advance_amount) / 100
-            : selectedOffer.advance_amount
+          const advanceAmount = offerToUse.advance_is_percentage
+            ? (pricePerPiece * offerToUse.advance_amount) / 100
+            : offerToUse.advance_amount
           // Total to receive = Advance + Commission
           const totalToReceive = advanceAmount + companyFeePerPiece
           if (Math.abs(received - totalToReceive) > 0.01) {
             setError(`المبلغ المستحق عند التأكيد (التسبقة + العمولة) يجب أن يكون ${formatCurrency(totalToReceive)}`)
+            setConfirming(false)
+            return
+          }
+        } else {
+          // No offer - just check that amount is positive
+          if (received <= 0) {
+            setError('المبلغ المستلم يجب أن يكون أكبر من صفر')
             setConfirming(false)
             return
           }
@@ -2285,7 +2303,13 @@ export function SaleConfirmation() {
             proceedWithConfirmation()
           }
         }}
-        title={pendingConfirmationType === 'full' ? 'تأكيد البيع بالحاضر' : 'تأكيد البيع بالتقسيط'}
+        title={
+          pendingConfirmationType === 'full' 
+            ? ((selectedSale?.payment_type as any) === 'PromiseOfSale'
+                ? ((selectedSale.promise_initial_payment || 0) > 0 ? 'استكمال الوعد بالبيع' : 'تأكيد الوعد بالبيع')
+                : 'تأكيد البيع بالحاضر')
+            : 'تأكيد البيع بالتقسيط'
+        }
         description={
           selectedSale && selectedPiece && (() => {
             const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
@@ -2293,7 +2317,14 @@ export function SaleConfirmation() {
             
             let amountToReceive = 0
             if (pendingConfirmationType === 'full') {
-              amountToReceive = totalPayablePerPiece - reservationPerPiece
+              if ((selectedSale.payment_type as any) === 'PromiseOfSale' && (selectedSale.promise_initial_payment || 0) > 0) {
+                // For PromiseOfSale completion, calculate remaining amount
+                const pieceCount = selectedSale.land_piece_ids.length
+                const initialPaymentPerPiece = (selectedSale.promise_initial_payment || 0) / pieceCount
+                amountToReceive = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
+              } else {
+                amountToReceive = totalPayablePerPiece - reservationPerPiece
+              }
             } else if (pendingConfirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
               const calculatedOffer = offerToUse
               if (calculatedOffer) {
@@ -2306,7 +2337,11 @@ export function SaleConfirmation() {
               }
             }
             
-            return `هل أنت متأكد أنك ستحصل على مبلغ ${formatCurrency(amountToReceive)} من العميل ${selectedSale.client?.name || 'غير معروف'}؟`
+            const paymentTypeText = (selectedSale.payment_type as any) === 'PromiseOfSale'
+              ? ((selectedSale.promise_initial_payment || 0) > 0 ? 'استكمال الوعد بالبيع' : 'تأكيد الوعد بالبيع')
+              : (pendingConfirmationType === 'full' ? 'البيع بالحاضر' : 'البيع بالتقسيط')
+            
+            return `هل أنت متأكد أنك ستحصل على مبلغ ${formatCurrency(amountToReceive)} من العميل ${selectedSale.client?.name || 'غير معروف'} عند ${paymentTypeText}؟`
           })() || ''
         }
         confirmText="نعم، متأكد"
