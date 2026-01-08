@@ -1406,16 +1406,19 @@ export function SalesNew() {
                           {/* Status Dot */}
                           {(() => {
                             const saleData = sales.find(s => s.id === sale.saleId)
-                            const isCompleted = sale.status === 'Completed' || (sale as any).status === 'Completed'
-                            const isConfirmed = sale.bigAdvanceConfirmed || sale.fullPaymentConfirmed || (saleData as any)?.is_confirmed
-                            const isPending = sale.status === 'Pending' && !isConfirmed
+                            const saleStatus = (saleData?.status as any) || sale.status
+                            const isCompleted = saleStatus === 'Completed'
+                            const isPending = saleStatus === 'Pending'
+                            const isCancelled = saleStatus === 'Cancelled'
                             
                             if (isCompleted) {
                               return <div className="w-3 h-3 rounded-full bg-green-500 flex-shrink-0" title="مباع" />
-                            } else if (isConfirmed) {
-                              return <div className="w-3 h-3 rounded-full bg-orange-500 flex-shrink-0" title="مؤكد" />
+                            } else if (isPending) {
+                              return <div className="w-3 h-3 rounded-full bg-orange-500 flex-shrink-0" title="قيد الانتظار" />
+                            } else if (isCancelled) {
+                              return <div className="w-3 h-3 rounded-full bg-red-500 flex-shrink-0" title="ملغي" />
                             } else {
-                              return <div className="w-3 h-3 rounded-full bg-red-500 flex-shrink-0" title="في انتظار التأكيد" />
+                              return <div className="w-3 h-3 rounded-full bg-yellow-500 flex-shrink-0" title="محجوز" />
                             }
                           })()}
                         <button 
@@ -1832,34 +1835,37 @@ export function SalesNew() {
             const createdByUser = saleData?.created_by ? users.find(u => u.id === saleData.created_by) : null
             const confirmedByUser = (saleData as any)?.confirmed_by ? users.find(u => u.id === (saleData as any).confirmed_by) : null
             
-            const totalPaid = salePayments
-              .filter(p => p.payment_type !== 'Refund')
-              .reduce((sum, p) => sum + (p.amount_paid || 0), 0) / (saleData?.land_piece_ids.length || 1)
+            // Calculate payments per piece (divide by number of pieces)
+            const pieceCount = saleData?.land_piece_ids?.length || 1
             
             const reservationPaid = salePayments
               .filter(p => p.payment_type === 'SmallAdvance')
-              .reduce((sum, p) => sum + (p.amount_paid || 0), 0) / (saleData?.land_piece_ids.length || 1)
+              .reduce((sum, p) => sum + (p.amount_paid || 0), 0) / pieceCount
             
             const bigAdvancePaid = salePayments
               .filter(p => p.payment_type === 'BigAdvance')
-              .reduce((sum, p) => sum + (p.amount_paid || 0), 0) / (saleData?.land_piece_ids.length || 1)
+              .reduce((sum, p) => sum + (p.amount_paid || 0), 0) / pieceCount
             
-            const installmentPaid = salePayments
-              .filter(p => p.payment_type === 'Installment')
-              .reduce((sum, p) => sum + (p.amount_paid || 0), 0) / (saleData?.land_piece_ids.length || 1)
+            // Calculate installment paid from installments table, not payments
+            const installmentPaid = saleInstallments
+              .reduce((sum, inst) => sum + (inst.amount_paid || 0), 0) / pieceCount
+            
+            // Total paid = reservation + big advance + installments (exclude Refund and Installment payment type from payments as installments are tracked separately)
+            const totalPaid = reservationPaid + bigAdvancePaid + installmentPaid
             
             return (
               <div className="space-y-6">
                 {/* Status Badge */}
                 <div className="flex items-center gap-3">
                   {(() => {
-                    const isCompleted = selectedSaleForDetails.status === 'Completed'
+                    const saleStatus = (saleData?.status as any) || selectedSaleForDetails.status
+                    const isCompleted = saleStatus === 'Completed'
                     const isConfirmed = selectedSaleForDetails.bigAdvanceConfirmed || selectedSaleForDetails.fullPaymentConfirmed
-                    const isPending = selectedSaleForDetails.status === 'Pending' && !isConfirmed
+                    const isPending = saleStatus === 'Pending' && !isConfirmed
                     
                     if (isCompleted) {
                       return <div className="w-4 h-4 rounded-full bg-green-500" />
-                    } else if (isConfirmed) {
+                    } else if (isConfirmed || saleStatus === 'Pending') {
                       return <div className="w-4 h-4 rounded-full bg-orange-500" />
                     } else {
                       return <div className="w-4 h-4 rounded-full bg-red-500" />
@@ -1867,13 +1873,18 @@ export function SalesNew() {
                   })()}
                   <Badge 
                     variant={
-                      selectedSaleForDetails.status === 'Completed' ? 'success' :
-                      selectedSaleForDetails.status === 'InstallmentsOngoing' ? 'secondary' :
-                      selectedSaleForDetails.status === 'AwaitingPayment' ? 'warning' : 'destructive'
+                      (saleData?.status as any) === 'Completed' ? 'success' :
+                      (saleData?.status as any) === 'Pending' ? 'secondary' :
+                      (saleData?.status as any) === 'Cancelled' ? 'destructive' : 'warning'
                     }
                     className="text-sm"
                   >
-                    {selectedSaleForDetails.status === 'Completed' ? 'مباع' :
+                    {(saleData?.status as any) === 'Completed' ? 'مباع' :
+                     (saleData?.status as any) === 'Pending' ? 'قيد الانتظار' :
+                     (saleData?.status as any) === 'Cancelled' ? 'ملغي' :
+                     (saleData?.status as any) === 'InstallmentsOngoing' ? 'أقساط جارية' :
+                     (saleData?.status as any) === 'AwaitingPayment' ? 'قيد الدفع' :
+                     selectedSaleForDetails.status === 'Completed' ? 'مباع' :
                      selectedSaleForDetails.status === 'InstallmentsOngoing' ? 'أقساط جارية' :
                      selectedSaleForDetails.status === 'AwaitingPayment' ? 'قيد الدفع' :
                      'محجوز'}
@@ -1883,7 +1894,7 @@ export function SalesNew() {
                 {/* Client Information */}
                 <Card>
                   <CardContent className="p-4">
-                    <h3 className="font-semibold mb-3 text-lg">{t('sales.clientInfo')}</h3>
+                    <h3 className="font-semibold mb-3 text-lg">معلومات العميل</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-muted-foreground">{t('sales.clientName')}</p>
@@ -1955,11 +1966,11 @@ export function SalesNew() {
                         {selectedSaleForDetails.companyFeeAmount && selectedSaleForDetails.companyFeeAmount > 0 && (
                           <>
                             <div>
-                              <p className="text-sm text-muted-foreground">{t('sales.companyFeePercent', { percent: selectedSaleForDetails.companyFeePercentage || 0 })}</p>
+                              <p className="text-sm text-muted-foreground">عمولة الشركة (%)</p>
                               <p className="font-medium">{selectedSaleForDetails.companyFeePercentage || 0}%</p>
                             </div>
                             <div>
-                              <p className="text-sm text-muted-foreground">{t('sales.companyFeeAmount')}</p>
+                              <p className="text-sm text-muted-foreground">عمولة الشركة</p>
                               <p className="font-medium text-blue-600">{formatCurrency(selectedSaleForDetails.companyFeeAmount)}</p>
                             </div>
                             <div className="sm:col-span-2">
