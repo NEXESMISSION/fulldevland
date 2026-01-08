@@ -1019,29 +1019,6 @@ export function Financial() {
         )
       })()}
 
-      {/* Grand Total - Most Important */}
-      <Card className="bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg">
-        <CardContent className="pt-3 sm:pt-4 pb-3 sm:pb-4 px-3 sm:px-4 md:px-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs sm:text-sm font-medium text-green-100 mb-1">المجموع الإجمالي (المستلم + العمولة المستحقة)</p>
-              <p className="text-2xl sm:text-3xl md:text-4xl font-bold">{formatCurrency(filteredData.cashReceived + filteredData.companyFeesTotal)}</p>
-              <p className="text-xs text-green-100 mt-1">
-                المستلم نقداً: {formatCurrency(filteredData.cashReceived)} | العمولة المستحقة: {formatCurrency(filteredData.companyFeesTotal)}
-              </p>
-              <p className="text-xs text-green-200 mt-1 opacity-90">
-                ملاحظة: العمولة تُحسب فقط للمبيعات المؤكدة (تُحصّل عند التأكيد مع التسبقة)
-              </p>
-            </div>
-            <div className="text-right hidden sm:block">
-              <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white/20 rounded-full flex items-center justify-center">
-                <TrendingUp className="h-6 w-6 sm:h-8 sm:w-8" />
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Cash Received Summary - Single Card (العمولة is in the table below) */}
         <Card className="bg-purple-50 border-purple-200">
           <CardContent className="pt-4">

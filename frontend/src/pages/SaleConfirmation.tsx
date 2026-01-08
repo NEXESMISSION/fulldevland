@@ -2317,23 +2317,34 @@ export function SaleConfirmation() {
             
             let amountToReceive = 0
             if (pendingConfirmationType === 'full') {
-              if ((selectedSale.payment_type as any) === 'PromiseOfSale' && (selectedSale.promise_initial_payment || 0) > 0) {
-                // For PromiseOfSale completion, calculate remaining amount
-                const pieceCount = selectedSale.land_piece_ids.length
-                const initialPaymentPerPiece = (selectedSale.promise_initial_payment || 0) / pieceCount
-                amountToReceive = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
+              if ((selectedSale.payment_type as any) === 'PromiseOfSale') {
+                if ((selectedSale.promise_initial_payment || 0) > 0) {
+                  // For PromiseOfSale completion (phase 2), calculate remaining amount
+                  const pieceCount = selectedSale.land_piece_ids.length
+                  const initialPaymentPerPiece = (selectedSale.promise_initial_payment || 0) / pieceCount
+                  amountToReceive = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
+                } else {
+                  // For PromiseOfSale initial payment (phase 1), use the amount entered by user
+                  amountToReceive = parseFloat(receivedAmount) || 0
+                  // If no amount entered yet, calculate remaining (but this shouldn't happen as field should be filled)
+                  if (amountToReceive === 0) {
+                    amountToReceive = totalPayablePerPiece - reservationPerPiece
+                  }
+                }
               } else {
+                // For regular full payment
                 amountToReceive = totalPayablePerPiece - reservationPerPiece
               }
             } else if (pendingConfirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
               const calculatedOffer = offerToUse
               if (calculatedOffer) {
-                // Advance should be calculated from totalPayablePerPiece (price + company fee), not just price
-                // We need to recalculate totalPayablePerPiece here
-                const { totalPayablePerPiece: totalPayable } = calculatePieceValues(selectedSale, selectedPiece, calculatedOffer)
-                amountToReceive = calculatedOffer.advance_is_percentage
-                  ? (totalPayable * calculatedOffer.advance_amount) / 100
+                // Advance is calculated from price (without commission)
+                // Commission is collected separately at confirmation
+                const advanceAmount = calculatedOffer.advance_is_percentage
+                  ? (pricePerPiece * calculatedOffer.advance_amount) / 100
                   : calculatedOffer.advance_amount
+                // Total to receive = Advance + Commission
+                amountToReceive = advanceAmount + companyFeePerPiece
               }
             }
             
