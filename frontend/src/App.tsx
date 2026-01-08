@@ -7,6 +7,7 @@ import { LandManagement } from '@/pages/LandManagement'
 import { Clients } from '@/pages/Clients'
 import { SalesNew as Sales } from '@/pages/SalesNew'
 import { SaleConfirmation } from '@/pages/SaleConfirmation'
+import { SaleManagement } from '@/pages/SaleManagement'
 import { Installments } from '@/pages/Installments'
 import { Financial } from '@/pages/FinancialNew'
 import { Users } from '@/pages/Users'
@@ -189,6 +190,14 @@ function AppRoutes() {
           element={
             <PermissionProtectedRoute permission="edit_sales" pageId="confirm-sales">
               <SaleConfirmation />
+            </PermissionProtectedRoute>
+          } 
+        />
+        <Route 
+          path="sale-management" 
+          element={
+            <PermissionProtectedRoute permission="edit_sales" pageId="sale-management">
+              <SaleManagement />
             </PermissionProtectedRoute>
           } 
         />

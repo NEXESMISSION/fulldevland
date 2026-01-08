@@ -299,10 +299,11 @@ export function SaleConfirmation() {
             return false // Exclude from list
           }
           
-          // If this is a PromiseOfSale and has been completed
+          // If this is a PromiseOfSale and has been fully completed (both parts paid)
           if (sale.payment_type === 'PromiseOfSale' && sale.promise_completed) {
-            return false // Exclude completed promises
+            return false // Exclude fully completed promises
           }
+          // PromiseOfSale with initial payment should stay in list for completion
           
           return true // Include in list
         })
@@ -509,34 +510,65 @@ export function SaleConfirmation() {
         : offer.advance_amount
       setReceivedAmount(advanceAmount.toFixed(2))
     } else if (type === 'full') {
-      // For full payment, calculate remaining amount using company_fee_percentage_full from batch
-      const pieceCount = sale.land_piece_ids.length
-      // Use actual piece price if available
-      let pricePerPiece = piece.selling_price_full || 0
-      if (pricePerPiece === 0) {
-        pricePerPiece = sale.total_selling_price / pieceCount
-      }
-      const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
-      
-      // Get company fee from batch for full payment
-      const batch = (piece as any).land_batch
-      const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || (companyFeePercentage ? parseFloat(String(companyFeePercentage)) : 0) || 0
-      const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
-      const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
-      
-      // For PromiseOfSale, also subtract initial payment already received
-      let remainingAmount = totalPayablePerPiece - reservationPerPiece
-      if (sale.payment_type === 'PromiseOfSale') {
-        const initialPaymentPerPiece = (sale.promise_initial_payment || 0) / pieceCount
-        remainingAmount = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
-      }
-      setReceivedAmount(remainingAmount.toFixed(2))
-      
-      // Set company fee percentage for display
-      if (batch?.company_fee_percentage_full) {
-        setCompanyFeePercentage(batch.company_fee_percentage_full.toString())
-      } else if (sale.company_fee_percentage) {
-        setCompanyFeePercentage(sale.company_fee_percentage.toString())
+      // For PromiseOfSale
+      if ((sale.payment_type as any) === 'PromiseOfSale') {
+        const pieceCount = sale.land_piece_ids.length
+        // Use actual piece price if available
+        let pricePerPiece = piece.selling_price_full || 0
+        if (pricePerPiece === 0) {
+          pricePerPiece = sale.total_selling_price / pieceCount
+        }
+        const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
+        
+        // Get company fee from batch
+        const batch = (piece as any).land_batch
+        const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || (companyFeePercentage ? parseFloat(String(companyFeePercentage)) : 0) || 0
+        const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
+        const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
+        
+        const hasInitialPayment = (sale.promise_initial_payment || 0) > 0
+        
+        if (hasInitialPayment) {
+          // This is completion (phase 2) - auto-fill with remaining amount
+          const initialPaymentPerPiece = (sale.promise_initial_payment || 0) / pieceCount
+          const remainingAmount = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
+          setReceivedAmount(remainingAmount.toFixed(2))
+        } else {
+          // This is initial payment (phase 1) - leave empty for user to enter
+          setReceivedAmount('')
+        }
+        
+        // Set company fee percentage for display
+        if (batch?.company_fee_percentage_full) {
+          setCompanyFeePercentage(batch.company_fee_percentage_full.toString())
+        } else if (sale.company_fee_percentage) {
+          setCompanyFeePercentage(sale.company_fee_percentage.toString())
+        }
+      } else {
+        // For full payment, calculate remaining amount using company_fee_percentage_full from batch
+        const pieceCount = sale.land_piece_ids.length
+        // Use actual piece price if available
+        let pricePerPiece = piece.selling_price_full || 0
+        if (pricePerPiece === 0) {
+          pricePerPiece = sale.total_selling_price / pieceCount
+        }
+        const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
+        
+        // Get company fee from batch for full payment
+        const batch = (piece as any).land_batch
+        const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || (companyFeePercentage ? parseFloat(String(companyFeePercentage)) : 0) || 0
+        const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
+        const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
+        
+        const remainingAmount = totalPayablePerPiece - reservationPerPiece
+        setReceivedAmount(remainingAmount.toFixed(2))
+        
+        // Set company fee percentage for display
+        if (batch?.company_fee_percentage_full) {
+          setCompanyFeePercentage(batch.company_fee_percentage_full.toString())
+        } else if (sale.company_fee_percentage) {
+          setCompanyFeePercentage(sale.company_fee_percentage.toString())
+        }
       }
     } else {
       setReceivedAmount('')
@@ -827,10 +859,30 @@ export function SaleConfirmation() {
         }
 
         if (confirmationType === 'full') {
-          if (selectedSale.payment_type === 'PromiseOfSale') {
-            updates.promise_completed = true
+          if ((selectedSale.payment_type as any) === 'PromiseOfSale') {
+            // Fetch current sale data to get latest promise_initial_payment
+            const { data: currentSale, error: fetchError } = await supabase
+              .from('sales')
+              .select('promise_initial_payment, promise_completed')
+              .eq('id', selectedSale.id)
+              .single()
+            
+            const currentInitialPayment = fetchError ? (selectedSale.promise_initial_payment || 0) : (currentSale?.promise_initial_payment || 0)
+            const hasInitialPayment = currentInitialPayment > 0
+            
+            if (hasInitialPayment) {
+              // This is the completion (second part) - mark as completed
+              updates.promise_completed = true
+              updates.status = 'Completed'
+            } else {
+              // This is the initial payment (first part) - keep in pending
+              updates.promise_initial_payment = received
+              updates.status = 'Pending'
+              updates.promise_completed = false
+            }
+          } else {
+            updates.status = 'Completed'
           }
-          updates.status = 'Completed'
           updates.big_advance_amount = 0
         } else if (confirmationType === 'bigAdvance') {
           updates.big_advance_amount = received
@@ -981,6 +1033,21 @@ export function SaleConfirmation() {
           }
         }
 
+        // For PromiseOfSale completion, we need to check the current state from DB
+        let currentSaleData = selectedSale
+        if ((selectedSale.payment_type as any) === 'PromiseOfSale' && confirmationType === 'full') {
+          // Fetch current sale data to get latest promise_initial_payment
+          const { data: currentSale, error: fetchError } = await supabase
+            .from('sales')
+            .select('promise_initial_payment, promise_completed')
+            .eq('id', selectedSale.id)
+            .single()
+          
+          if (!fetchError && currentSale) {
+            currentSaleData = { ...selectedSale, ...currentSale }
+          }
+        }
+
         // Update sale status
         const { error: updateError, data: updatedSale } = await supabase
           .from('sales')
@@ -993,7 +1060,12 @@ export function SaleConfirmation() {
 
         // Create payment record
         if (received > 0) {
-          const paymentType = confirmationType === 'full' ? 'Full' : 'BigAdvance'
+          let paymentType = confirmationType === 'full' ? 'Full' : 'BigAdvance'
+          // For PromiseOfSale, use Partial for first part, Full for completion
+          if ((currentSaleData.payment_type as any) === 'PromiseOfSale' && confirmationType === 'full') {
+            const hasInitialPayment = (currentSaleData.promise_initial_payment || 0) > 0
+            paymentType = hasInitialPayment ? 'Full' : 'Partial'
+          }
           const { error: paymentError } = await supabase.from('payments').insert([{
             client_id: selectedSale.client_id,
             sale_id: selectedSale.id,
@@ -1035,17 +1107,37 @@ export function SaleConfirmation() {
           big_advance_amount: 0,
           number_of_installments: null,
           monthly_installment_amount: null,
-          status: confirmationType === 'full' ? 'Completed' : 'Pending',
+          status: 'Pending', // Will be set correctly below based on payment type
           sale_date: selectedSale.sale_date,
           notes: `تأكيد قطعة من البيع #${selectedSale.id.slice(0, 8)}`,
           created_by: selectedSale.created_by || user?.id || null, // Keep original creator
         }
 
         if (confirmationType === 'full') {
-          if (selectedSale.payment_type === 'PromiseOfSale') {
-            newSaleData.promise_completed = true
+          if ((selectedSale.payment_type as any) === 'PromiseOfSale') {
+            // Fetch current sale data to get latest promise_initial_payment
+            const { data: currentSale, error: fetchError } = await supabase
+              .from('sales')
+              .select('promise_initial_payment, promise_completed')
+              .eq('id', selectedSale.id)
+              .single()
+            
+            const currentInitialPayment = fetchError ? (selectedSale.promise_initial_payment || 0) : (currentSale?.promise_initial_payment || 0)
+            const hasInitialPayment = currentInitialPayment > 0
+            
+            if (hasInitialPayment) {
+              // This is the completion (second part) - mark as completed
+              newSaleData.promise_completed = true
+              newSaleData.status = 'Completed'
+            } else {
+              // This is the initial payment (first part) - keep in pending
+              newSaleData.promise_initial_payment = received
+              newSaleData.status = 'Pending'
+              newSaleData.promise_completed = false
+            }
+          } else {
+            newSaleData.status = 'Completed'
           }
-          newSaleData.status = 'Completed'
           newSaleData.big_advance_amount = 0
         } else if (confirmationType === 'bigAdvance') {
           newSaleData.big_advance_amount = received
@@ -1173,7 +1265,20 @@ export function SaleConfirmation() {
 
         // Create payment record if amount was received
         if (received > 0) {
-          const paymentType = confirmationType === 'full' ? 'Full' : 'BigAdvance'
+          let paymentType = confirmationType === 'full' ? 'Full' : 'BigAdvance'
+          // For PromiseOfSale, use Partial for first part, Full for completion
+          if ((selectedSale.payment_type as any) === 'PromiseOfSale' && confirmationType === 'full') {
+            // Fetch current sale data to get latest promise_initial_payment
+            const { data: currentSale, error: fetchError } = await supabase
+              .from('sales')
+              .select('promise_initial_payment')
+              .eq('id', selectedSale.id)
+              .single()
+            
+            const currentInitialPayment = fetchError ? (selectedSale.promise_initial_payment || 0) : (currentSale?.promise_initial_payment || 0)
+            const hasInitialPayment = currentInitialPayment > 0
+            paymentType = hasInitialPayment ? 'Full' : 'Partial'
+          }
           const { error: paymentError } = await supabase.from('payments').insert([{
             client_id: selectedSale.client_id,
             sale_id: newSale.id,
@@ -1236,10 +1341,13 @@ export function SaleConfirmation() {
       }
 
       // Show success message
+      const isPromiseCompletion = selectedSale.payment_type === 'PromiseOfSale' && confirmationType === 'full' && (selectedSale.promise_initial_payment || 0) > 0
       showNotification(
         confirmationType === 'full' 
           ? (selectedSale.payment_type === 'PromiseOfSale' 
-              ? 'تم تأكيد الوعد بالبيع بنجاح' 
+              ? (isPromiseCompletion 
+                  ? 'تم استكمال الوعد بالبيع بنجاح' 
+                  : 'تم تأكيد الوعد بالبيع بنجاح - يمكنك الآن استكمال الدفع المتبقي')
               : 'تم تأكيد البيع بنجاح (دفع كامل)')
           : 'تم تأكيد الدفعة الكبيرة بنجاح',
         'success'
@@ -1563,6 +1671,28 @@ export function SaleConfirmation() {
                                     <div className="font-medium text-purple-600">{formatCurrency(advancePerPiece)}</div>
                                   </div>
                                 )}
+                                {(sale.payment_type as any) === 'PromiseOfSale' && (() => {
+                                  const pieceCount = sale.land_piece_ids.length
+                                  const initialPaymentPerPiece = (sale.promise_initial_payment || 0) / pieceCount
+                                  return (
+                                    <div>
+                                      <span className="text-muted-foreground">المستلم:</span>
+                                      <div className="font-medium text-green-600">{formatCurrency(initialPaymentPerPiece)}</div>
+                                    </div>
+                                  )
+                                })()}
+                                {(sale.payment_type as any) === 'PromiseOfSale' && (() => {
+                                  const pieceCount = sale.land_piece_ids.length
+                                  const totalPricePerPiece = totalPayablePerPiece
+                                  const initialPaymentPerPiece = (sale.promise_initial_payment || 0) / pieceCount
+                                  const remaining = totalPricePerPiece - initialPaymentPerPiece - reservationPerPiece
+                                  return (
+                                    <div>
+                                      <span className="text-muted-foreground">المتبقي:</span>
+                                      <div className="font-bold text-orange-600">{formatCurrency(Math.max(0, remaining))}</div>
+                                    </div>
+                                  )
+                                })()}
                               </div>
                               
                               <div className="flex flex-wrap gap-2 pt-2 border-t">
@@ -1614,7 +1744,7 @@ export function SaleConfirmation() {
                                     تأكيد بالتقسيط
                                   </Button>
                                 )}
-                                {sale.payment_type === 'PromiseOfSale' && (
+                                {(sale.payment_type as any) === 'PromiseOfSale' && (
                                   <Button
                                     onClick={() => {
                                       setSelectedSale(sale)
@@ -1622,11 +1752,11 @@ export function SaleConfirmation() {
                                       setPendingConfirmationType('full')
                                       openConfirmDialog(sale, piece, 'full')
                                     }}
-                                    className="bg-purple-600 hover:bg-purple-700 text-xs h-8 flex-1"
+                                    className={`${(sale.promise_initial_payment || 0) > 0 ? 'bg-orange-600 hover:bg-orange-700' : 'bg-purple-600 hover:bg-purple-700'} text-xs h-8 flex-1`}
                                     size="sm"
                                   >
                                     <CheckCircle className="ml-1 h-3 w-3" />
-                                    تأكيد الوعد بالبيع
+                                    {(sale.promise_initial_payment || 0) > 0 ? 'استكمال الوعد بالبيع' : 'تأكيد الوعد بالبيع'}
                                   </Button>
                                 )}
                               </div>
@@ -1754,11 +1884,11 @@ export function SaleConfirmation() {
                                         setPendingConfirmationType('full')
                                         openConfirmDialog(sale, piece, 'full')
                                       }}
-                                      className="bg-purple-600 hover:bg-purple-700 text-xs px-2 h-7"
+                                      className={`${(sale.promise_initial_payment || 0) > 0 ? 'bg-orange-600 hover:bg-orange-700' : 'bg-purple-600 hover:bg-purple-700'} text-xs px-2 h-7`}
                                       size="sm"
                                     >
                                       <CheckCircle className="ml-1 h-3 w-3" />
-                                      تأكيد الوعد بالبيع
+                                      {(sale.promise_initial_payment || 0) > 0 ? 'استكمال الوعد بالبيع' : 'تأكيد الوعد بالبيع'}
                                     </Button>
                                   )}
                                 </div>
@@ -1781,7 +1911,9 @@ export function SaleConfirmation() {
         <DialogContent className="w-[95vw] sm:w-full max-w-2xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {confirmationType === 'full' && (selectedSale?.payment_type === 'PromiseOfSale' ? 'تأكيد الوعد بالبيع' : 'تأكيد بالحاضر')}
+              {confirmationType === 'full' && (selectedSale?.payment_type === 'PromiseOfSale' 
+                ? ((selectedSale.promise_initial_payment || 0) > 0 ? 'استكمال الوعد بالبيع' : 'تأكيد الوعد بالبيع')
+                : 'تأكيد بالحاضر')}
               {confirmationType === 'bigAdvance' && (selectedSale?.payment_type === 'Full' ? 'تأكيد بالحاضر' : 'تأكيد بالتقسيط')}
               {selectedPiece && ` - #${selectedPiece.piece_number}`}
             </DialogTitle>
@@ -1801,14 +1933,14 @@ export function SaleConfirmation() {
                 ? (pricePerPiece * calculatedOffer.advance_amount) / 100
                 : calculatedOffer.advance_amount
             } else if (confirmationType === 'full') {
-              if (selectedSale.payment_type === 'PromiseOfSale') {
+              if ((selectedSale.payment_type as any) === 'PromiseOfSale') {
                 // For PromiseOfSale, calculate remaining after initial payment
                 const pieceCount = selectedSale.land_piece_ids.length
                 const initialPaymentPerPiece = (selectedSale.promise_initial_payment || 0) / pieceCount
                 advanceAmount = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
               } else {
               advanceAmount = totalPayablePerPiece - reservationPerPiece
-              }
+            }
             }
             
             // Calculate remaining for installments = Price - Reservation - Advance (WITHOUT commission)
@@ -1881,7 +2013,7 @@ export function SaleConfirmation() {
                             <span className="text-sm sm:text-base font-bold text-purple-800">المستحق عند التأكيد (التسبقة + العمولة):</span>
                             <span className="text-sm sm:text-base font-bold text-purple-800">
                               {formatCurrency(advanceAmount + companyFeePerPiece)}
-                            </span>
+                          </span>
                           </div>
                           <div className="flex justify-between items-center py-1 text-purple-700 text-xs pl-2">
                             <span>- التسبقة {calculatedOffer.advance_is_percentage ? `(${calculatedOffer.advance_amount}%)` : ''}:</span>
@@ -1934,12 +2066,18 @@ export function SaleConfirmation() {
                     <div className="flex justify-between items-center py-2 border-t-2 border-blue-300 mt-2 bg-blue-50 rounded px-2">
                       <span className="text-base sm:text-lg font-bold text-gray-900">
                         {confirmationType === 'full' 
-                          ? (selectedSale.payment_type === 'PromiseOfSale' ? 'المبلغ المتبقي (بعد العربون):' : 'المبلغ المتبقي:')
+                          ? ((selectedSale.payment_type as any) === 'PromiseOfSale' 
+                              ? ((selectedSale.promise_initial_payment || 0) > 0 
+                                  ? 'المبلغ المتبقي (بعد العربون والجزء الأول):' 
+                                  : 'المبلغ المتبقي (بعد العربون):')
+                              : 'المبلغ المتبقي:')
                           : 'المتبقي للتقسيط (بدون العمولة):'}
                       </span>
                       <span className="text-base sm:text-lg font-bold text-blue-700">
                         {formatCurrency(confirmationType === 'full' 
-                          ? (totalPayablePerPiece - reservationPerPiece)
+                          ? ((selectedSale.payment_type as any) === 'PromiseOfSale' && (selectedSale.promise_initial_payment || 0) > 0
+                              ? advanceAmount  // Use calculated advanceAmount which already subtracts initial payment
+                              : (totalPayablePerPiece - reservationPerPiece))
                           : remainingAfterAdvance)}
                       </span>
                     </div>
@@ -2003,7 +2141,11 @@ export function SaleConfirmation() {
                     {receivedAmount && parseFloat(receivedAmount) > 0 && (
                       <div className="mt-2 p-2 bg-white rounded border border-purple-200">
                         <p className="text-xs sm:text-sm font-medium text-purple-800">
-                          المبلغ المتبقي بعد هذا الدفع: {formatCurrency(Math.max(0, (totalPayablePerPiece - reservationPerPiece) - parseFloat(receivedAmount)))}
+                          المبلغ المتبقي بعد هذا الدفع: {formatCurrency(Math.max(0, 
+                            (selectedSale.promise_initial_payment || 0) > 0 
+                              ? (advanceAmount - parseFloat(receivedAmount))
+                              : ((totalPayablePerPiece - reservationPerPiece) - parseFloat(receivedAmount))
+                          ))}
                         </p>
                       </div>
                     )}
@@ -2042,7 +2184,9 @@ export function SaleConfirmation() {
                   إلغاء
                 </Button>
                 <Button onClick={handleConfirmation} disabled={confirming} className="w-full sm:w-auto">
-                    {confirming ? 'جاري التأكيد...' : (selectedSale?.payment_type === 'PromiseOfSale' ? 'تأكيد الوعد بالبيع' : 'اتمام البيع')}
+                    {confirming ? 'جاري التأكيد...' : (selectedSale?.payment_type === 'PromiseOfSale' 
+                      ? ((selectedSale.promise_initial_payment || 0) > 0 ? 'استكمال الوعد بالبيع' : 'تأكيد الوعد بالبيع')
+                      : 'اتمام البيع')}
                 </Button>
               </DialogFooter>
             </div>

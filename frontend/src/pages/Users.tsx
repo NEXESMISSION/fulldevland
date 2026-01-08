@@ -24,7 +24,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText, CreditCard, Home, Building, Wallet, DollarSign, Lock, Eye, EyeOff, AlertCircle, Briefcase, MessageSquare, XCircle, ArrowUp, ArrowDown, Phone, Download } from 'lucide-react'
+import { Plus, Edit, Trash2, User, Shield, Activity, TrendingUp, CheckCircle2, ShoppingCart, Map as MapIcon, Users as UsersIcon, Calendar, FileText, CreditCard, Home, Building, Wallet, DollarSign, Lock, Eye, EyeOff, AlertCircle, Briefcase, MessageSquare, XCircle, ArrowUp, ArrowDown, Phone, Download, Settings } from 'lucide-react'
 import type { User as UserType, UserRole, Sale, WorkerProfile } from '@/types/database'
 import { sanitizeText, sanitizeEmail } from '@/lib/sanitize'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -52,6 +52,7 @@ const ALL_PAGES = [
   { id: 'clients', name: 'العملاء', icon: UsersIcon, description: 'إدارة العملاء' },
   { id: 'sales', name: 'السجل', icon: ShoppingCart, description: 'سجل المبيعات' },
   { id: 'confirm-sales', name: 'تأكيد المبيعات', icon: CheckCircle2, description: 'تأكيد عمليات البيع' },
+  { id: 'sale-management', name: 'إدارة المبيعات', icon: Settings, description: 'إدارة وإعادة تعيين المبيعات' },
   { id: 'calendar', name: 'تقويم المواعيد', icon: Calendar, description: 'تقويم مواعيد البيع' },
   { id: 'phone-calls', name: 'مكالمات', icon: Phone, description: 'تتبع مكالمات المواعيد' },
   { id: 'download', name: 'تحميل التطبيق', icon: Download, description: 'تحميل تطبيق Android' },
@@ -109,6 +110,7 @@ export function Users() {
     role: 'Worker' as UserRole,
     allowedPages: [] as string[],
     sidebarOrder: [] as string[],
+    allowedBatches: [] as string[], // Specific land batches user can access
     // Worker profile fields - always enabled for Worker role
     worker_type: '',
     region: '',
@@ -117,17 +119,33 @@ export function Users() {
   })
   const [skillInput, setSkillInput] = useState('')
   const [workerProfiles, setWorkerProfiles] = useState<Map<string, WorkerProfile>>(new Map())
+  const [allLandBatches, setAllLandBatches] = useState<any[]>([])
 
   useEffect(() => {
     if (!hasPermission('manage_users')) return
     fetchUsers()
+    fetchAllLandBatches()
   }, [hasPermission])
+
+  const fetchAllLandBatches = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('land_batches')
+        .select('id, name, location')
+        .order('name', { ascending: true })
+      
+      if (error) throw error
+      setAllLandBatches(data || [])
+    } catch (err) {
+      console.error('Error fetching land batches:', err)
+    }
+  }
 
   const fetchUsers = async () => {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, name, email, role, created_at, updated_at, allowed_pages, sidebar_order, page_order')
+        .select('id, name, email, role, created_at, updated_at, allowed_pages, sidebar_order, page_order, allowed_batches')
         .order('name', { ascending: true })
 
       if (error) {
@@ -364,6 +382,7 @@ export function Users() {
         role: user.role,
         allowedPages: pageOrder,
         sidebarOrder: (user as any).sidebar_order || [],
+        allowedBatches: (user as any).allowed_batches || [],
         worker_type: workerProfile?.worker_type || '',
         region: workerProfile?.region || '',
         skills: workerProfile?.skills || [],
@@ -380,6 +399,7 @@ export function Users() {
         role: 'Worker',
         sidebarOrder: [],
         allowedPages: defaultPages,
+        allowedBatches: [], // Empty means access to all batches
         worker_type: '',
         region: '',
         skills: [],
@@ -479,6 +499,9 @@ export function Users() {
             allowed_pages: form.role === 'Owner' ? null : form.allowedPages,
           page_order: form.allowedPages.length > 0 ? form.allowedPages : null,
           sidebar_order: form.sidebarOrder.length > 0 ? form.sidebarOrder : null,
+          // Empty array means no restriction (access to all batches)
+          // Non-empty array means restricted to specific batches
+          allowed_batches: form.role === 'Owner' ? null : (form.allowedBatches.length > 0 ? form.allowedBatches : null),
         }
         
         console.log('Updating user with data:', updateData)
@@ -541,6 +564,7 @@ export function Users() {
           role: 'Worker', 
           allowedPages: [],
           sidebarOrder: [],
+          allowedBatches: [],
           worker_type: '',
           region: '',
           skills: [],
@@ -814,6 +838,7 @@ export function Users() {
           role: 'Worker', 
           allowedPages: [],
           sidebarOrder: [],
+          allowedBatches: [],
           worker_type: '',
           region: '',
           skills: [],
@@ -1152,6 +1177,7 @@ export function Users() {
             role: 'Worker', 
             allowedPages: [],
             sidebarOrder: [],
+            allowedBatches: [],
             worker_type: '',
             region: '',
             skills: [],
@@ -1493,6 +1519,92 @@ export function Users() {
               </div>
             )}
             </div>
+
+            {/* Land Batch Permissions Section - Only for Workers */}
+            {form.role !== 'Owner' && (
+              <div className="space-y-2 sm:space-y-3 border-t pt-3 sm:pt-4 mt-3 sm:mt-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                  <Label className="text-sm sm:text-base font-semibold flex items-center gap-2">
+                    <MapIcon className="h-3 w-3 sm:h-4 sm:w-4" />
+                    الأراضي المتاحة
+                  </Label>
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setForm({ ...form, allowedBatches: allLandBatches.map(b => b.id) })}
+                      disabled={saving}
+                      className="flex-1 sm:flex-none text-xs"
+                    >
+                      <Eye className="h-3 w-3 mr-1" />
+                      تحديد الكل
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setForm({ ...form, allowedBatches: [] })}
+                      disabled={saving}
+                      className="flex-1 sm:flex-none text-xs"
+                    >
+                      <EyeOff className="h-3 w-3 mr-1" />
+                      إلغاء الكل
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  اختر الأراضي التي يمكن للمستخدم الوصول إليها. إذا لم تختر أي أرض، سيتمكن من الوصول لجميع الأراضي.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  {allLandBatches.map((batch) => {
+                    const isSelected = form.allowedBatches?.includes(batch.id) || false
+                    return (
+                      <div
+                        key={batch.id}
+                        onClick={() => {
+                          if (saving) return
+                          const current = form.allowedBatches || []
+                          if (isSelected) {
+                            setForm({ ...form, allowedBatches: current.filter(id => id !== batch.id) })
+                          } else {
+                            setForm({ ...form, allowedBatches: [...current, batch.id] })
+                          }
+                        }}
+                        className={`
+                          flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all
+                          ${isSelected 
+                            ? 'bg-green-100 border-green-500 ring-1 ring-green-500' 
+                            : 'bg-white border-gray-200 hover:border-green-300'
+                          }
+                          ${saving ? 'opacity-50 cursor-not-allowed' : ''}
+                        `}
+                      >
+                        <div className={`
+                          w-4 h-4 rounded flex items-center justify-center text-xs font-bold
+                          ${isSelected ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'}
+                        `}>
+                          {isSelected ? '✓' : ''}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{batch.name}</p>
+                          {batch.location && (
+                            <p className="text-xs text-muted-foreground truncate">{batch.location}</p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {allLandBatches.length === 0 && (
+                    <p className="text-xs text-gray-500 col-span-2 text-center py-4">لا توجد أراضي</p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground text-center">
+                  {form.allowedBatches?.length || 0} من {allLandBatches.length} أرض محددة
+                  {(form.allowedBatches?.length || 0) === 0 && ' (الوصول لجميع الأراضي)'}
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter className="gap-2">
             <Button 
@@ -1717,11 +1829,37 @@ export function Users() {
                             </div>
                           </div>
                         )}
+
+                        {/* Allowed Land Batches */}
+                        {selectedUserForDetails.role !== 'Owner' && (
+                          <div>
+                            <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                              <MapIcon className="h-4 w-4" />
+                              الأراضي المتاحة
+                            </h4>
+                            <div className="flex flex-wrap gap-1">
+                              {((selectedUserForDetails as any).allowed_batches || []).length > 0 ? (
+                                ((selectedUserForDetails as any).allowed_batches || []).map((batchId: string) => {
+                                  const batch = allLandBatches.find(b => b.id === batchId)
+                                  return (
+                                    <div key={batchId} className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-full text-xs">
+                                      <MapIcon className="h-3 w-3" />
+                                      {batch?.name || batchId.slice(0, 8)}
+                                    </div>
+                                  )
+                                })
+                              ) : (
+                                <p className="text-xs text-green-600">✓ الوصول لجميع الأراضي</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                         {selectedUserForDetails.role === 'Owner' && (
                           <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                             <p className="text-sm text-green-800 flex items-center gap-2">
                               <Shield className="h-4 w-4" />
-                              المالك لديه صلاحية الوصول الكامل لجميع الصفحات
+                              المالك لديه صلاحية الوصول الكامل لجميع الصفحات والأراضي
                             </p>
                           </div>
                         )}

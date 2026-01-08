@@ -37,6 +37,7 @@ const getNavItems = (t: (key: string) => string) => [
   { to: '/clients', icon: Users, label: t('nav.clients'), permission: 'view_clients', pageId: 'clients' },
   { to: '/sales', icon: ShoppingCart, label: t('nav.sales'), permission: 'view_sales', pageId: 'sales' },
   { to: '/sale-confirmation', icon: CheckCircle2, label: t('nav.confirmSales'), permission: 'edit_sales', pageId: 'confirm-sales' },
+  { to: '/sale-management', icon: Settings, label: t('nav.saleManagement'), permission: 'edit_sales', pageId: 'sale-management' },
   { to: '/calendar', icon: CalendarIcon, label: t('nav.calendar'), permission: 'edit_sales', pageId: 'calendar' },
   { to: '/phone-calls', icon: Phone, label: t('nav.phoneCalls'), permission: null, pageId: 'phone-calls' },
   { to: '/download', icon: DownloadIcon, label: t('nav.download'), permission: null, pageId: 'download' },

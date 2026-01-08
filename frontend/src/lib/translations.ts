@@ -9,6 +9,7 @@ export const translations = {
       clients: 'العملاء',
       sales: 'السجل',
       confirmSales: 'تأكيد المبيعات',
+      saleManagement: 'إدارة المبيعات',
       installments: 'الأقساط',
       financial: 'المالية',
       expenses: 'المصاريف',
