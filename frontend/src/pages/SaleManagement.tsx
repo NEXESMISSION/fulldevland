@@ -720,40 +720,48 @@ export function SaleManagement() {
                           const saleId = selectedSale.id
                           
                           // 1. Delete ALL payment records EXCEPT SmallAdvance (reservation)
-                          // Delete each payment type explicitly to ensure all are removed
-                          const paymentTypesToDelete = ['BigAdvance', 'Full', 'Partial', 'InitialPayment', 'Installment', 'Field']
-                          
-                          for (const paymentType of paymentTypesToDelete) {
-                            const { error: deleteError } = await supabase
-                              .from('payments')
-                              .delete()
-                              .eq('sale_id', saleId)
-                              .eq('payment_type', paymentType)
-                            
-                            if (deleteError) {
-                              console.warn(`Error deleting ${paymentType} payments:`, deleteError)
-                              // Continue with other types even if one fails
-                            }
-                          }
-                          
-                          // Verify no BigAdvance or Full payments remain
-                          const { data: remainingPayments, error: checkError } = await supabase
+                          // First, get all payments for this sale to identify what needs to be deleted
+                          const { data: allPayments, error: fetchPaymentsError } = await supabase
                             .from('payments')
                             .select('id, payment_type')
                             .eq('sale_id', saleId)
-                            .in('payment_type', ['BigAdvance', 'Full', 'Partial', 'InitialPayment', 'Installment', 'Field'])
                           
-                          if (checkError) {
-                            console.warn('Error checking remaining payments:', checkError)
-                          } else if (remainingPayments && remainingPayments.length > 0) {
-                            // Force delete any remaining non-SmallAdvance payments
-                            const { error: forceDeleteError } = await supabase
-                              .from('payments')
-                              .delete()
-                              .in('id', remainingPayments.map(p => p.id))
+                          if (fetchPaymentsError) {
+                            console.warn('Error fetching payments:', fetchPaymentsError)
+                          } else if (allPayments && allPayments.length > 0) {
+                            // Filter out SmallAdvance payments (keep those)
+                            const paymentsToDelete = allPayments.filter(p => 
+                              p.payment_type !== 'SmallAdvance' && p.payment_type !== 'Refund'
+                            )
                             
-                            if (forceDeleteError) {
-                              console.warn('Error force deleting remaining payments:', forceDeleteError)
+                            if (paymentsToDelete.length > 0) {
+                              // Delete all non-SmallAdvance payments by ID
+                              const paymentIdsToDelete = paymentsToDelete.map(p => p.id)
+                              
+                              // Delete in batches to avoid query size limits
+                              const batchSize = 100
+                              for (let i = 0; i < paymentIdsToDelete.length; i += batchSize) {
+                                const batch = paymentIdsToDelete.slice(i, i + batchSize)
+                                const { error: deleteError } = await supabase
+                                  .from('payments')
+                                  .delete()
+                                  .in('id', batch)
+                                
+                                if (deleteError) {
+                                  console.warn(`Error deleting payment batch ${i}-${i + batch.length}:`, deleteError)
+                                  // Try individual deletes as fallback
+                                  for (const paymentId of batch) {
+                                    const { error: individualError } = await supabase
+                                      .from('payments')
+                                      .delete()
+                                      .eq('id', paymentId)
+                                    
+                                    if (individualError) {
+                                      console.warn(`Error deleting payment ${paymentId}:`, individualError)
+                                    }
+                                  }
+                                }
+                              }
                             }
                           }
                           
@@ -766,27 +774,84 @@ export function SaleManagement() {
                           if (installmentError) throw installmentError
                           
                           // 3. Reset sale fields - clean all confirmation traces
+                          // IMPORTANT: Keep small_advance_amount (العربون) - this is the reservation
+                          // Reset all confirmation-related fields but keep the sale and client intact
                           const { error: saleError } = await supabase
                             .from('sales')
                             .update({
                               big_advance_amount: 0,
                               company_fee_amount: null,
                               company_fee_percentage: null,
-                              status: 'Pending',
+                              company_fee_note: null,
+                              confirmed_by: null,
+                              status: 'Pending' as any,
+                              // Reset installment fields
+                              number_of_installments: null,
+                              monthly_installment_amount: null,
+                              installment_start_date: null,
+                              installment_end_date: null,
+                              // Reset confirmation flags if they exist
+                              big_advance_confirmed: false,
+                              is_confirmed: false,
+                              // Reset PromiseOfSale fields if applicable
                               promise_completed: false,
                               promise_initial_payment: null,
-                              number_of_installments: null,
-                              monthly_payment_amount: null,
-                              installment_start_date: null
+                              // Keep small_advance_amount - DO NOT RESET
+                              // Keep client_id, land_piece_ids, total_selling_price, etc.
+                              updated_at: new Date().toISOString(),
                             })
                             .eq('id', saleId)
                           
-                          if (saleError) throw saleError
+                          if (saleError) {
+                            console.error('Error resetting sale fields:', saleError)
+                            throw saleError
+                          }
+                          
+                          // 3b. Reset land pieces status back to Reserved (if they were Sold)
+                          // This ensures pieces go back to confirmation page
+                          const { data: saleData } = await supabase
+                            .from('sales')
+                            .select('land_piece_ids')
+                            .eq('id', saleId)
+                            .single()
+                          
+                          if (saleData && saleData.land_piece_ids && saleData.land_piece_ids.length > 0) {
+                            // Update piece status to Reserved (not Available) since sale still exists
+                            const { error: piecesError } = await supabase
+                              .from('land_pieces')
+                              .update({ status: 'Reserved' } as any)
+                              .in('id', saleData.land_piece_ids)
+                            
+                            if (piecesError) {
+                              console.warn('Error updating land pieces status:', piecesError)
+                              // Don't throw - sale reset is more important
+                            }
+                          }
                           
                           // 4. Wait a bit for database to commit
-                          await new Promise(resolve => setTimeout(resolve, 300))
+                          await new Promise(resolve => setTimeout(resolve, 500))
                           
-                          // 5. Refresh data
+                          // 5. Verify the reset was successful
+                          const { data: verifySale, error: verifyError } = await supabase
+                            .from('sales')
+                            .select('id, status, big_advance_amount, company_fee_amount, company_fee_percentage')
+                            .eq('id', saleId)
+                            .single()
+                          
+                          if (verifyError) {
+                            console.warn('Error verifying sale reset:', verifyError)
+                          } else if (verifySale) {
+                            // Check if reset was successful
+                            const isReset = verifySale.status === 'Pending' &&
+                                           (verifySale.big_advance_amount === 0 || verifySale.big_advance_amount === null) &&
+                                           (verifySale.company_fee_amount === null || verifySale.company_fee_amount === 0)
+                            
+                            if (!isReset) {
+                              console.warn('Sale reset verification failed - some fields may not have been reset')
+                            }
+                          }
+                          
+                          // 6. Refresh data
                           await fetchSales()
                           setDetailsDialogOpen(false)
                           showNotification('تم إرجاع البيع إلى صفحة التأكيد بنجاح - تم حذف جميع البيانات المرتبطة', 'success')

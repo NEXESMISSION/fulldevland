@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -58,6 +58,7 @@ export function SaleConfirmation() {
   const [selectedPiece, setSelectedPiece] = useState<LandPiece | null>(null)
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const confirmingRef = useRef(false) // Use ref to prevent race conditions
   const [confirmBeforeConfirmOpen, setConfirmBeforeConfirmOpen] = useState(false)
   const [pendingConfirmationType, setPendingConfirmationType] = useState<'full' | 'bigAdvance' | null>(null)
   
@@ -306,7 +307,11 @@ export function SaleConfirmation() {
       // If single piece sale, update directly
       // If multi-piece sale, recalculate totals
       let updates: any = {
-        company_fee_percentage: newCompanyFeePercentage > 0 ? newCompanyFeePercentage : null,
+        // IMPORTANT: Preserve 0 as 0, not null. Only set to null if user didn't specify a value
+        // If user explicitly set it to 0, we need to store 0 to distinguish from "not set" (null)
+        company_fee_percentage: (editForm.commission_input_method === 'percentage' && editForm.company_fee_percentage !== '') 
+          ? newCompanyFeePercentage  // User specified a percentage (including 0), use it
+          : (newCompanyFeePercentage > 0 ? newCompanyFeePercentage : null), // Only set to null if not explicitly set
         company_fee_note: editForm.company_fee_note || null,
         small_advance_amount: newTotalReservation > 0 ? parseFloat(newTotalReservation.toFixed(2)) : 0,
         selected_offer_id: editForm.selected_offer_id || null,
@@ -376,7 +381,13 @@ export function SaleConfirmation() {
         const newProfit = newTotalPrice - pieceCost
         
         updates.total_selling_price = newTotalPrice
-        updates.company_fee_amount = newCompanyFee > 0 ? parseFloat(newCompanyFee.toFixed(2)) : null
+        // If company_fee_percentage is 0, company_fee_amount should also be 0
+        // Otherwise, use calculated amount or null
+        if (newCompanyFeePercentage === 0) {
+          updates.company_fee_amount = 0
+        } else {
+          updates.company_fee_amount = newCompanyFee > 0 ? parseFloat(newCompanyFee.toFixed(2)) : null
+        }
         updates.profit_margin = newProfit
         
         // Update piece price if needed
@@ -421,7 +432,12 @@ export function SaleConfirmation() {
           
           updates.total_selling_price = totalPrice
           updates.total_purchase_cost = totalCost
-          updates.company_fee_amount = totalCompanyFee > 0 ? parseFloat(totalCompanyFee.toFixed(2)) : null
+          // If company_fee_percentage is 0, company_fee_amount should also be 0
+          if (newCompanyFeePercentage === 0) {
+            updates.company_fee_amount = 0
+          } else {
+            updates.company_fee_amount = totalCompanyFee > 0 ? parseFloat(totalCompanyFee.toFixed(2)) : null
+          }
           updates.profit_margin = totalProfit
           
           // Update the edited piece price
@@ -453,9 +469,12 @@ export function SaleConfirmation() {
           return {
             ...sale,
             ...updates,
-            // Ensure company_fee_percentage is set correctly
-            company_fee_percentage: newCompanyFeePercentage > 0 ? newCompanyFeePercentage : null,
-            company_fee_amount: updates.company_fee_amount || null
+            // Ensure company_fee_percentage is set correctly (preserve 0 as 0, not null)
+            company_fee_percentage: (editForm.commission_input_method === 'percentage' && editForm.company_fee_percentage !== '') 
+              ? newCompanyFeePercentage  // User specified a percentage (including 0), use it
+              : (newCompanyFeePercentage > 0 ? newCompanyFeePercentage : null),
+            // Ensure company_fee_amount matches company_fee_percentage
+            company_fee_amount: (newCompanyFeePercentage === 0) ? 0 : (updates.company_fee_amount || null)
           }
         }
         return sale
@@ -762,7 +781,28 @@ export function SaleConfirmation() {
   }
 
   const openConfirmDialog = async (sale: SaleWithDetails, piece: LandPiece, type: 'full' | 'bigAdvance') => {
-    setSelectedSale(sale)
+    // Fetch the latest sale data to ensure we have the most up-to-date company_fee_percentage
+    const { data: latestSaleData, error: saleError } = await supabase
+      .from('sales')
+      .select('*, client:clients(*), selected_offer:payment_offers(*)')
+      .eq('id', sale.id)
+      .single()
+    
+    // Use latest sale data if available, otherwise fall back to passed sale
+    // Merge carefully to ensure company_fee_percentage is preserved (including 0)
+    const saleToUse = latestSaleData 
+      ? { 
+          ...sale, 
+          ...latestSaleData,
+          // Explicitly preserve company_fee_percentage and company_fee_amount from latest data
+          company_fee_percentage: latestSaleData.company_fee_percentage,
+          company_fee_amount: latestSaleData.company_fee_amount
+        } 
+      : sale
+    
+    // Debug log removed to reduce console noise
+    
+    setSelectedSale(saleToUse as SaleWithDetails)
     setSelectedPiece(piece)
     setConfirmationType(type)
     
@@ -772,11 +812,11 @@ export function SaleConfirmation() {
     let offer: PaymentOffer | null = null
     try {
       // First, if sale has selected_offer_id, use that offer
-      if (sale.selected_offer_id) {
+      if (saleToUse.selected_offer_id) {
         const { data: selectedOfferData } = await supabase
           .from('payment_offers')
           .select('*')
-          .eq('id', sale.selected_offer_id)
+          .eq('id', saleToUse.selected_offer_id)
           .single()
         
         if (selectedOfferData) {
@@ -821,11 +861,12 @@ export function SaleConfirmation() {
     setSelectedOffer(offer)
     
     // Calculate values using the offer - need to calculate pricePerPiece first
+    // Use saleToUse which has the latest data from database
     let calculatedPricePerPiece = 0
-    if (sale.payment_type === 'Installment' && offer && offer.price_per_m2_installment) {
+    if (saleToUse.payment_type === 'Installment' && offer && offer.price_per_m2_installment) {
       // Use offer price per m²
       calculatedPricePerPiece = piece.surface_area * offer.price_per_m2_installment
-    } else if (sale.payment_type === 'Installment') {
+    } else if (saleToUse.payment_type === 'Installment') {
       calculatedPricePerPiece = piece.selling_price_installment || piece.selling_price_full || 0
     } else {
       calculatedPricePerPiece = piece.selling_price_full || 0
@@ -833,37 +874,50 @@ export function SaleConfirmation() {
     
     // If still 0, fall back to dividing total
     if (calculatedPricePerPiece === 0) {
-      const pieceCount = sale.land_piece_ids.length
-      calculatedPricePerPiece = sale.total_selling_price / pieceCount
+      const pieceCount = saleToUse.land_piece_ids.length
+      calculatedPricePerPiece = saleToUse.total_selling_price / pieceCount
     }
     
-    const pieceCount = sale.land_piece_ids.length
-    const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
+    const pieceCount = saleToUse.land_piece_ids.length
+    const reservationPerPiece = (saleToUse.small_advance_amount || 0) / pieceCount
     
     // Calculate company fee - prioritize sale's company_fee_percentage (user-edited value) over offer's commission
+    // ALWAYS check if sale has company_fee_percentage set first (including 0), before falling back to defaults
+    // Use saleToUse which has the latest data from database
     let companyFeePercentage = 0
-    if (sale.payment_type === 'Installment') {
-      // For Installment, prioritize sale's company_fee_percentage (user-edited value) over offer's commission
-      if (sale.company_fee_percentage !== null && sale.company_fee_percentage !== undefined) {
-        companyFeePercentage = sale.company_fee_percentage
-      } else if (offer) {
-        companyFeePercentage = offer.company_fee_percentage || 0
+    if (saleToUse.company_fee_percentage !== null && saleToUse.company_fee_percentage !== undefined) {
+      // Sale has company_fee_percentage set (including 0), use it - this is the user-edited value
+      companyFeePercentage = saleToUse.company_fee_percentage
+    } else if (saleToUse.payment_type === 'Installment') {
+      // For Installment, use offer's commission if sale doesn't have company_fee_percentage set
+      if (offer && offer.company_fee_percentage !== null && offer.company_fee_percentage !== undefined) {
+        companyFeePercentage = offer.company_fee_percentage
       } else {
         companyFeePercentage = 0
       }
-    } else if (sale.payment_type === 'Full' || sale.payment_type === 'PromiseOfSale') {
+    } else if (saleToUse.payment_type === 'Full' || saleToUse.payment_type === 'PromiseOfSale') {
+      // For Full payment or PromiseOfSale, use batch default only if sale doesn't have company_fee_percentage set
       const batch = (piece as any).land_batch
-      companyFeePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || 0
+      companyFeePercentage = batch?.company_fee_percentage_full || 0
     } else {
-      companyFeePercentage = sale.company_fee_percentage || 0
+      companyFeePercentage = 0
     }
     
-    // Set company fee percentage state for display (prioritize sale's value)
-    if (sale.company_fee_percentage !== null && sale.company_fee_percentage !== undefined) {
-      setCompanyFeePercentage(sale.company_fee_percentage.toString())
-    } else if (offer) {
+    // Set company fee percentage state for display (prioritize sale's value, including 0)
+    // Use saleToUse which has the latest data from database
+    if (saleToUse.company_fee_percentage !== null && saleToUse.company_fee_percentage !== undefined) {
+      // Sale has company_fee_percentage set (including 0), use it
+      setCompanyFeePercentage(saleToUse.company_fee_percentage.toString())
+    } else if (offer && offer.company_fee_percentage !== null && offer.company_fee_percentage !== undefined) {
+      // Sale doesn't have company_fee_percentage, use offer's commission
       setCompanyFeePercentage(offer.company_fee_percentage.toString())
+    } else if (saleToUse.payment_type === 'Full' || saleToUse.payment_type === 'PromiseOfSale') {
+      // For Full/PromiseOfSale, use batch default
+      const batch = (piece as any).land_batch
+      const batchFee = batch?.company_fee_percentage_full || 0
+      setCompanyFeePercentage(batchFee.toString())
     } else {
+      // Default fallback
       setCompanyFeePercentage('2')
     }
     
@@ -898,8 +952,13 @@ export function SaleConfirmation() {
       const advanceAmount = offer.advance_is_percentage
         ? (calculatedPricePerPiece * offer.advance_amount) / 100
         : offer.advance_amount
-      // Total to receive = Advance + Commission
-      const totalToReceive = advanceAmount + companyFeePerPiece
+      // Calculate reservation per piece
+      const pieceCount = sale.land_piece_ids.length
+      const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
+      // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
+      const advanceAmountAfterReservation = Math.max(0, advanceAmount - reservationPerPiece)
+      // Total to receive = Advance (after reservation) + Commission
+      const totalToReceive = advanceAmountAfterReservation + companyFeePerPiece
       setReceivedAmount(totalToReceive.toFixed(2))
     } else if (type === 'full') {
       // For PromiseOfSale
@@ -1003,32 +1062,53 @@ export function SaleConfirmation() {
     
     const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
     
-    // Use stored company_fee_amount from sale directly (like SalesNew page does)
-    // This ensures we use the actual saved value, not recalculated from percentage
-    // Same logic as SalesNew.tsx line 345: companyFeeAmount: sale.company_fee_amount ? sale.company_fee_amount / sale.land_piece_ids.length : null
-    const companyFeePerPiece = sale.company_fee_amount && sale.company_fee_amount > 0
-      ? sale.company_fee_amount / pieceCount
-      : 0
-    
-    // Calculate fee percentage for display (needed for return value)
+    // Calculate fee percentage FIRST (needed to determine companyFeePerPiece)
     let feePercentage = 0
-    if (sale.company_fee_percentage !== null && sale.company_fee_percentage !== undefined && sale.company_fee_percentage > 0) {
-      // Use sale's stored percentage (prioritize user-edited value)
+    
+    // PRIORITY 1: Always check if sale has company_fee_percentage set first (including 0)
+    // This takes precedence over everything else (batch defaults, offers, etc.)
+    if (sale.company_fee_percentage !== null && sale.company_fee_percentage !== undefined) {
+      // Use sale's stored percentage (including 0 if explicitly set)
+      // This is the user-edited value and should always be used
       feePercentage = sale.company_fee_percentage
-    } else if (companyFeePerPiece > 0 && pricePerPiece > 0) {
-      // If percentage is 0 or null but amount exists, calculate percentage from amount
-      feePercentage = (companyFeePerPiece / pricePerPiece) * 100
     } else if (sale.payment_type === 'Full' || sale.payment_type === 'PromiseOfSale') {
-      // For Full payment or PromiseOfSale, use company_fee_percentage_full from batch
+      // PRIORITY 2: For Full payment or PromiseOfSale, use company_fee_percentage_full from batch
+      // Only if sale doesn't have company_fee_percentage set (null)
       const batch = (piece as any).land_batch
       feePercentage = batch?.company_fee_percentage_full || parseFloat(companyFeePercentage) || 0
     } else {
-      // For Installment, use offer's commission if sale doesn't have one
+      // PRIORITY 3: For Installment, use offer's commission if sale doesn't have one
       if (offerToUse && offerToUse.company_fee_percentage !== null && offerToUse.company_fee_percentage !== undefined) {
+        // Sale doesn't have company_fee_percentage, use offer's commission
         feePercentage = offerToUse.company_fee_percentage
       } else {
+        // Fallback to default
         feePercentage = parseFloat(companyFeePercentage) || 0
       }
+    }
+    
+    // Calculate company_fee_amount based on feePercentage
+    // PRIORITY: If sale has company_fee_percentage set (including 0), use that to calculate amount
+    // Only use stored company_fee_amount if company_fee_percentage is null/undefined
+    let companyFeePerPiece = 0
+    if (sale.company_fee_percentage !== null && sale.company_fee_percentage !== undefined) {
+      // Sale has company_fee_percentage set (including 0), calculate from percentage
+      // This ensures that if user set it to 0%, the amount is 0 regardless of stored company_fee_amount
+      if (feePercentage === 0) {
+        companyFeePerPiece = 0
+      } else if (pricePerPiece > 0) {
+        companyFeePerPiece = (pricePerPiece * feePercentage) / 100
+      } else {
+        companyFeePerPiece = 0
+      }
+    } else if (sale.company_fee_amount && sale.company_fee_amount > 0) {
+      // Sale doesn't have company_fee_percentage set, use stored company_fee_amount
+      companyFeePerPiece = sale.company_fee_amount / pieceCount
+    } else if (feePercentage > 0 && pricePerPiece > 0) {
+      // Calculate from percentage (from offer or batch default)
+      companyFeePerPiece = (pricePerPiece * feePercentage) / 100
+    } else {
+      companyFeePerPiece = 0
     }
     const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
     
@@ -1225,6 +1305,13 @@ export function SaleConfirmation() {
   const proceedWithConfirmation = async () => {
     if (!selectedSale || !selectedPiece) return
     
+    // Prevent double execution using ref (more reliable than state for race conditions)
+    if (confirmingRef.current) {
+      console.warn('Confirmation already in progress, ignoring duplicate call')
+      return
+    }
+    
+    confirmingRef.current = true
     setConfirming(true)
     setError(null)
     setConfirmBeforeConfirmOpen(false)
@@ -1238,45 +1325,52 @@ export function SaleConfirmation() {
       
       // For full payment, just ensure the amount is positive
       // The amount is auto-calculated by the system, so we don't need strict validation
-      if (confirmationType === 'full') {
-        if (received <= 0) {
-          setError('المبلغ المستلم يجب أن يكون أكبر من صفر')
-          setConfirming(false)
-          return
-        }
-      } else if (confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
-        // For installment, use advance amount from offer
-        // NOTE: Advance is calculated from PRICE (not including commission)
-        // Commission is collected SEPARATELY at confirmation
-        if (offerToUse) {
-          // Advance calculated from pricePerPiece (WITHOUT commission)
-          const advanceAmount = offerToUse.advance_is_percentage
-            ? (pricePerPiece * offerToUse.advance_amount) / 100
-            : offerToUse.advance_amount
-          // Total to receive = Advance + Commission
-          const totalToReceive = advanceAmount + companyFeePerPiece
-          if (Math.abs(received - totalToReceive) > 0.01) {
-            setError(`المبلغ المستحق عند التأكيد (التسبقة + العمولة) يجب أن يكون ${formatCurrency(totalToReceive)}`)
-            setConfirming(false)
-            return
-          }
-        } else {
-          // No offer - just check that amount is positive
+        if (confirmationType === 'full') {
           if (received <= 0) {
             setError('المبلغ المستلم يجب أن يكون أكبر من صفر')
+            confirmingRef.current = false
             setConfirming(false)
             return
           }
+        } else if (confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
+          // For installment, use advance amount from offer
+          // NOTE: Advance is calculated from PRICE (not including commission)
+          // Commission is collected SEPARATELY at confirmation
+          if (offerToUse) {
+            // Advance calculated from pricePerPiece (WITHOUT commission)
+            const advanceAmount = offerToUse.advance_is_percentage
+              ? (pricePerPiece * offerToUse.advance_amount) / 100
+              : offerToUse.advance_amount
+            // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
+            const advanceAmountAfterReservation = Math.max(0, advanceAmount - reservationPerPiece)
+            // Total to receive = Advance (after reservation) + Commission
+            const totalToReceive = advanceAmountAfterReservation + companyFeePerPiece
+            if (Math.abs(received - totalToReceive) > 0.01) {
+              setError(`المبلغ المستحق عند التأكيد (التسبقة + العمولة) يجب أن يكون ${formatCurrency(totalToReceive)}`)
+              confirmingRef.current = false
+              setConfirming(false)
+              return
+            }
+          } else {
+            // No offer - just check that amount is positive
+            if (received <= 0) {
+              setError('المبلغ المستلم يجب أن يكون أكبر من صفر')
+              confirmingRef.current = false
+              setConfirming(false)
+              return
+            }
+          }
         }
-      }
 
       if (pieceCount === 1) {
         // Single piece - update the sale directly
         const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
         const { feePercentage } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
         const updates: any = {
-          company_fee_percentage: feePercentage > 0 ? feePercentage : null,
-          company_fee_amount: companyFeePerPiece > 0 ? parseFloat(companyFeePerPiece.toFixed(2)) : null,
+          // Always set company_fee_percentage and company_fee_amount (even if 0) to mark sale as confirmed
+          // This allows the system to know the sale was confirmed, even if commission is 0
+          company_fee_percentage: feePercentage !== null && feePercentage !== undefined ? feePercentage : null,
+          company_fee_amount: companyFeePerPiece !== null && companyFeePerPiece !== undefined ? parseFloat(companyFeePerPiece.toFixed(2)) : 0,
           contract_editor_id: selectedContractEditorId || null,
         }
 
@@ -1316,12 +1410,14 @@ export function SaleConfirmation() {
             let installments = 0
             let monthlyAmount = 0
             
-            // NOTE: Received amount includes both advance + commission
-            // Remaining for installments = Price - Reservation - Advance (WITHOUT commission)
-            const advanceOnly = received - companyFeePerPiece // Extract advance portion
-            const remainingAfterAdvance = pricePerPiece - reservationPerPiece - advanceOnly
+            // NOTE: Received amount includes both advance (after reservation) + commission
+            // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
+            const advanceOnly = received - companyFeePerPiece // Extract advance portion (already after reservation deduction)
+            // Remaining for installments = Price - Advance (after reservation deduction) - Commission
+            const remainingAfterAdvance = pricePerPiece - advanceOnly - companyFeePerPiece
             if (remainingAfterAdvance <= 0) {
               setError('المبلغ المتبقي للتقسيط يجب أن يكون أكبر من صفر')
+              confirmingRef.current = false
               setConfirming(false)
               return
             }
@@ -1339,6 +1435,7 @@ export function SaleConfirmation() {
               installments = parseInt(numberOfInstallments) || selectedSale.number_of_installments || 12
               if (installments <= 0) {
                 setError('عدد الأشهر يجب أن يكون أكبر من صفر')
+              confirmingRef.current = false
               setConfirming(false)
               return
               }
@@ -1512,16 +1609,38 @@ export function SaleConfirmation() {
             const hasInitialPayment = (currentSaleData.promise_initial_payment || 0) > 0
             paymentType = hasInitialPayment ? 'Full' : 'Partial'
           }
-          const { error: paymentError } = await supabase.from('payments').insert([{
-            client_id: selectedSale.client_id,
-            sale_id: selectedSale.id,
-            amount_paid: received,
-            payment_type: paymentType,
-            payment_date: new Date().toISOString().split('T')[0],
-            notes: confirmationNotes || null,
-            recorded_by: user?.id || null,
-          }] as any)
-          if (paymentError) throw paymentError
+          
+          // Check if payment already exists to prevent duplicates
+          const today = new Date().toISOString().split('T')[0]
+          const { data: existingPayments, error: checkError } = await supabase
+            .from('payments')
+            .select('id')
+            .eq('sale_id', selectedSale.id)
+            .eq('payment_type', paymentType)
+            .eq('payment_date', today)
+            .eq('amount_paid', received)
+            .limit(1)
+          
+          if (checkError) {
+            console.error('Error checking for existing payment:', checkError)
+            // Continue anyway - might be a permission issue
+          }
+          
+          // Only create payment if it doesn't already exist
+          if (!existingPayments || existingPayments.length === 0) {
+            const { error: paymentError } = await supabase.from('payments').insert([{
+              client_id: selectedSale.client_id,
+              sale_id: selectedSale.id,
+              amount_paid: received,
+              payment_type: paymentType,
+              payment_date: today,
+              notes: confirmationNotes || null,
+              recorded_by: user?.id || null,
+            }] as any)
+            if (paymentError) throw paymentError
+          } else {
+            console.warn('Payment already exists for this sale, skipping duplicate creation')
+          }
         }
 
         // Verify the update worked
@@ -1548,8 +1667,9 @@ export function SaleConfirmation() {
           total_selling_price: pricePerPiece,
           profit_margin: profitPerPiece,
           small_advance_amount: reservationPerPiece,
-          company_fee_percentage: calculatedFeePercentage > 0 ? calculatedFeePercentage : null,
-          company_fee_amount: companyFeePerPiece > 0 ? parseFloat(companyFeePerPiece.toFixed(2)) : null,
+          // Always set company_fee_percentage and company_fee_amount (even if 0) to mark sale as confirmed
+          company_fee_percentage: calculatedFeePercentage !== null && calculatedFeePercentage !== undefined ? calculatedFeePercentage : null,
+          company_fee_amount: companyFeePerPiece !== null && companyFeePerPiece !== undefined ? parseFloat(companyFeePerPiece.toFixed(2)) : 0,
           big_advance_amount: 0,
           number_of_installments: null,
           monthly_installment_amount: null,
@@ -1596,12 +1716,14 @@ export function SaleConfirmation() {
             let installments = 0
             let monthlyAmount = 0
             
-            // NOTE: Received amount includes both advance + commission
-            // Remaining for installments = Price - Reservation - Advance (WITHOUT commission)
-            const advanceOnly = received - companyFeePerPiece // Extract advance portion
-            const remainingAfterAdvance = pricePerPiece - reservationPerPiece - advanceOnly
+            // NOTE: Received amount includes both advance (after reservation) + commission
+            // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
+            const advanceOnly = received - companyFeePerPiece // Extract advance portion (already after reservation deduction)
+            // Remaining for installments = Price - Advance (after reservation deduction) - Commission
+            const remainingAfterAdvance = pricePerPiece - advanceOnly - companyFeePerPiece
             if (remainingAfterAdvance <= 0) {
               setError('المبلغ المتبقي للتقسيط يجب أن يكون أكبر من صفر')
+              confirmingRef.current = false
               setConfirming(false)
               return
             }
@@ -1619,6 +1741,7 @@ export function SaleConfirmation() {
               installments = parseInt(numberOfInstallments) || selectedSale.number_of_installments || 12
               if (installments <= 0) {
                 setError('عدد الأشهر يجب أن يكون أكبر من صفر')
+              confirmingRef.current = false
               setConfirming(false)
               return
               }
@@ -1726,17 +1849,39 @@ export function SaleConfirmation() {
             const hasInitialPayment = currentInitialPayment > 0
             paymentType = hasInitialPayment ? 'Full' : 'Partial'
           }
-          const { error: paymentError } = await supabase.from('payments').insert([{
-            client_id: selectedSale.client_id,
-            sale_id: newSale.id,
-            amount_paid: received,
-            payment_type: paymentType,
-            payment_date: new Date().toISOString().split('T')[0],
-            notes: confirmationNotes || null,
-            recorded_by: user?.id || null,
-          }] as any)
           
-          if (paymentError) throw paymentError
+          // Check if payment already exists to prevent duplicates
+          const today = new Date().toISOString().split('T')[0]
+          const { data: existingPayments, error: checkError } = await supabase
+            .from('payments')
+            .select('id')
+            .eq('sale_id', newSale.id)
+            .eq('payment_type', paymentType)
+            .eq('payment_date', today)
+            .eq('amount_paid', received)
+            .limit(1)
+          
+          if (checkError) {
+            console.error('Error checking for existing payment:', checkError)
+            // Continue anyway - might be a permission issue
+          }
+          
+          // Only create payment if it doesn't already exist
+          if (!existingPayments || existingPayments.length === 0) {
+            const { error: paymentError } = await supabase.from('payments').insert([{
+              client_id: selectedSale.client_id,
+              sale_id: newSale.id,
+              amount_paid: received,
+              payment_type: paymentType,
+              payment_date: today,
+              notes: confirmationNotes || null,
+              recorded_by: user?.id || null,
+            }] as any)
+            
+            if (paymentError) throw paymentError
+          } else {
+            console.warn('Payment already exists for this sale, skipping duplicate creation')
+          }
         }
 
         // Create installments schedule if needed (for bigAdvance with installments)
@@ -1860,6 +2005,7 @@ export function SaleConfirmation() {
       setError('حدث خطأ أثناء تأكيد البيع: ' + errorMessage)
       showNotification('حدث خطأ أثناء تأكيد البيع: ' + errorMessage, 'error')
     } finally {
+      confirmingRef.current = false
       setConfirming(false)
     }
   }
@@ -2434,9 +2580,11 @@ export function SaleConfirmation() {
             let advanceAmount = 0
             if (calculatedOffer && confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
               // Advance should be calculated from pricePerPiece (WITHOUT commission)
-              advanceAmount = calculatedOffer.advance_is_percentage
+              const fullAdvanceAmount = calculatedOffer.advance_is_percentage
                 ? (pricePerPiece * calculatedOffer.advance_amount) / 100
                 : calculatedOffer.advance_amount
+              // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
+              advanceAmount = Math.max(0, fullAdvanceAmount - reservationPerPiece)
             } else if (confirmationType === 'full') {
               if ((selectedSale.payment_type as any) === 'PromiseOfSale') {
                 // For PromiseOfSale, calculate remaining after initial payment
@@ -2448,10 +2596,10 @@ export function SaleConfirmation() {
             }
             }
             
-            // Calculate remaining for installments = Price - Advance (WITHOUT commission, WITHOUT reservation)
-            // Reservation is NOT subtracted from remaining - it's already paid separately
+            // Calculate remaining for installments = Price - Advance (after reservation deduction) - Commission
+            // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
             // Commission is collected separately at confirmation with advance
-            let remainingAfterAdvance = pricePerPiece - advanceAmount
+            let remainingAfterAdvance = pricePerPiece - advanceAmount - companyFeePerPiece
             if (confirmationType === 'full' && selectedSale.payment_type === 'PromiseOfSale') {
               // For PromiseOfSale, remaining is already calculated in advanceAmount
               remainingAfterAdvance = advanceAmount
@@ -2487,15 +2635,18 @@ export function SaleConfirmation() {
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
                       <div className="flex items-center gap-2">
                         <span className="text-sm sm:text-base text-gray-700">عمولة الشركة (%):</span>
-                        {calculatedOffer && selectedSale.company_fee_percentage === null && (
+                        {/* Show "من العرض" only if sale doesn't have company_fee_percentage set (null) AND there's an offer */}
+                        {calculatedOffer && (selectedSale.company_fee_percentage === null || selectedSale.company_fee_percentage === undefined) && (
                           <Badge variant="default" className="text-xs">من العرض</Badge>
                         )}
-                        {selectedSale.company_fee_percentage !== null && selectedSale.company_fee_percentage !== undefined && (
+                        {/* Show "معدلة" if sale has company_fee_percentage set (including 0) */}
+                        {(selectedSale.company_fee_percentage !== null && selectedSale.company_fee_percentage !== undefined) && (
                           <Badge variant="secondary" className="text-xs">معدلة</Badge>
                         )}
                       </div>
                       <span className="text-sm sm:text-base font-semibold text-blue-700">
-                        {feePercentage > 0 ? feePercentage.toFixed(2) : (companyFeePerPiece > 0 && pricePerPiece > 0 ? ((companyFeePerPiece / pricePerPiece) * 100).toFixed(2) : '0')}%
+                        {/* Always use feePercentage from calculatePieceValues, which respects sale's company_fee_percentage (including 0) */}
+                        {feePercentage.toFixed(2)}%
                       </span>
                       </div>
                     
@@ -2527,18 +2678,59 @@ export function SaleConfirmation() {
                       </span>
                     </div>
                     
+                    {confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment' && calculatedOffer && (() => {
+                      // Calculate full advance amount for display
+                      const fullAdvanceAmount = calculatedOffer.advance_is_percentage
+                        ? (pricePerPiece * calculatedOffer.advance_amount) / 100
+                        : calculatedOffer.advance_amount
+                      
+                      return (
+                        <>
+                          {/* Amount to collect at confirmation = التسبقة (after reservation deduction) + Commission */}
+                          <div className="bg-purple-50 border border-purple-200 rounded p-3 mt-2">
+                            {/* Breakdown of التسبقة calculation */}
+                            <div className="space-y-1">
+                              <div className="flex justify-between items-center text-xs sm:text-sm">
+                                <span className="text-purple-700">التسبقة:</span>
+                                <span className="font-semibold text-purple-800">
+                                  {formatCurrency(fullAdvanceAmount)}
+                                </span>
+                              </div>
+                              {reservationPaid && reservationPerPiece > 0 && (
+                                <div className="flex justify-between items-center text-xs sm:text-sm text-purple-600 pl-2">
+                                  <span>(-) العربون:</span>
+                                  <span className="font-semibold">
+                                    {formatCurrency(reservationPerPiece)}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="flex justify-between items-center text-xs sm:text-sm border-t border-purple-200 pt-1 mt-1">
+                                <span className="text-purple-700 font-medium">= التسبقة (بعد خصم العربون):</span>
+                                <span className="font-semibold text-purple-800">
+                                  {formatCurrency(advanceAmount)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center text-xs sm:text-sm mt-2">
+                                <span className="text-purple-700">العمولة:</span>
+                                <span className="font-semibold text-purple-800">
+                                  {formatCurrency(companyFeePerPiece)}
+                                </span>
+                              </div>
+                            </div>
+                            {/* Result: Amount to collect at confirmation */}
+                            <div className="flex justify-between items-center py-1.5 mt-2 pt-2 border-t border-purple-300">
+                              <span className="text-sm sm:text-base font-bold text-purple-800">المستحق عند التأكيد (التسبقة + العمولة):</span>
+                              <span className="text-sm sm:text-base font-bold text-purple-800">
+                                {formatCurrency(advanceAmount + companyFeePerPiece)}
+                              </span>
+                            </div>
+                          </div>
+                        </>
+                      )
+                    })()}
+                    
                     {confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment' && calculatedOffer && (
                       <>
-                        {/* Amount to collect at confirmation = Advance (minus paid reservation) + Commission */}
-                        <div className="bg-purple-50 border border-purple-200 rounded p-2 mt-2">
-                          <div className="flex justify-between items-center py-1.5">
-                            <span className="text-sm sm:text-base font-bold text-purple-800">المستحق عند التأكيد (التسبقة + العمولة):</span>
-                            <span className="text-sm sm:text-base font-bold text-purple-800">
-                              {formatCurrency((advanceAmount - (reservationPaid ? reservationPerPiece : 0)) + companyFeePerPiece)}
-                          </span>
-                          </div>
-                        </div>
-                        
                         <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
                           <div className="flex items-center gap-2">
                             <span className="text-sm sm:text-base text-gray-700">عدد الأشهر:</span>
@@ -2811,11 +3003,12 @@ export function SaleConfirmation() {
         open={confirmBeforeConfirmOpen}
         onOpenChange={setConfirmBeforeConfirmOpen}
         onConfirm={() => {
-          if (selectedSale && selectedPiece && pendingConfirmationType) {
+          if (selectedSale && selectedPiece && pendingConfirmationType && !confirming) {
             setConfirmBeforeConfirmOpen(false)
             proceedWithConfirmation()
           }
         }}
+        disabled={confirming}
         title={
           pendingConfirmationType === 'full' 
             ? ((selectedSale?.payment_type as any) === 'PromiseOfSale'
@@ -2860,13 +3053,13 @@ export function SaleConfirmation() {
                 const advanceAmount = calculatedOffer.advance_is_percentage
                   ? (pricePerPiece * calculatedOffer.advance_amount) / 100
                   : calculatedOffer.advance_amount
-                // Total to receive = Advance (minus paid reservation) + Commission
-                // This matches the calculation in the main dialog
-                amountToReceive = (advanceAmount - (reservationPaid ? reservationPerPiece : 0)) + companyFeePerPiece
+                // Total to receive = Advance + Commission - Reservation (if paid)
+                // Reservation is subtracted from total, not from التسبقة
+                amountToReceive = advanceAmount + companyFeePerPiece - (reservationPaid ? reservationPerPiece : 0)
               }
             }
             
-            // For installment sales (bigAdvance), show simplified format
+            // For installment sales (bigAdvance), show only the final amount (no breakdown)
             if (pendingConfirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
               return `المستحق عند التأكيد (التسبقة + العمولة): ${formatCurrency(amountToReceive)}`
             }
@@ -2879,7 +3072,7 @@ export function SaleConfirmation() {
             return `هل أنت متأكد أنك ستحصل على مبلغ ${formatCurrency(amountToReceive)} من العميل ${selectedSale.client?.name || 'غير معروف'} عند ${paymentTypeText}؟`
           })() || ''
         }
-        confirmText="نعم، متأكد"
+        confirmText={confirming ? 'جاري التأكيد...' : 'نعم، متأكد'}
         cancelText="إلغاء"
       />
 
@@ -3253,7 +3446,37 @@ export function SaleConfirmation() {
                         id="edit-number-of-installments"
                         type="number"
                         value={editForm.number_of_installments}
-                        onChange={(e) => setEditForm({ ...editForm, number_of_installments: e.target.value })}
+                        onChange={(e) => {
+                          const months = e.target.value
+                          
+                          // Calculate monthly amount if months is provided and valid
+                          if (months && parseInt(months) > 0) {
+                            const pieceCount = editingSale.land_piece_ids.length
+                            const pricePerPiece = parseFloat(editForm.total_selling_price) || 0
+                            const reservationPerPiece = parseFloat(editForm.small_advance_amount) || 0
+                            const advancePerPiece = editingSale.big_advance_amount ? (editingSale.big_advance_amount / pieceCount) : 0
+                            
+                            // Calculate commission per piece (same logic as save function)
+                            let commissionPerPiece = 0
+                            if (editForm.commission_input_method === 'percentage') {
+                              const feePercentage = parseFloat(editForm.company_fee_percentage) || 0
+                              commissionPerPiece = (pricePerPiece * feePercentage) / 100
+                            } else {
+                              commissionPerPiece = parseFloat(editForm.company_fee_amount) || 0
+                            }
+                            
+                            const remainingForInstallments = pricePerPiece - reservationPerPiece - advancePerPiece - commissionPerPiece
+                            
+                            if (remainingForInstallments > 0) {
+                              const monthlyAmount = remainingForInstallments / parseInt(months)
+                              setEditForm(prev => ({ ...prev, number_of_installments: months, monthly_installment_amount: monthlyAmount.toFixed(2) }))
+                            } else {
+                              setEditForm(prev => ({ ...prev, number_of_installments: months }))
+                            }
+                          } else {
+                            setEditForm(prev => ({ ...prev, number_of_installments: months }))
+                          }
+                        }}
                         placeholder="عدد الأشهر"
                         min="1"
                       />
@@ -3268,7 +3491,37 @@ export function SaleConfirmation() {
                         id="edit-monthly-installment-amount"
                         type="number"
                         value={editForm.monthly_installment_amount}
-                        onChange={(e) => setEditForm({ ...editForm, monthly_installment_amount: e.target.value })}
+                        onChange={(e) => {
+                          const monthlyAmount = e.target.value
+                          
+                          // Calculate number of installments if monthly amount is provided and valid
+                          if (monthlyAmount && parseFloat(monthlyAmount) > 0) {
+                            const pieceCount = editingSale.land_piece_ids.length
+                            const pricePerPiece = parseFloat(editForm.total_selling_price) || 0
+                            const reservationPerPiece = parseFloat(editForm.small_advance_amount) || 0
+                            const advancePerPiece = editingSale.big_advance_amount ? (editingSale.big_advance_amount / pieceCount) : 0
+                            
+                            // Calculate commission per piece (same logic as save function)
+                            let commissionPerPiece = 0
+                            if (editForm.commission_input_method === 'percentage') {
+                              const feePercentage = parseFloat(editForm.company_fee_percentage) || 0
+                              commissionPerPiece = (pricePerPiece * feePercentage) / 100
+                            } else {
+                              commissionPerPiece = parseFloat(editForm.company_fee_amount) || 0
+                            }
+                            
+                            const remainingForInstallments = pricePerPiece - reservationPerPiece - advancePerPiece - commissionPerPiece
+                            
+                            if (remainingForInstallments > 0) {
+                              const calculatedMonths = Math.ceil(remainingForInstallments / parseFloat(monthlyAmount))
+                              setEditForm(prev => ({ ...prev, monthly_installment_amount: monthlyAmount, number_of_installments: calculatedMonths.toString() }))
+                            } else {
+                              setEditForm(prev => ({ ...prev, monthly_installment_amount: monthlyAmount }))
+                            }
+                          } else {
+                            setEditForm(prev => ({ ...prev, monthly_installment_amount: monthlyAmount }))
+                          }
+                        }}
                         placeholder="المبلغ الشهري"
                         min="0"
                         step="0.01"

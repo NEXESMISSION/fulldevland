@@ -4118,9 +4118,13 @@ export function LandManagement() {
             ? (piecePrice * offerToUse.advance_amount) / 100
             : offerToUse.advance_amount
           
-          // Remaining for installments = Price - Reservation - Advance (WITHOUT commission)
+          // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
+          const reservationAmount = parseFloat(String(reservationPerPiece)) || 0
+          const advanceAfterReservation = Math.max(0, (advancePerPiece || 0) - reservationAmount)
+          
+          // Remaining for installments = Price - Advance (after reservation deduction) - Commission
           // Commission is collected separately at confirmation with advance
-          const remainingPerPiece = piecePrice - reservationPerPiece - advancePerPiece
+          const remainingPerPiece = Math.max(0, (piecePrice || 0) - advanceAfterReservation - (companyFeePerPiece || 0))
           
           // Calculate based on what the offer has: monthly_payment or number_of_months
           let monthsPerPiece = 0
@@ -6668,7 +6672,7 @@ export function LandManagement() {
                   
                   // Get reservation amount and calculate per piece
                   const reservation = parseFloat(saleForm.reservation_amount) || 0
-                  const reservationPerPiece = reservation / selectedPiecesData.length
+                  const reservationPerPiece = selectedPiecesData.length > 0 ? reservation / selectedPiecesData.length : 0
                   
                   // Calculate per piece - using piece-specific offers
                   const piecesCalculations = selectedPiecesData.map(p => {
@@ -6689,6 +6693,7 @@ export function LandManagement() {
                         totalPayablePerPiece: p.selling_price_installment || p.selling_price_full || 0,
                         reservationPerPiece,
                         advancePerPiece: 0,
+                        advanceAfterReservation: 0, // التسبقة after deducting العربون (no offer, so 0)
                         remainingPerPiece: (p.selling_price_installment || p.selling_price_full || 0) - reservationPerPiece,
                         monthsPerPiece: 0,
                         monthlyAmountPerPiece: 0,
@@ -6710,9 +6715,13 @@ export function LandManagement() {
                       ? (piecePrice * offerToUse.advance_amount) / 100
                       : offerToUse.advance_amount
                     
-                    // Remaining for installments = Price - Reservation - Advance (WITHOUT commission)
+                    // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
+                    const reservationAmount = parseFloat(String(reservationPerPiece)) || 0
+                    const advanceAfterReservation = Math.max(0, (advancePerPiece || 0) - reservationAmount)
+                    
+                    // Remaining for installments = Price - Advance (after reservation deduction) - Commission
                     // Commission is collected separately at confirmation with advance
-                    const remainingPerPiece = piecePrice - reservationPerPiece - advancePerPiece
+                    const remainingPerPiece = Math.max(0, (piecePrice || 0) - advanceAfterReservation - (companyFeePerPiece || 0))
                     
                     // Calculate based on what the offer has: monthly_payment or number_of_months
                     let monthsPerPiece = 0
@@ -6740,6 +6749,7 @@ export function LandManagement() {
                       totalPayablePerPiece,
                       reservationPerPiece,
                       advancePerPiece,
+                      advanceAfterReservation, // التسبقة after deducting العربون
                       remainingPerPiece,
                       monthsPerPiece,
                       monthlyAmountPerPiece,
@@ -6770,7 +6780,10 @@ export function LandManagement() {
                   const companyFeeAmount = piecesCalculations.reduce((sum, calc) => sum + calc.companyFeePerPiece, 0)
                   const totalPayable = piecesCalculations.reduce((sum, calc) => sum + calc.totalPayablePerPiece, 0)
                   const totalReservation = piecesCalculations.reduce((sum, calc) => sum + calc.reservationPerPiece, 0)
-                  const advanceAmount = piecesCalculations.reduce((sum, calc) => sum + calc.advancePerPiece, 0)
+                  // Calculate full advance amount (before deducting reservation)
+                  const totalFullAdvance = piecesCalculations.reduce((sum, calc) => sum + (calc.advancePerPiece || 0), 0)
+                  // Calculate advance after reservation (التسبقة after deducting العربون)
+                  const advanceAmount = piecesCalculations.reduce((sum, calc) => sum + (calc.advanceAfterReservation || 0), 0) // التسبقة after deducting العربون
                   const remainingAfterPayments = piecesCalculations.reduce((sum, calc) => sum + calc.remainingPerPiece, 0)
                   // For monthly amount, use the average or max - typically we use the max monthly amount needed
                   // But since each piece might have different monthly amounts, we use the maximum
@@ -6801,10 +6814,15 @@ export function LandManagement() {
                                 </div>
                                 <div className="text-xs text-muted-foreground space-y-0.5 pl-2">
                                   <div className="text-green-700">العربون (مدفوع): {formatCurrency(calc.reservationPerPiece)}</div>
-                                  <div className="text-purple-700 font-medium">عند التأكيد: التسبقة + العمولة = {formatCurrency(calc.advancePerPiece + calc.companyFeePerPiece)}</div>
-                                  <div className="text-xs text-muted-foreground pl-2">- التسبقة: {formatCurrency(calc.advancePerPiece)}</div>
-                                  <div className="text-xs text-muted-foreground pl-2">- العمولة ({calc.companyFeePercentage}%): {formatCurrency(calc.companyFeePerPiece)}</div>
-                                  <div className="text-blue-700 font-medium">المتبقي للتقسيط: {formatCurrency(calc.remainingPerPiece)}</div>
+                                  <div className="text-purple-700 font-medium border-t border-purple-200 pt-1 mt-1">المستحق عند التأكيد:</div>
+                                  <div className="text-xs text-purple-700 pl-2">التسبقة: {formatCurrency(calc.advancePerPiece || 0)}</div>
+                                  {calc.reservationPerPiece > 0 && (
+                                    <div className="text-xs text-purple-600 pl-4">(-) العربون: {formatCurrency(calc.reservationPerPiece)}</div>
+                                  )}
+                                  <div className="text-xs text-purple-700 pl-2 border-t border-purple-100 pt-0.5 mt-0.5">= التسبقة (بعد خصم العربون): {formatCurrency(calc.advanceAfterReservation || 0)}</div>
+                                  <div className="text-xs text-purple-700 pl-2">+ العمولة ({calc.companyFeePercentage}%): {formatCurrency(calc.companyFeePerPiece)}</div>
+                                  <div className="text-xs text-purple-800 font-semibold pl-2 border-t border-purple-200 pt-0.5 mt-0.5">= المستحق عند التأكيد: {formatCurrency((calc.advanceAfterReservation || 0) + calc.companyFeePerPiece)}</div>
+                                  <div className="text-blue-700 font-medium mt-1">المتبقي للتقسيط: {formatCurrency(calc.remainingPerPiece)}</div>
                                   {calc.monthlyAmountPerPiece > 0 && (
                                     <div>المبلغ الشهري (لكل قطعة): {formatCurrency(calc.monthlyAmountPerPiece)}</div>
                                   )}
@@ -6816,11 +6834,11 @@ export function LandManagement() {
                             )
                           })}
                           {/* Total Summary */}
-                          <div className="border-t border-blue-200 pt-2 mt-2 space-y-1">
-                            <div className="flex justify-between items-center mb-1">
+                          <div className="border-t border-blue-200 pt-2 mt-2">
+                            <div className="flex justify-between items-center mb-2">
                               <span className="text-xs font-semibold text-blue-800">الإجمالي:</span>
                             </div>
-                            <div className="text-xs text-muted-foreground space-y-1 pl-2 bg-blue-50 rounded p-2">
+                            <div className="text-xs text-muted-foreground space-y-1">
                               <div className="flex justify-between">
                                 <span>السعر الإجمالي:</span>
                                 <span className="font-medium">{formatCurrency(totalPrice)}</span>
@@ -6829,21 +6847,36 @@ export function LandManagement() {
                                 <span>العربون (مدفوع عند الحجز):</span>
                                 <span className="font-medium">{formatCurrency(totalReservation)}</span>
                               </div>
-                              <div className="flex justify-between border-t border-purple-200 pt-1 mt-1 bg-purple-50 p-1.5 rounded">
-                                <span className="font-medium text-purple-800">المستحق عند التأكيد (التسبقة + العمولة):</span>
-                                <span className="font-semibold text-purple-800">{formatCurrency(advanceAmount + companyFeeAmount)}</span>
+                              <div className="border-t border-purple-200 pt-1 mt-1 space-y-1">
+                                <div className="flex justify-between text-purple-700 font-medium">
+                                  <span>المستحق عند التأكيد:</span>
+                                </div>
+                                <div className="flex justify-between pl-2 text-purple-700">
+                                  <span>التسبقة:</span>
+                                  <span className="font-medium">{formatCurrency(totalFullAdvance)}</span>
+                                </div>
+                                {totalReservation > 0 && (
+                                  <div className="flex justify-between pl-4 text-purple-600">
+                                    <span>(-) العربون:</span>
+                                    <span className="font-medium">{formatCurrency(totalReservation)}</span>
+                                  </div>
+                                )}
+                                <div className="flex justify-between pl-2 text-purple-700 border-t border-purple-100 pt-0.5">
+                                  <span>= التسبقة (بعد خصم العربون):</span>
+                                  <span className="font-medium">{formatCurrency(advanceAmount)}</span>
+                                </div>
+                                <div className="flex justify-between pl-2 text-purple-700">
+                                  <span>+ العمولة ({avgCompanyFeePercentage.toFixed(1)}%):</span>
+                                  <span className="font-medium">{formatCurrency(companyFeeAmount)}</span>
+                                </div>
+                                <div className="flex justify-between pl-2 text-purple-800 font-semibold border-t border-purple-200 pt-0.5">
+                                  <span>= المستحق عند التأكيد:</span>
+                                  <span className="font-semibold">{formatCurrency(advanceAmount + companyFeeAmount)}</span>
+                                </div>
                               </div>
-                              <div className="flex justify-between pl-2 text-purple-700">
-                                <span>- التسبقة:</span>
-                                <span className="font-medium">{formatCurrency(advanceAmount)}</span>
-                              </div>
-                              <div className="flex justify-between pl-2 text-purple-700">
-                                <span>- العمولة ({avgCompanyFeePercentage.toFixed(1)}%):</span>
-                                <span className="font-medium">{formatCurrency(companyFeeAmount)}</span>
-                              </div>
-                              <div className="flex justify-between border-t border-blue-200 pt-1 mt-1 bg-blue-100 p-1.5 rounded">
-                                <span className="font-medium text-blue-800">المتبقي للتقسيط (بدون العمولة):</span>
-                                <span className="font-semibold text-blue-800">{formatCurrency(remainingAfterPayments)}</span>
+                              <div className="flex justify-between text-blue-700 font-medium mt-1">
+                                <span>المتبقي للتقسيط (بدون العمولة):</span>
+                                <span className="font-semibold">{formatCurrency(remainingAfterPayments)}</span>
                               </div>
                               {maxMonths > 0 && (
                                 <>
@@ -7406,6 +7439,12 @@ export function LandManagement() {
                     <div>
                       <span className="text-gray-500">عمولة الشركة:</span>
                       <p className="font-medium">{saleDetailsData.company_fee_percentage}% ({formatCurrency(saleDetailsData.company_fee_amount || 0)})</p>
+                    </div>
+                  )}
+                  {saleDetailsData.company_fee_note && (
+                    <div className="col-span-2">
+                      <span className="text-gray-500">ملاحظة على العمولة:</span>
+                      <p className="font-medium text-orange-600 italic">{saleDetailsData.company_fee_note}</p>
                     </div>
                   )}
                   {saleDetailsData.contract_editor && (

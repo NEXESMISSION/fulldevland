@@ -257,6 +257,7 @@ export function Financial() {
       .filter(p => p.payment_type !== 'Refund')
     
     // Attach land pieces to payments and exclude payments for cancelled sales and reset sales
+    // For advance payments (SmallAdvance, BigAdvance), only include if sale is confirmed
     const paymentsWithPieces = filteredPayments
       .filter(payment => {
         // Exclude payments for cancelled sales
@@ -265,6 +266,19 @@ export function Financial() {
         
         // Always preserve payments for Completed sales - they should always be included
         if (sale.status === 'Completed') return true
+        
+        // IMPORTANT: SmallAdvance (العربون) should be shown for ALL sales (both confirmed and unconfirmed)
+        // BigAdvance (التسبقة) should only be shown for confirmed sales
+        if (payment.payment_type === 'BigAdvance') {
+          // Only include BigAdvance if sale is confirmed
+          const saleStatus = (sale as any).status
+          const isConfirmed = saleStatus === 'Completed' || 
+                             (sale.company_fee_amount && sale.company_fee_amount > 0) ||
+                             (sale as any).big_advance_confirmed === true ||
+                             (sale as any).is_confirmed === true
+          if (!isConfirmed) return false // Exclude unconfirmed big advance payments
+        }
+        // SmallAdvance payments are always included (for both confirmed and unconfirmed sales)
         
         // Exclude payments for sales that have been reset (big_advance_amount = 0 and company_fee_amount is null)
         // This ensures reset sales don't show their old payments
@@ -590,22 +604,29 @@ export function Financial() {
   }, [sales, payments, landPieces, dateFilter, selectedDate])
 
   // Get small advance (reservation) from sales table grouped by land
+  // IMPORTANT: Show small advance (العربون) for ALL sales, not just confirmed ones
+  // This is the reservation amount that should always be visible
   const getSmallAdvanceByLand = (): PaymentByLand[] => {
     // Get filtered sales with small_advance_amount
-    // Exclude reset sales (status = 'Pending', big_advance_amount = 0, company_fee_amount = null)
+    // Include ALL sales with small_advance_amount (both confirmed and unconfirmed)
+    // Exclude reset sales (status = 'Pending', big_advance_amount = 0, company_fee_amount = null, small_advance_amount = 0)
     const salesWithAdvance = filteredData.sales
       .filter(s => {
         if (s.status === 'Cancelled') return false
         if (!s.small_advance_amount || s.small_advance_amount <= 0) return false
         
         // Exclude reset sales - these are sales that were reset back to confirmation page
-        // Reset sales have: status = 'Pending', big_advance_amount = 0, company_fee_amount = null
+        // Reset sales have: status = 'Pending', big_advance_amount = 0, company_fee_amount = null, small_advance_amount = 0
+        // But if they have small_advance_amount > 0, they're not reset, so include them
+        // We only exclude if ALL amounts are 0/null
         if (s.status === 'Pending' && 
             s.big_advance_amount === 0 && 
-            !s.company_fee_amount) {
-          return false // Exclude reset sales
+            !s.company_fee_amount &&
+            (!s.small_advance_amount || s.small_advance_amount === 0)) {
+          return false // Exclude reset sales (no amounts at all)
         }
         
+        // Include ALL sales with small_advance_amount (both confirmed and unconfirmed)
         return true
       })
     
@@ -746,12 +767,262 @@ export function Financial() {
     })).sort((a, b) => b.totalAmount - a.totalAmount)
   }
 
+  // Get big advance (التسبقة) from sales table grouped by land
+  // IMPORTANT: Only show big advance for CONFIRMED sales
+  const getBigAdvanceByLand = (): PaymentByLand[] => {
+    // Get filtered sales with big_advance_amount
+    // Only include CONFIRMED sales (have company_fee_amount set OR status = 'Completed')
+    const salesWithAdvance = filteredData.sales
+      .filter(s => {
+        if (s.status === 'Cancelled') return false
+        if (!s.big_advance_amount || s.big_advance_amount <= 0) return false
+        
+        // Always include Completed sales - they are confirmed
+        if (s.status === 'Completed') return true
+        
+        // Exclude reset sales - these are sales that were reset back to confirmation page
+        if (s.status === 'Pending' && 
+            s.big_advance_amount === 0 && 
+            (s.company_fee_amount === null || s.company_fee_amount === undefined)) {
+          return false // Exclude reset sales
+        }
+        
+        // Only include confirmed sales - must have company_fee_amount set (even if 0)
+        // OR big_advance_amount > 0 (which also indicates confirmation)
+        const isConfirmed = (s.company_fee_amount !== null && s.company_fee_amount !== undefined) ||
+                           (s.big_advance_amount && s.big_advance_amount > 0)
+        
+        if (!isConfirmed) {
+          return false // Exclude unconfirmed sales
+        }
+        
+        return true
+      })
+    
+    // Group by land batch (same structure as getSmallAdvanceByLand)
+    const landGroups = new Map<string, PaymentByLand>()
+    
+    salesWithAdvance.forEach(sale => {
+      const pieceIds = sale.land_piece_ids || []
+      const pieces = landPieces.filter(p => pieceIds.includes(p.id))
+      
+      if (pieces.length === 0) {
+        const key = 'غير محدد'
+        if (!landGroups.has(key)) {
+          landGroups.set(key, {
+            landBatchName: 'غير محدد',
+            location: null,
+            totalAmount: 0,
+            percentage: 0,
+            paymentCount: 0,
+            pieces: [],
+            payments: [],
+          })
+        }
+        const group = landGroups.get(key)!
+        group.totalAmount += sale.big_advance_amount || 0
+        group.paymentCount += 1
+      } else {
+        // Group by land batch - each sale contributes to one or more batches
+        const batchGroups = new Map<string, { batchName: string; location: string | null; pieces: typeof pieces }>()
+        
+        pieces.forEach(piece => {
+          const batchName = piece.land_batch?.name || 'غير محدد'
+          const location = piece.land_batch?.location || null
+          const batchKey = `${batchName}-${location || 'no-location'}`
+          
+          if (!batchGroups.has(batchKey)) {
+            batchGroups.set(batchKey, {
+              batchName,
+              location,
+              pieces: [],
+            })
+          }
+          batchGroups.get(batchKey)!.pieces.push(piece)
+        })
+        
+        // For each batch, distribute the sale's advance
+        batchGroups.forEach((batchInfo, batchKey) => {
+          if (!landGroups.has(batchKey)) {
+            landGroups.set(batchKey, {
+              landBatchName: batchInfo.batchName,
+              location: batchInfo.location,
+              totalAmount: 0,
+              percentage: 0,
+              paymentCount: 0,
+              pieces: [],
+              payments: [],
+            })
+          }
+          const group = landGroups.get(batchKey)!
+          
+          // Calculate advance for pieces in this batch
+          const piecesInBatch = batchInfo.pieces.length
+          const advanceForBatch = (sale.big_advance_amount || 0) * (piecesInBatch / pieceIds.length)
+          
+          // Add pieces to group
+          batchInfo.pieces.forEach(piece => {
+            const advancePerPiece = (sale.big_advance_amount || 0) / pieceIds.length
+            
+            let pieceGroup = group.pieces.find(p => p.pieceId === piece.id)
+            if (!pieceGroup) {
+              pieceGroup = {
+                pieceId: piece.id,
+                pieceNumber: piece.piece_number,
+                landBatchName: batchInfo.batchName,
+                location: batchInfo.location,
+                totalAmount: 0,
+                installmentCount: 0,
+                payments: [],
+                recordedByUsers: new Set(),
+                soldByUsers: new Set(),
+              }
+              group.pieces.push(pieceGroup)
+            }
+            
+            pieceGroup.totalAmount += advancePerPiece
+            
+            // Create virtual payment object with client information for display
+            const virtualPayment: PaymentWithDetails = {
+              id: `virtual-big-advance-${sale.id}-${piece.id}`,
+              client_id: sale.client_id,
+              sale_id: sale.id,
+              installment_id: null,
+              reservation_id: null,
+              amount_paid: advancePerPiece,
+              payment_type: 'BigAdvance' as any,
+              payment_date: sale.sale_date,
+              payment_method: 'Cash',
+              notes: null,
+              recorded_by: sale.created_by || null,
+              created_at: sale.created_at,
+              updated_at: sale.updated_at,
+              client: sale.client,
+              sale: {
+                land_piece_ids: pieceIds,
+                payment_type: sale.payment_type,
+                total_selling_price: sale.total_selling_price,
+                created_by: sale.created_by,
+                created_by_user: (sale as any).created_by_user,
+              } as any,
+              recorded_by_user: (sale as any).created_by_user,
+            }
+            
+            if (!pieceGroup.payments.find(p => p.id === virtualPayment.id)) {
+              pieceGroup.payments.push(virtualPayment)
+            }
+            
+            // Track users
+            if ((sale as any).created_by_user?.name) {
+              pieceGroup.soldByUsers.add((sale as any).created_by_user.name)
+            }
+            if ((sale as any).created_by_user?.name) {
+              pieceGroup.recordedByUsers.add((sale as any).created_by_user.name)
+            }
+          })
+          
+          // Add to batch totals (only once per sale)
+          group.totalAmount += advanceForBatch
+          group.paymentCount += 1
+        })
+      }
+    })
+    
+    const totalAmount = Array.from(landGroups.values()).reduce((sum, g) => sum + g.totalAmount, 0)
+    
+    return Array.from(landGroups.values()).map(group => ({
+      ...group,
+      percentage: totalAmount > 0 ? (group.totalAmount / totalAmount) * 100 : 0,
+    })).sort((a, b) => b.totalAmount - a.totalAmount)
+  }
+
   // Group payments by land batch and piece - don't repeat installments for same piece
   // This function uses filteredData which already has date filtering and excludes cancelled sales
   const getPaymentsByLand = (paymentType: PaymentTypeFilter): PaymentByLand[] => {
     // Special handling for SmallAdvance - get from sales table
     if (paymentType === 'SmallAdvance') {
       return getSmallAdvanceByLand()
+    }
+    
+    // Special handling for BigAdvance - get from sales table (for confirmed sales)
+    if (paymentType === 'BigAdvance') {
+      // First get from sales table (for confirmed sales)
+      const bigAdvanceFromSales = getBigAdvanceByLand()
+      
+      // Also get from payment records (for confirmed sales)
+      const bigAdvanceFromPayments = filteredData.bigAdvancePaymentsList
+      
+      // Combine both sources, avoiding duplicates
+      const combinedMap = new Map<string, PaymentByLand>()
+      
+      // Add sales table data first
+      bigAdvanceFromSales.forEach(group => {
+        const key = `${group.landBatchName}-${group.location || ''}`
+        combinedMap.set(key, { ...group })
+      })
+      
+      // Add payment records data (merge with existing or create new)
+      bigAdvanceFromPayments.forEach(payment => {
+        const pieceIds = payment.sale?.land_piece_ids || []
+        const pieces = landPieces.filter(p => pieceIds.includes(p.id))
+        
+        if (pieces.length === 0) return
+        
+        pieces.forEach(piece => {
+          const batchName = piece.land_batch?.name || 'غير محدد'
+          const location = piece.land_batch?.location || null
+          const key = `${batchName}-${location || 'no-location'}`
+          
+          if (!combinedMap.has(key)) {
+            combinedMap.set(key, {
+              landBatchName: batchName,
+              location,
+              totalAmount: 0,
+              percentage: 0,
+              paymentCount: 0,
+              pieces: [],
+              payments: [],
+            })
+          }
+          
+          const group = combinedMap.get(key)!
+          const amountPerPiece = payment.amount_paid / pieces.length
+          
+          let pieceGroup = group.pieces.find(p => p.pieceId === piece.id)
+          if (!pieceGroup) {
+            pieceGroup = {
+              pieceId: piece.id,
+              pieceNumber: piece.piece_number,
+              landBatchName: batchName,
+              location,
+              totalAmount: 0,
+              installmentCount: 0,
+              payments: [],
+              recordedByUsers: new Set(),
+              soldByUsers: new Set(),
+            }
+            group.pieces.push(pieceGroup)
+          }
+          
+          pieceGroup.totalAmount += amountPerPiece
+          if (!pieceGroup.payments.find(p => p.id === payment.id)) {
+            pieceGroup.payments.push(payment)
+          }
+          
+          if (!group.payments.find(p => p.id === payment.id)) {
+            group.totalAmount += payment.amount_paid
+            group.paymentCount += 1
+            group.payments.push(payment)
+          }
+        })
+      })
+      
+      const totalAmount = Array.from(combinedMap.values()).reduce((sum, g) => sum + g.totalAmount, 0)
+      
+      return Array.from(combinedMap.values()).map(group => ({
+        ...group,
+        percentage: totalAmount > 0 ? (group.totalAmount / totalAmount) * 100 : 0,
+      })).sort((a, b) => b.totalAmount - a.totalAmount)
     }
     
     // Special handling for PromiseOfSale (InitialPayment) - get from both payment records and sales table
@@ -1060,6 +1331,266 @@ export function Financial() {
     return result.sort((a, b) => b.totalAmount - a.totalAmount)
   }
 
+  // Calculate totals by place (location)
+  // NOTE: For place totals, we use ALL sales (not filtered by date) to show all places with their amounts
+  // This ensures all batches are represented even if their sales are outside the selected date range
+  const getTotalsByPlace = () => {
+    const placeTotals = new Map<string, {
+      place: string
+      installment: number
+      smallAdvance: number
+      full: number
+      bigAdvance: number
+      promiseOfSale: number
+      companyFee: number
+      total: number
+    }>()
+
+    // Helper to add to place total
+    const addToPlace = (location: string | null, amount: number, type: 'installment' | 'smallAdvance' | 'full' | 'bigAdvance' | 'promiseOfSale' | 'companyFee') => {
+      const place = location || 'غير محدد'
+      if (!placeTotals.has(place)) {
+        placeTotals.set(place, {
+          place,
+          installment: 0,
+          smallAdvance: 0,
+          full: 0,
+          bigAdvance: 0,
+          promiseOfSale: 0,
+          companyFee: 0,
+          total: 0
+        })
+      }
+      const placeData = placeTotals.get(place)!
+      placeData[type] += amount
+    }
+
+    // First, collect all unique places from all sales (including pending ones) to ensure all places are shown
+    const allPlaces = new Set<string>()
+    filteredData.sales.forEach(sale => {
+      if (sale.status === 'Cancelled') return
+      const pieceIds = sale.land_piece_ids || []
+      const pieces = landPieces.filter(p => pieceIds.includes(p.id))
+      
+      if (pieces.length === 0) {
+        // If no pieces found, add "غير محدد" to ensure the sale is still represented
+        allPlaces.add('غير محدد')
+      } else {
+        pieces.forEach(piece => {
+          const location = piece.land_batch?.location || null
+          const place = location || 'غير محدد'
+          allPlaces.add(place)
+        })
+      }
+    })
+    
+    // Also collect places from all land pieces to ensure we don't miss any batches
+    landPieces.forEach(piece => {
+      const location = piece.land_batch?.location || null
+      const place = location || 'غير محدد'
+      allPlaces.add(place)
+    })
+
+    // Initialize all places with 0 amounts
+    allPlaces.forEach(place => {
+      if (!placeTotals.has(place)) {
+        placeTotals.set(place, {
+          place,
+          installment: 0,
+          smallAdvance: 0,
+          full: 0,
+          bigAdvance: 0,
+          promiseOfSale: 0,
+          companyFee: 0,
+          total: 0
+        })
+      }
+    })
+
+    // Process filtered sales to match the main payment tables
+    // This ensures consistency between place totals and the main financial data
+    // IMPORTANT: Include ALL sales (even unconfirmed) to show all places
+    // But only add amounts based on confirmation status
+    filteredData.sales.forEach(sale => {
+      if (sale.status === 'Cancelled') return
+      
+      // Exclude reset sales (sales with no amounts at all)
+      if (sale.status === 'Pending' && 
+          sale.big_advance_amount === 0 && 
+          !sale.company_fee_amount &&
+          (!sale.small_advance_amount || sale.small_advance_amount === 0)) {
+        return
+      }
+      
+      // Check if sale is confirmed
+      // A sale is confirmed if company_fee_amount is set (even if 0) OR big_advance_amount > 0
+      const isConfirmed = sale.status === 'Completed' || 
+                         (sale.company_fee_amount !== null && sale.company_fee_amount !== undefined) ||
+                         (sale.big_advance_amount && sale.big_advance_amount > 0)
+      
+      const pieceIds = sale.land_piece_ids || []
+      const pieces = landPieces.filter(p => pieceIds.includes(p.id))
+      if (pieces.length === 0) return
+      
+      // Get locations from pieces - handle multiple batches in one sale
+      const batchLocations = new Map<string, number>() // location -> piece count
+      pieces.forEach(piece => {
+        const location = piece.land_batch?.location || null
+        const place = location || 'غير محدد'
+        batchLocations.set(place, (batchLocations.get(place) || 0) + 1)
+      })
+      
+      // Distribute sale amounts across batches by piece count
+      batchLocations.forEach((pieceCountInBatch, place) => {
+        const totalPieceCount = pieces.length
+        const ratio = pieceCountInBatch / totalPieceCount
+        
+        // Check if this sale has payment records (for confirmed sales)
+        const hasSmallAdvancePayment = filteredData.payments.some(p => 
+          p.sale_id === sale.id && p.payment_type === 'SmallAdvance'
+        )
+        const hasBigAdvancePayment = filteredData.payments.some(p => 
+          p.sale_id === sale.id && p.payment_type === 'BigAdvance'
+        )
+        const hasFullPayment = filteredData.payments.some(p => 
+          p.sale_id === sale.id && p.payment_type === 'Full'
+        )
+        const hasInstallmentPayment = filteredData.payments.some(p => 
+          p.sale_id === sale.id && p.payment_type === 'Installment'
+        )
+        const hasPromisePayment = filteredData.payments.some(p => 
+          p.sale_id === sale.id && (p.payment_type === 'InitialPayment' || p.payment_type === 'Partial')
+        )
+        
+        // Add small advance (reservation) - from sales table if no payment record
+        // IMPORTANT: Show small advance (العربون) for ALL sales, not just confirmed ones
+        // This is the reservation amount that should always be visible
+        if ((sale.small_advance_amount || 0) > 0 && !hasSmallAdvancePayment) {
+          // Include small advance for ALL sales (both confirmed and unconfirmed)
+          const amountForBatch = (sale.small_advance_amount || 0) * ratio
+          addToPlace(place, amountForBatch, 'smallAdvance')
+        }
+        
+        // Add big advance (التسبقة) - from sales table if no payment record
+        // Only include if sale is confirmed (has company_fee_amount > 0 OR status = 'Completed')
+        if ((sale.big_advance_amount || 0) > 0 && !hasBigAdvancePayment) {
+          // Use the isConfirmed variable defined in the outer scope
+          if (isConfirmed) {
+            const amountForBatch = (sale.big_advance_amount || 0) * ratio
+            addToPlace(place, amountForBatch, 'bigAdvance')
+          }
+        }
+        
+        // Add company fee - from sales table (only for confirmed sales)
+        if (isConfirmed && (sale.company_fee_amount || 0) > 0) {
+          const amountForBatch = (sale.company_fee_amount || 0) * ratio
+          addToPlace(place, amountForBatch, 'companyFee')
+        }
+        
+        // For Full payment type, only if sale is confirmed/completed
+        if (isConfirmed && sale.payment_type === 'Full' && !hasFullPayment) {
+          const pricePerPiece = sale.total_selling_price / totalPieceCount
+          const amountForBatch = pricePerPiece * pieceCountInBatch
+          addToPlace(place, amountForBatch, 'full')
+        }
+        
+        // For PromiseOfSale, add initial payment if exists (only for confirmed sales)
+        if (isConfirmed && (sale as any).payment_type === 'PromiseOfSale') {
+          const promiseInitialPayment = (sale as any).promise_initial_payment || 0
+          if (promiseInitialPayment > 0 && !hasPromisePayment) {
+            const amountForBatch = promiseInitialPayment * ratio
+            addToPlace(place, amountForBatch, 'promiseOfSale')
+          }
+        }
+      })
+    })
+    
+    // Also process payments from payment records (for confirmed sales with payment records)
+    // Use filtered payments to match the main tables
+    // Only include payments for confirmed sales (has company_fee_amount > 0 OR status = 'Completed')
+    filteredData.payments.forEach(payment => {
+      if (payment.payment_type === 'Refund') return
+      
+      const sale = filteredData.sales.find(s => s.id === payment.sale_id)
+      if (!sale || sale.status === 'Cancelled') return
+      
+      // For SmallAdvance: show for ALL sales (both confirmed and unconfirmed)
+      // For BigAdvance: only show if sale is confirmed
+      // For other payment types: only show if sale is confirmed
+      if (payment.payment_type === 'BigAdvance') {
+        // A sale is confirmed if company_fee_amount is set (even if 0) OR big_advance_amount > 0
+        const isConfirmed = sale.status === 'Completed' || 
+                           (sale.company_fee_amount !== null && sale.company_fee_amount !== undefined) ||
+                           (sale.big_advance_amount && sale.big_advance_amount > 0)
+        if (!isConfirmed) return // Skip unconfirmed big advance payments
+      } else if (payment.payment_type !== 'SmallAdvance') {
+        // For non-advance payments (Installment, Full, etc.), only show if confirmed
+        const isConfirmed = sale.status === 'Completed' || 
+                           (sale.company_fee_amount !== null && sale.company_fee_amount !== undefined) ||
+                           (sale.big_advance_amount && sale.big_advance_amount > 0)
+        if (!isConfirmed) return // Skip unconfirmed payments
+      }
+      // SmallAdvance payments are always included (for both confirmed and unconfirmed sales)
+      
+      const pieceIds = payment.sale?.land_piece_ids || sale.land_piece_ids || []
+      const pieces = landPieces.filter(p => pieceIds.includes(p.id))
+      if (pieces.length === 0) return
+      
+      // Get location from pieces
+      const location = pieces[0]?.land_batch?.location || null
+      const place = location || 'غير محدد'
+      
+      const pieceCount = pieces.length
+      const amountPerPiece = payment.amount_paid / pieceCount
+      
+      // Add payment amount based on type
+      switch (payment.payment_type) {
+        case 'Installment':
+          addToPlace(place, payment.amount_paid, 'installment')
+          break
+        case 'SmallAdvance':
+          // Always add SmallAdvance payments (for both confirmed and unconfirmed sales)
+          // Only skip if already counted from sales table
+          if (!(sale.small_advance_amount && sale.small_advance_amount > 0)) {
+            addToPlace(place, payment.amount_paid, 'smallAdvance')
+          }
+          break
+        case 'BigAdvance':
+          // Only add if not already counted from sales table
+          if (!(sale.big_advance_amount && sale.big_advance_amount > 0)) {
+            addToPlace(place, payment.amount_paid, 'bigAdvance')
+          }
+          break
+        case 'Full':
+          addToPlace(place, payment.amount_paid, 'full')
+          break
+        case 'InitialPayment':
+        case 'Partial':
+          if ((sale as any).payment_type === 'PromiseOfSale') {
+            addToPlace(place, payment.amount_paid, 'promiseOfSale')
+          }
+          break
+      }
+    })
+
+    // Calculate total for each place AFTER all amounts are added
+    placeTotals.forEach((placeData) => {
+      placeData.total = placeData.installment + placeData.smallAdvance + placeData.full + 
+                       placeData.bigAdvance + placeData.promiseOfSale + placeData.companyFee
+    })
+
+    // Return all places, sorted by total (descending), then by name for places with same total
+    const placesArray = Array.from(placeTotals.values())
+    return placesArray.sort((a, b) => {
+      // First sort by total (descending)
+      if (b.total !== a.total) {
+        return b.total - a.total
+      }
+      // If totals are equal, sort by name (ascending)
+      return a.place.localeCompare(b.place)
+    })
+  }
+
   const togglePaymentDetails = (paymentType: PaymentTypeFilter) => {
     setExpandedPaymentType(expandedPaymentType === paymentType ? null : paymentType)
   }
@@ -1211,68 +1742,6 @@ export function Financial() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">المالية</h1>
-        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={async () => {
-              setLoading(true)
-              await fetchData()
-            }}
-            disabled={loading}
-            className="flex-1 sm:flex-none"
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            تحديث
-          </Button>
-          {(['today', 'week', 'month', 'all'] as DateFilter[]).map(filter => (
-            <Button
-              key={filter}
-              variant={dateFilter === filter && !selectedDate ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setDateFilter(filter)
-                setSelectedDate('')
-              }}
-              className="flex-1 sm:flex-none text-xs sm:text-sm"
-            >
-              {filterLabels[filter]}
-            </Button>
-          ))}
-          <div className="flex items-center gap-2 border rounded-md px-2 min-w-[140px]">
-            <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => {
-                setSelectedDate(e.target.value)
-                if (e.target.value) {
-                  setDateFilter('custom')
-                }
-              }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.currentTarget.showPicker?.()
-              }}
-              className="h-8 w-full min-w-[120px] text-xs border-0 focus-visible:ring-0 p-0 cursor-pointer"
-              style={{ WebkitAppearance: 'none' }}
-            />
-            {selectedDate && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setSelectedDate('')
-                  setDateFilter('today')
-                }}
-                className="h-6 w-6 p-0 flex-shrink-0"
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Installment Statistics - 3 Boxes */}
@@ -1284,6 +1753,7 @@ export function Financial() {
         const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59)
         
         // Calculate this month's due installments
+        // IMPORTANT: Only show installments for CONFIRMED sales
         // Filter out installments for reset sales
         // IMPORTANT: Preserve Completed sales - they should always be included
         const validInstallments = installments.filter(inst => {
@@ -1302,6 +1772,21 @@ export function Financial() {
               sale.big_advance_amount === 0 && 
               !sale.company_fee_amount) {
             return false
+          }
+          
+          // Only include installments for CONFIRMED sales
+          // A sale is confirmed if:
+          // 1. company_fee_amount IS NOT NULL (even if 0) - means commission was calculated and set
+          // 2. big_advance_amount > 0 - means big advance was paid
+          // 3. big_advance_confirmed = true
+          // 4. is_confirmed = true
+          const isConfirmed = sale.company_fee_amount !== null && sale.company_fee_amount !== undefined ||
+                             (sale.big_advance_amount && sale.big_advance_amount > 0) ||
+                             sale.big_advance_confirmed === true ||
+                             sale.is_confirmed === true
+          
+          if (!isConfirmed) {
+            return false // Exclude installments for unconfirmed sales
           }
           
           return true
@@ -1418,6 +1903,70 @@ export function Financial() {
         )
       })()}
 
+      {/* Date Filters - Moved below the 3 summary boxes */}
+      <div className="flex flex-wrap gap-2 w-full justify-center sm:justify-start">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={async () => {
+            setLoading(true)
+            await fetchData()
+          }}
+          disabled={loading}
+          className="flex-1 sm:flex-none"
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          تحديث
+        </Button>
+        {(['today', 'week', 'month', 'all'] as DateFilter[]).map(filter => (
+          <Button
+            key={filter}
+            variant={dateFilter === filter && !selectedDate ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => {
+              setDateFilter(filter)
+              setSelectedDate('')
+            }}
+            className="flex-1 sm:flex-none text-xs sm:text-sm"
+          >
+            {filterLabels[filter]}
+          </Button>
+        ))}
+        <div className="flex items-center gap-2 border rounded-md px-2 min-w-[140px] flex-1 sm:flex-none">
+          <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <Input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => {
+              setSelectedDate(e.target.value)
+              if (e.target.value) {
+                setDateFilter('custom')
+              }
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              e.currentTarget.showPicker?.()
+            }}
+            className="h-8 w-full min-w-[120px] text-xs border-0 focus-visible:ring-0 p-0 cursor-pointer"
+            style={{ WebkitAppearance: 'none' }}
+          />
+          {selectedDate && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                setSelectedDate('')
+                setDateFilter('today')
+              }}
+              className="h-6 w-6 p-0 flex-shrink-0"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+      </div>
+
       {/* Payments & Commission - 5 Categories */}
       <div className="space-y-4">
         <h2 className="text-xl font-bold">المدفوعات والعمولة</h2>
@@ -1441,11 +1990,13 @@ export function Financial() {
                   {/* الأقساط */}
                   {(() => {
                     const data = getPaymentsByLand('Installment')
-                    const totalAmount = filteredData.installmentPaymentsTotal
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.installment, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.installmentPaymentsTotal
                     const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
                     const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
                     
-                    if (data.length === 0) {
+                    if (data.length === 0 && totalAmount === 0) {
                       return (
                         <TableRow className="bg-blue-50/50">
                           <TableCell className="font-bold text-blue-700">الأقساط</TableCell>
@@ -1457,8 +2008,11 @@ export function Financial() {
                         </TableRow>
                       )
                     }
-                    return [
-                      ...data.map((group, idx) => {
+                    
+                    // Always show data rows if we have data
+                    if (data.length > 0) {
+                      return [
+                        ...data.map((group, idx) => {
                         // Get unique clients and piece numbers for this group
                         const uniqueClients = new Set<string>()
                         const pieceNumbers = group.pieces.map(p => p.pieceNumber).join(', ')
@@ -1508,6 +2062,23 @@ export function Financial() {
                         </TableRow>
                       )
                     ]
+                    }
+                    
+                    // If no data but we have totals from places, show summary row
+                    if (data.length === 0 && totalAmount > 0) {
+                      return (
+                        <TableRow className="bg-blue-50/50">
+                          <TableCell className="font-bold text-blue-700">الأقساط</TableCell>
+                          <TableCell className="text-muted-foreground">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-right font-bold text-blue-600">{formatCurrency(totalAmount)}</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                        </TableRow>
+                      )
+                    }
+                    
+                    return null
                   })()}
                   
                   {/* Separator */}
@@ -1518,11 +2089,13 @@ export function Financial() {
                   {/* العربون */}
                   {(() => {
                     const data = getPaymentsByLand('SmallAdvance')
-                    const totalAmount = filteredData.smallAdvanceTotal
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.smallAdvance, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.smallAdvanceTotal
                     const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
                     const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
                     
-                    if (data.length === 0) {
+                    if (data.length === 0 && totalAmount === 0) {
                       return (
                         <TableRow className="bg-orange-50/50">
                           <TableCell className="font-bold text-orange-700 text-right">العربون</TableCell>
@@ -1534,8 +2107,11 @@ export function Financial() {
                         </TableRow>
                       )
                     }
-                    return [
-                      ...data.map((group, idx) => {
+                    
+                    // Always show data rows if we have data
+                    if (data.length > 0) {
+                      return [
+                        ...data.map((group, idx) => {
                         // Get unique clients and piece numbers for this group
                         const uniqueClients = new Set<string>()
                         const pieceNumbers = group.pieces.map(p => p.pieceNumber).join(', ')
@@ -1585,6 +2161,23 @@ export function Financial() {
                         </TableRow>
                       )
                     ]
+                    }
+                    
+                    // If no data but we have totals from places, show summary row
+                    if (data.length === 0 && totalAmount > 0) {
+                      return (
+                        <TableRow className="bg-orange-50/50">
+                          <TableCell className="font-bold text-orange-700 text-right">العربون</TableCell>
+                          <TableCell className="text-muted-foreground text-right">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-right font-bold text-orange-600">{formatCurrency(totalAmount)}</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                        </TableRow>
+                      )
+                    }
+                    
+                    return null
                   })()}
                   
                   {/* Separator */}
@@ -1595,11 +2188,13 @@ export function Financial() {
                   {/* بالحاضر */}
                   {(() => {
                     const data = getPaymentsByLand('Full')
-                    const totalAmount = filteredData.fullPaymentsTotal
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.full, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.fullPaymentsTotal
                     const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
                     const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
                     
-                    if (data.length === 0) {
+                    if (data.length === 0 && totalAmount === 0) {
                       return (
                         <TableRow className="bg-green-50/50">
                           <TableCell className="font-bold text-green-700 text-right">بالحاضر</TableCell>
@@ -1611,8 +2206,11 @@ export function Financial() {
                         </TableRow>
                       )
                     }
-                    return [
-                      ...data.map((group, idx) => (
+                    
+                    // Always show data rows if we have data
+                    if (data.length > 0) {
+                      return [
+                        ...data.map((group, idx) => (
                       <TableRow key={`full-${idx}`} className="bg-green-50/50 hover:bg-green-100/50">
                         <TableCell className="font-bold text-green-700 text-right">{idx === 0 ? 'بالحاضر' : ''}</TableCell>
                         <TableCell className="text-right">
@@ -1645,6 +2243,23 @@ export function Financial() {
                         </TableRow>
                       )
                     ]
+                    }
+                    
+                    // If no data but we have totals from places, show summary row
+                    if (data.length === 0 && totalAmount > 0) {
+                      return (
+                        <TableRow className="bg-green-50/50">
+                          <TableCell className="font-bold text-green-700 text-right">بالحاضر</TableCell>
+                          <TableCell className="text-muted-foreground text-right">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-right font-bold text-green-600">{formatCurrency(totalAmount)}</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                        </TableRow>
+                      )
+                    }
+                    
+                    return null
                   })()}
                   
                   {/* Separator */}
@@ -1652,41 +2267,20 @@ export function Financial() {
                     <TableCell colSpan={6} className="p-0"></TableCell>
                   </TableRow>
                   
-                  {/* التسبقة - includes both BigAdvance and SmallAdvance (العربون is part of التسبقة) */}
+                  {/* التسبقة - Only BigAdvance (for confirmed sales only) */}
                   {(() => {
                     const bigAdvanceData = getPaymentsByLand('BigAdvance')
-                    const smallAdvanceData = getPaymentsByLand('SmallAdvance')
                     
-                    // Combine BigAdvance and SmallAdvance data
-                    const combinedDataMap = new Map<string, PaymentByLand>()
-                    
-                    // Add BigAdvance data
-                    bigAdvanceData.forEach(group => {
-                      const key = `${group.landBatchName}-${group.location || ''}`
-                      combinedDataMap.set(key, { ...group })
-                    })
-                    
-                    // Add SmallAdvance data (merge with existing or create new)
-                    smallAdvanceData.forEach(group => {
-                      const key = `${group.landBatchName}-${group.location || ''}`
-                      if (combinedDataMap.has(key)) {
-                        const existing = combinedDataMap.get(key)!
-                        existing.totalAmount += group.totalAmount
-                        existing.paymentCount += group.paymentCount
-                        existing.pieces = [...existing.pieces, ...group.pieces]
-                        existing.payments = [...existing.payments, ...group.payments]
-                      } else {
-                        combinedDataMap.set(key, { ...group })
-                      }
-                    })
-                    
-                    const data = Array.from(combinedDataMap.values())
-                    // Total includes both BigAdvance and SmallAdvance
-                    const totalAmount = filteredData.bigAdvanceTotal + filteredData.smallAdvanceTotal
+                    // Only use BigAdvance data (not combining with SmallAdvance)
+                    const data = bigAdvanceData
+                    // Total is only BigAdvance (not including SmallAdvance)
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.bigAdvance, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.bigAdvanceTotal
                     const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
                     const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
                     
-                    if (data.length === 0) {
+                    if (data.length === 0 && totalAmount === 0) {
                       return (
                         <TableRow className="bg-purple-50/50">
                           <TableCell className="font-bold text-purple-700 text-right">التسبقة</TableCell>
@@ -1698,8 +2292,11 @@ export function Financial() {
                         </TableRow>
                       )
                     }
-                    return [
-                      ...data.map((group, idx) => {
+                    
+                    // Always show data rows if we have data
+                    if (data.length > 0) {
+                      return [
+                        ...data.map((group, idx) => {
                         // Get unique clients and piece numbers for this group
                         const uniqueClients = new Set<string>()
                         const pieceNumbers = group.pieces.map(p => p.pieceNumber).join(', ')
@@ -1749,6 +2346,23 @@ export function Financial() {
                         </TableRow>
                       )
                     ]
+                    }
+                    
+                    // If no data but we have totals from places, show summary row
+                    if (data.length === 0 && totalAmount > 0) {
+                      return (
+                        <TableRow className="bg-purple-50/50">
+                          <TableCell className="font-bold text-purple-700 text-right">التسبقة</TableCell>
+                          <TableCell className="text-muted-foreground text-right">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-right font-bold text-purple-600">{formatCurrency(totalAmount)}</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                        </TableRow>
+                      )
+                    }
+                    
+                    return null
                   })()}
                   
                   {/* Separator */}
@@ -1759,11 +2373,13 @@ export function Financial() {
                   {/* وعد بالبيع (المبلغ المستلم) */}
                   {(() => {
                     const data = getPaymentsByLand('InitialPayment')
-                    const totalAmount = filteredData.promiseOfSalePaymentsTotal
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.promiseOfSale, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.promiseOfSalePaymentsTotal
                     const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
                     const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
                     
-                    if (totalAmount === 0) {
+                    if (data.length === 0 && totalAmount === 0) {
                       return (
                         <TableRow className="bg-pink-50/50">
                           <TableCell className="font-bold text-pink-700 text-right">وعد بالبيع</TableCell>
@@ -1771,6 +2387,20 @@ export function Financial() {
                           <TableCell className="text-center">0</TableCell>
                           <TableCell className="text-center">0</TableCell>
                           <TableCell className="text-right font-bold text-pink-600">{formatCurrency(0)}</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                        </TableRow>
+                      )
+                    }
+                    
+                    // If no data but we have totals from places, show summary row
+                    if (data.length === 0 && totalAmount > 0) {
+                      return (
+                        <TableRow className="bg-pink-50/50">
+                          <TableCell className="font-bold text-pink-700 text-right">وعد بالبيع</TableCell>
+                          <TableCell className="text-muted-foreground text-right">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-right font-bold text-pink-600">{formatCurrency(totalAmount)}</TableCell>
                           <TableCell className="text-center">-</TableCell>
                         </TableRow>
                       )
@@ -1836,7 +2466,11 @@ export function Financial() {
                   {/* العمولة */}
                   {(() => {
                     const data = filteredData.companyFeesByLand
-                    if (data.length === 0) {
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.companyFee, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.companyFeesTotal
+                    
+                    if (data.length === 0 && totalAmount === 0) {
                       return (
                         <TableRow className="bg-indigo-50/50">
                           <TableCell className="font-bold text-indigo-700">العمولة</TableCell>
@@ -1844,6 +2478,20 @@ export function Financial() {
                           <TableCell className="text-center">0</TableCell>
                           <TableCell className="text-center">0</TableCell>
                           <TableCell className="text-right font-bold text-indigo-600">{formatCurrency(0)}</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                        </TableRow>
+                      )
+                    }
+                    
+                    // If no data but we have totals from places, show summary row
+                    if (data.length === 0 && totalAmount > 0) {
+                      return (
+                        <TableRow className="bg-indigo-50/50">
+                          <TableCell className="font-bold text-indigo-700">العمولة</TableCell>
+                          <TableCell className="text-muted-foreground">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-center">-</TableCell>
+                          <TableCell className="text-right font-bold text-indigo-600">{formatCurrency(totalAmount)}</TableCell>
                           <TableCell className="text-center">-</TableCell>
                         </TableRow>
                       )
@@ -1892,14 +2540,21 @@ export function Financial() {
                   <TableRow className="bg-gray-100 font-bold border-t-2">
                     <TableCell colSpan={4} className="font-bold text-lg text-right">الإجمالي</TableCell>
                     <TableCell className="text-right font-bold text-lg text-green-700">
-                      {formatCurrency(
-                        filteredData.installmentPaymentsTotal + 
-                        filteredData.fullPaymentsTotal + 
-                        filteredData.bigAdvanceTotal + 
-                        filteredData.smallAdvanceTotal + // Included in bigAdvanceTotal for التسبقة display, but still counted in total
-                        filteredData.promiseOfSalePaymentsTotal + 
-                        filteredData.companyFeesTotal
-                      )}
+                      {(() => {
+                        const placeTotals = getTotalsByPlace()
+                        const grandTotal = placeTotals.reduce((sum, p) => sum + p.total, 0)
+                        // Use place totals if available, otherwise use filtered data totals
+                        return formatCurrency(
+                          grandTotal > 0 ? grandTotal : (
+                            filteredData.installmentPaymentsTotal + 
+                            filteredData.fullPaymentsTotal + 
+                            filteredData.bigAdvanceTotal + 
+                            filteredData.smallAdvanceTotal + // SmallAdvance is separate from BigAdvance
+                            filteredData.promiseOfSalePaymentsTotal + 
+                            filteredData.companyFeesTotal
+                          )
+                        )
+                      })()}
                     </TableCell>
                     <TableCell></TableCell>
                   </TableRow>
@@ -1907,6 +2562,89 @@ export function Financial() {
               </Table>
           </CardContent>
         </Card>
+
+        {/* Place-based Totals - Desktop */}
+        {(() => {
+          const placeTotals = getTotalsByPlace()
+          // Show section even if empty, or if there's at least one place with data
+          if (placeTotals.length === 0) {
+            // Check if there are any payments at all
+            const hasAnyPayments = filteredData.installmentPaymentsTotal > 0 || 
+                                  filteredData.smallAdvanceTotal > 0 || 
+                                  filteredData.fullPaymentsTotal > 0 || 
+                                  filteredData.bigAdvanceTotal > 0 || 
+                                  filteredData.promiseOfSalePaymentsTotal > 0 || 
+                                  filteredData.companyFeesTotal > 0
+            if (!hasAnyPayments) return null
+          }
+          
+          return (
+            <Card className="mt-4">
+              <CardHeader>
+                <CardTitle className="text-lg font-bold">الإجمالي حسب المكان</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {placeTotals.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4">لا توجد بيانات حسب المكان</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-gray-50">
+                        <TableHead className="font-bold text-right">المكان</TableHead>
+                        <TableHead className="font-bold text-right">الأقساط</TableHead>
+                        <TableHead className="font-bold text-right">العربون</TableHead>
+                        <TableHead className="font-bold text-right">بالحاضر</TableHead>
+                        <TableHead className="font-bold text-right">التسبقة</TableHead>
+                        <TableHead className="font-bold text-right">وعد بالبيع</TableHead>
+                        <TableHead className="font-bold text-right">العمولة</TableHead>
+                        <TableHead className="font-bold text-right">الإجمالي</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {placeTotals.map((placeData, idx) => (
+                        <TableRow key={idx} className="hover:bg-gray-50">
+                          <TableCell className="font-semibold text-right">{placeData.place}</TableCell>
+                          <TableCell className="text-right text-blue-600">{formatCurrency(placeData.installment)}</TableCell>
+                          <TableCell className="text-right text-orange-600">{formatCurrency(placeData.smallAdvance)}</TableCell>
+                          <TableCell className="text-right text-green-600">{formatCurrency(placeData.full)}</TableCell>
+                          <TableCell className="text-right text-purple-600">{formatCurrency(placeData.bigAdvance)}</TableCell>
+                          <TableCell className="text-right text-pink-600">{formatCurrency(placeData.promiseOfSale)}</TableCell>
+                          <TableCell className="text-right text-indigo-600">{formatCurrency(placeData.companyFee)}</TableCell>
+                          <TableCell className="text-right font-bold text-green-700">{formatCurrency(placeData.total)}</TableCell>
+                        </TableRow>
+                      ))}
+                    {/* Grand Total Row */}
+                    <TableRow className="bg-gray-100 font-bold border-t-2">
+                      <TableCell className="font-bold text-lg text-right">الإجمالي</TableCell>
+                      <TableCell className="text-right font-bold text-lg text-blue-700">
+                        {formatCurrency(placeTotals.reduce((sum, p) => sum + p.installment, 0))}
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-lg text-orange-700">
+                        {formatCurrency(placeTotals.reduce((sum, p) => sum + p.smallAdvance, 0))}
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-lg text-green-700">
+                        {formatCurrency(placeTotals.reduce((sum, p) => sum + p.full, 0))}
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-lg text-purple-700">
+                        {formatCurrency(placeTotals.reduce((sum, p) => sum + p.bigAdvance, 0))}
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-lg text-pink-700">
+                        {formatCurrency(placeTotals.reduce((sum, p) => sum + p.promiseOfSale, 0))}
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-lg text-indigo-700">
+                        {formatCurrency(placeTotals.reduce((sum, p) => sum + p.companyFee, 0))}
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-lg text-green-700">
+                        {formatCurrency(placeTotals.reduce((sum, p) => sum + p.total, 0))}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+                )}
+              </CardContent>
+            </Card>
+          )
+        })()}
       </div>
 
         {/* Mobile: Card View for all 5 categories */}
@@ -1929,7 +2667,13 @@ export function Financial() {
                   })()}
               </div>
                         <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-blue-600">{formatCurrency(filteredData.installmentPaymentsTotal)}</span>
+                  <span className="text-lg font-bold text-blue-600">
+                    {(() => {
+                      const placeTotals = getTotalsByPlace()
+                      const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.installment, 0)
+                      return formatCurrency(totalFromPlaces > 0 ? totalFromPlaces : filteredData.installmentPaymentsTotal)
+                    })()}
+                  </span>
                   <ChevronDown className="h-4 w-4 text-blue-600" />
                         </div>
               </div>
@@ -1954,7 +2698,13 @@ export function Financial() {
                   })()}
               </div>
                       <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-orange-600">{formatCurrency(filteredData.smallAdvanceTotal)}</span>
+                  <span className="text-lg font-bold text-orange-600">
+                    {(() => {
+                      const placeTotals = getTotalsByPlace()
+                      const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.smallAdvance, 0)
+                      return formatCurrency(totalFromPlaces > 0 ? totalFromPlaces : filteredData.smallAdvanceTotal)
+                    })()}
+                  </span>
                   <ChevronDown className="h-4 w-4 text-orange-600" />
                       </div>
                     </div>
@@ -1979,7 +2729,13 @@ export function Financial() {
                   })()}
                   </div>
                         <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-green-600">{formatCurrency(filteredData.fullPaymentsTotal)}</span>
+                  <span className="text-lg font-bold text-green-600">
+                    {(() => {
+                      const placeTotals = getTotalsByPlace()
+                      const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.full, 0)
+                      return formatCurrency(totalFromPlaces > 0 ? totalFromPlaces : filteredData.fullPaymentsTotal)
+                    })()}
+                  </span>
                   <ChevronDown className="h-4 w-4 text-green-600" />
                         </div>
             </div>
@@ -2004,7 +2760,13 @@ export function Financial() {
                   })()}
               </div>
                         <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-purple-600">{formatCurrency(filteredData.bigAdvanceTotal)}</span>
+                  <span className="text-lg font-bold text-purple-600">
+                    {(() => {
+                      const placeTotals = getTotalsByPlace()
+                      const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.bigAdvance, 0)
+                      return formatCurrency(totalFromPlaces > 0 ? totalFromPlaces : filteredData.bigAdvanceTotal)
+                    })()}
+                  </span>
                   <ChevronDown className="h-4 w-4 text-purple-600" />
                         </div>
               </div>
@@ -2029,7 +2791,13 @@ export function Financial() {
                   })()}
               </div>
                         <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-pink-600">{formatCurrency(filteredData.promiseOfSalePaymentsTotal)}</span>
+                  <span className="text-lg font-bold text-pink-600">
+                    {(() => {
+                      const placeTotals = getTotalsByPlace()
+                      const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.promiseOfSale, 0)
+                      return formatCurrency(totalFromPlaces > 0 ? totalFromPlaces : filteredData.promiseOfSalePaymentsTotal)
+                    })()}
+                  </span>
                   <ChevronDown className="h-4 w-4 text-pink-600" />
                         </div>
               </div>
@@ -2054,12 +2822,100 @@ export function Financial() {
                   })()}
               </div>
                         <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-indigo-600">{formatCurrency(filteredData.companyFeesTotal)}</span>
+                  <span className="text-lg font-bold text-indigo-600">
+                    {(() => {
+                      const placeTotals = getTotalsByPlace()
+                      const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.companyFee, 0)
+                      return formatCurrency(totalFromPlaces > 0 ? totalFromPlaces : filteredData.companyFeesTotal)
+                    })()}
+                  </span>
                   <ChevronDown className="h-4 w-4 text-indigo-600" />
                         </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* الإجمالي - Total Card */}
+          <Card className="border-2 border-gray-400 bg-gradient-to-br from-gray-50 to-gray-100">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-base text-gray-900">الإجمالي</h3>
+                  <p className="text-xs text-gray-600 mt-1">جميع المدفوعات والعمولات</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-bold text-green-700">
+                    {(() => {
+                      const placeTotals = getTotalsByPlace()
+                      const grandTotal = placeTotals.reduce((sum, p) => sum + p.total, 0)
+                      return formatCurrency(
+                        grandTotal > 0 ? grandTotal : (
+                          filteredData.installmentPaymentsTotal + 
+                          filteredData.fullPaymentsTotal + 
+                          filteredData.bigAdvanceTotal + 
+                          filteredData.smallAdvanceTotal + 
+                          filteredData.promiseOfSalePaymentsTotal + 
+                          filteredData.companyFeesTotal
+                        )
+                      )
+                    })()}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Place-based Totals - Mobile */}
+          {(() => {
+            const placeTotals = getTotalsByPlace()
+            if (placeTotals.length === 0) return null
+            
+            return (
+              <div className="space-y-3 mt-4">
+                <h3 className="font-bold text-base text-gray-800 mb-3">الإجمالي حسب المكان</h3>
+                {placeTotals.map((placeData, idx) => (
+                  <Card key={idx} className="border-2 border-gray-300 bg-gradient-to-br from-gray-50 to-gray-100">
+                    <CardContent className="p-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between border-b border-gray-300 pb-2">
+                          <h4 className="font-bold text-base text-gray-900">{placeData.place}</h4>
+                          <span className="text-lg font-bold text-green-700">
+                            {formatCurrency(placeData.total)}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex justify-between items-center">
+                            <span className="text-blue-600">الأقساط:</span>
+                            <span className="font-semibold text-blue-700">{formatCurrency(placeData.installment)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-orange-600">العربون:</span>
+                            <span className="font-semibold text-orange-700">{formatCurrency(placeData.smallAdvance)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-green-600">بالحاضر:</span>
+                            <span className="font-semibold text-green-700">{formatCurrency(placeData.full)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-purple-600">التسبقة:</span>
+                            <span className="font-semibold text-purple-700">{formatCurrency(placeData.bigAdvance)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-pink-600">وعد بالبيع:</span>
+                            <span className="font-semibold text-pink-700">{formatCurrency(placeData.promiseOfSale)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-indigo-600">العمولة:</span>
+                            <span className="font-semibold text-indigo-700">{formatCurrency(placeData.companyFee)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )
+          })()}
         </div>
       </div>
 
@@ -2764,6 +3620,7 @@ export function Financial() {
             const monthStart = new Date(currentYear, currentMonth, 1)
             const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59)
             
+            // IMPORTANT: Only show installments for CONFIRMED sales
             // Filter out installments for reset sales
             // IMPORTANT: Preserve Completed sales - they should always be included
             const validInstallments = installments.filter(inst => {
@@ -2782,6 +3639,21 @@ export function Financial() {
                   sale.big_advance_amount === 0 && 
                   !sale.company_fee_amount) {
                 return false
+              }
+              
+              // Only include installments for CONFIRMED sales
+              // A sale is confirmed if:
+              // 1. company_fee_amount IS NOT NULL (even if 0) - means commission was calculated and set
+              // 2. big_advance_amount > 0 - means big advance was paid
+              // 3. big_advance_confirmed = true
+              // 4. is_confirmed = true
+              const isConfirmed = (sale.company_fee_amount !== null && sale.company_fee_amount !== undefined) ||
+                                 (sale.big_advance_amount && sale.big_advance_amount > 0) ||
+                                 sale.big_advance_confirmed === true ||
+                                 sale.is_confirmed === true
+              
+              if (!isConfirmed) {
+                return false // Exclude installments for unconfirmed sales
               }
               
               return true

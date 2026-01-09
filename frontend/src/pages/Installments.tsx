@@ -382,14 +382,17 @@ export function Installments() {
         
         // Calculate totals from fresh installments
         const totalDue = freshInstallments.reduce((sum, inst) => sum + inst.amount_due, 0)
-        const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0)
+        // Include big advance amount (التسبقة) in total paid - this is paid at confirmation
+        const bigAdvanceAmount = (firstInst.sale as any)?.big_advance_amount || 0
+        const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0) + bigAdvanceAmount
         const totalUnpaid = freshInstallments.reduce((sum, inst) => {
           const remaining = inst.amount_due + (inst.stacked_amount || 0) - (inst.amount_paid || 0)
           return sum + Math.max(0, remaining)
         }, 0)
         
-        // Check if any installment data changed
-        const currentPaid = selectedSaleForDetails.installments.reduce((sum, i) => sum + (i.amount_paid || 0), 0)
+        // Check if any installment data changed (include big advance in comparison)
+        const currentBigAdvance = (selectedSaleForDetails.installments[0]?.sale as any)?.big_advance_amount || 0
+        const currentPaid = selectedSaleForDetails.installments.reduce((sum, i) => sum + (i.amount_paid || 0), 0) + currentBigAdvance
         const hasChanges = Math.abs(totalPaid - currentPaid) > 0.01
         
         // Also check installment count in case new payments affected status
@@ -648,7 +651,17 @@ export function Installments() {
 
       // Calculate stats
       const totalDue = installmentData.reduce((sum, i) => sum + i.amount_due, 0)
-      const totalPaid = installmentData.reduce((sum, i) => sum + i.amount_paid, 0)
+      // Include big advance amounts (التسبقة) - count once per sale
+      const salesWithBigAdvance = new Map<string, number>()
+      installmentData.forEach(i => {
+        const saleId = i.sale_id
+        if (!salesWithBigAdvance.has(saleId)) {
+          const bigAdvanceAmount = ((i.sale as any)?.big_advance_amount || 0)
+          salesWithBigAdvance.set(saleId, bigAdvanceAmount)
+        }
+      })
+      const totalBigAdvance = Array.from(salesWithBigAdvance.values()).reduce((sum, amount) => sum + amount, 0)
+      const totalPaid = installmentData.reduce((sum, i) => sum + i.amount_paid, 0) + totalBigAdvance
       // Check overdue based on due date, not just status
       const now = new Date()
       now.setHours(0, 0, 0, 0)
@@ -822,18 +835,21 @@ export function Installments() {
     // Authorization check
     if (!hasPermission('record_payments')) {
       setErrorMessage('ليس لديك صلاحية لتسجيل المدفوعات')
+      setPaymentConfirmOpen(false)
       return
     }
 
     const amount = parseFloat(paymentAmount)
     if (isNaN(amount) || amount <= 0) {
       setErrorMessage('يرجى إدخال مبلغ صحيح')
+      setPaymentConfirmOpen(false)
       return
     }
 
     // Check network connection
     if (!navigator.onLine) {
       setErrorMessage('لا يوجد اتصال بالإنترنت. يرجى التحقق من الاتصال والمحاولة مرة أخرى.')
+      setPaymentConfirmOpen(false)
       return
     }
 
@@ -855,6 +871,7 @@ export function Installments() {
         console.error('[recordPayment] Error checking installment status:', checkError)
         setErrorMessage('خطأ في التحقق من حالة القسط')
         setIsRefreshing(false)
+        setPaymentConfirmOpen(false)
         return
       }
       
@@ -865,6 +882,7 @@ export function Installments() {
           setErrorMessage(`⚠️ هذا القسط مدفوع بالكامل بالفعل! يرجى تحديث الصفحة.`)
           console.log('[recordPayment] Installment already paid (detected from database):', freshInstallment)
           setIsRefreshing(false)
+          setPaymentConfirmOpen(false)
           setPaymentDialogOpen(false)
           // Force refresh to get latest data
           await fetchInstallments()
@@ -878,6 +896,7 @@ export function Installments() {
       if (!clientId) {
         setErrorMessage('خطأ: لا يمكن تحديد العميل')
         setIsRefreshing(false)
+        setPaymentConfirmOpen(false)
         return
       }
 
@@ -889,6 +908,7 @@ export function Installments() {
       if (installmentsToPay.length === 0) {
         setErrorMessage('⚠️ لا توجد أقساط غير مدفوعة لهذه الصفقة!')
         setIsRefreshing(false)
+        setPaymentConfirmOpen(false)
         setPaymentDialogOpen(false)
         await fetchInstallments()
         return
@@ -1010,7 +1030,8 @@ export function Installments() {
       // Force refresh of deals table by incrementing refreshKey
       setRefreshKey(prev => prev + 1)
       
-      // NOW close the dialog after refresh completes
+      // NOW close the dialogs after refresh completes
+      setPaymentConfirmOpen(false)
       setPaymentDialogOpen(false)
       setPaymentAmount('')
       setMonthsToPayCount(1)
@@ -1061,7 +1082,9 @@ export function Installments() {
             
             // Calculate totals from fresh installments
             const totalDue = freshInstallments.reduce((sum, inst) => sum + inst.amount_due, 0)
-            const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0)
+            // Include big advance amount (التسبقة) in total paid - this is paid at confirmation
+            const bigAdvanceAmount = (firstInst.sale as any)?.big_advance_amount || 0
+            const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0) + bigAdvanceAmount
             const totalUnpaid = freshInstallments.reduce((sum, inst) => {
               const remaining = inst.amount_due + (inst.stacked_amount || 0) - (inst.amount_paid || 0)
               return sum + Math.max(0, remaining)
@@ -1110,6 +1133,9 @@ export function Installments() {
     } catch (error: any) {
       console.error('[recordPayment] Payment recording error:', error)
       setIsRefreshing(false)
+      
+      // Close confirmation dialog on error (keep payment dialog open so user can retry)
+      setPaymentConfirmOpen(false)
       
       // Show more specific error message
       if (error?.message?.includes('ERR_CONNECTION') || error?.message?.includes('Failed to fetch')) {
@@ -1160,6 +1186,12 @@ export function Installments() {
 
   // Filter installments - also check if overdue based on due date
   // For 'Paid' status: only show installments that still have remaining amount (partially paid)
+  // IMPORTANT: Only show installments for CONFIRMED sales
+  // A sale is confirmed if:
+  // 1. status = 'Completed' OR
+  // 2. company_fee_amount > 0 (commission was calculated and set) OR
+  // 3. big_advance_confirmed = true (for BigAdvance specifically) OR
+  // 4. is_confirmed = true
   // Filter out installments for reset sales (sales that have been reset back to confirmation page)
   // Reset sales have: status = 'Pending', big_advance_amount = 0, company_fee_amount = null
   const filteredInstallments = installments.filter((inst) => {
@@ -1169,12 +1201,30 @@ export function Installments() {
     // Exclude installments for cancelled sales
     if (sale.status === 'Cancelled') return false
     
+    // Always include Completed sales - they are confirmed
+    if (sale.status === 'Completed') return true
+    
     // Exclude installments for reset sales (sales that have been reset back to confirmation page)
     // These are sales that were confirmed but then reset, so they shouldn't show installments
     if (sale.status === 'Pending' && 
         sale.big_advance_amount === 0 && 
         !sale.company_fee_amount) {
       return false // Exclude installments for reset sales
+    }
+    
+    // Only include installments for CONFIRMED sales
+    // A sale is confirmed if:
+    // 1. company_fee_amount IS NOT NULL (even if 0) - means commission was calculated and set
+    // 2. big_advance_amount > 0 - means big advance was paid
+    // 3. big_advance_confirmed = true
+    // 4. is_confirmed = true
+    const isConfirmed = sale.company_fee_amount !== null && sale.company_fee_amount !== undefined ||
+                       (sale.big_advance_amount && sale.big_advance_amount > 0) ||
+                       sale.big_advance_confirmed === true ||
+                       sale.is_confirmed === true
+    
+    if (!isConfirmed) {
+      return false // Exclude installments for unconfirmed sales
     }
     
     return true
@@ -1305,19 +1355,23 @@ export function Installments() {
       if (!saleGroup) {
         const sale = inst.sale
         const isConfirmed = (sale as any)?.is_confirmed || (sale as any)?.big_advance_confirmed || false
+        // Get big advance amount from sale (التسبقة) - this is paid at confirmation
+        const bigAdvanceAmount = (sale as any)?.big_advance_amount || 0
         saleGroup = {
           saleId: inst.sale_id,
           saleDate: sale?.sale_date || '',
           totalPrice: sale?.total_selling_price || 0,
           installments: [],
           totalDue: 0,
-          totalPaid: 0,
+          totalPaid: bigAdvanceAmount, // Initialize with big advance amount
           nextDueDate: null,
           progress: 0,
           isConfirmed,
           landPieceCount: sale?.land_piece_ids?.length || 0,
         }
         group.sales.push(saleGroup)
+        // Add big advance to group total (only once per sale)
+        group.totalPaid += bigAdvanceAmount
       }
       
       saleGroup.installments.push(inst)
@@ -1547,69 +1601,6 @@ export function Installments() {
     setDetailsDrawerOpen(true)
   }
 
-  // Monthly summary - uses ALL installments (not filtered) so it always shows
-  const monthlySummary = useMemo(() => {
-    const now = new Date()
-    const currentMonth = now.getMonth()
-    const currentYear = now.getFullYear()
-    
-    const clientMap = new Map<string, {
-      clientId: string
-      clientName: string
-      piecesCount: number
-      dueThisMonth: number
-      overdueAmount: number
-    }>()
-    
-    installments.forEach(inst => {
-      const clientId = inst.sale?.client_id || 'unknown'
-      const clientName = inst.sale?.client?.name || 'غير معروف'
-      
-      if (!clientMap.has(clientId)) {
-        clientMap.set(clientId, {
-          clientId,
-          clientName,
-          piecesCount: 0,
-          dueThisMonth: 0,
-          overdueAmount: 0,
-        })
-      }
-      
-      const client = clientMap.get(clientId)!
-      const dueDate = new Date(inst.due_date)
-      const remaining = inst.amount_due - inst.amount_paid
-      
-      // Count pieces (unique sales)
-      if (!client.piecesCount) client.piecesCount = 0
-      
-      // Check if due this month
-      if (dueDate.getMonth() === currentMonth && dueDate.getFullYear() === currentYear && remaining > 0) {
-        client.dueThisMonth += remaining
-      }
-      
-      // Check if overdue
-      if (dueDate < now && inst.status !== 'Paid' && remaining > 0) {
-        client.overdueAmount += remaining
-      }
-    })
-    
-    // Count pieces per client
-    const saleClientMap = new Map<string, Set<string>>()
-    installments.forEach(inst => {
-      const clientId = inst.sale?.client_id || 'unknown'
-      if (!saleClientMap.has(clientId)) {
-        saleClientMap.set(clientId, new Set())
-      }
-      saleClientMap.get(clientId)!.add(inst.sale_id)
-    })
-    
-    clientMap.forEach((client, clientId) => {
-      client.piecesCount = saleClientMap.get(clientId)?.size || 0
-    })
-    
-    return Array.from(clientMap.values()).filter(c => c.dueThisMonth > 0 || c.overdueAmount > 0)
-  }, [installments])
-
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -1623,37 +1614,7 @@ export function Installments() {
       {/* Compact Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-2xl sm:text-3xl font-bold">الأقساط</h1>
-        {filterStatus !== 'Paid' || dealsTableData.length > 0 ? (
-        <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm">
-          <span>مدفوع: <strong className="text-green-600">{formatCurrency(stats.totalPaid)}</strong></span>
-          <span>متبقي: <strong>{formatCurrency(stats.totalDue - stats.totalPaid)}</strong></span>
-          {stats.totalOverdue > 0 && (
-            <span className="text-red-600">متأخر: <strong>{formatCurrency(stats.totalOverdue)}</strong></span>
-          )}
-        </div>
-        ) : (
-          <div className="text-xs sm:text-sm text-muted-foreground">
-            لا توجد أقساط مدفوعة جزئياً
-          </div>
-        )}
       </div>
-
-      {/* Monthly Summary - Compact */}
-      {monthlySummary.length > 0 && (
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-          <div className="flex flex-wrap items-center gap-4 text-sm">
-            <span className="font-medium text-orange-800">المستحقات الشهرية:</span>
-            {monthlySummary.map(client => (
-              <span key={client.clientId}>
-                {client.clientName}: <strong className="text-orange-600">{formatCurrency(client.dueThisMonth)}</strong>
-                {client.overdueAmount > 0 && (
-                  <span className="text-red-600 mr-2">({formatCurrency(client.overdueAmount)} متأخر)</span>
-                )}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Search and Advanced Filters */}
       <Card>
@@ -3116,7 +3077,9 @@ export function Installments() {
                         }
                         
                         const totalDue = freshInstallments.reduce((sum, inst) => sum + inst.amount_due, 0)
-                        const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0)
+                        // Include big advance amount (التسبقة) in total paid - this is paid at confirmation
+                        const bigAdvanceAmount = (firstInst.sale as any)?.big_advance_amount || 0
+                        const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0) + bigAdvanceAmount
                         const totalUnpaid = freshInstallments.reduce((sum, inst) => {
                           const remaining = inst.amount_due + (inst.stacked_amount || 0) - (inst.amount_paid || 0)
                           return sum + Math.max(0, remaining)
@@ -3228,8 +3191,11 @@ export function Installments() {
                         
                         if (freshData && freshData.length > 0) {
                           const freshInstallments = freshData as InstallmentWithRelations[]
+                          const firstInst = freshInstallments[0]
                           const totalDue = freshInstallments.reduce((sum, inst) => sum + inst.amount_due, 0)
-                          const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0)
+                          // Include big advance amount (التسبقة) in total paid - this is paid at confirmation
+                          const bigAdvanceAmount = (firstInst.sale as any)?.big_advance_amount || 0
+                          const totalPaid = freshInstallments.reduce((sum, inst) => sum + (inst.amount_paid || 0), 0) + bigAdvanceAmount
                           const totalUnpaid = freshInstallments.reduce((sum, inst) => {
                             const remaining = inst.amount_due + (inst.stacked_amount || 0) - (inst.amount_paid || 0)
                             return sum + Math.max(0, remaining)
