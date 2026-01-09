@@ -96,6 +96,8 @@ export function SaleConfirmation() {
   const [editForm, setEditForm] = useState({
     total_selling_price: '',
     company_fee_percentage: '',
+    company_fee_amount: '',
+    commission_input_method: 'percentage' as 'percentage' | 'amount',
     selected_offer_id: '',
     notes: '',
   })
@@ -178,9 +180,12 @@ export function SaleConfirmation() {
     const pricePerPiece = sale.total_selling_price / pieceCount
     
     // Initialize form with current sale values
+    const currentCommissionAmount = sale.company_fee_amount ? (sale.company_fee_amount / pieceCount).toFixed(2) : ''
     setEditForm({
       total_selling_price: pricePerPiece.toFixed(2),
       company_fee_percentage: (sale.company_fee_percentage || 0).toString(),
+      company_fee_amount: currentCommissionAmount,
+      commission_input_method: 'percentage',
       selected_offer_id: sale.selected_offer_id || '',
       notes: sale.notes || '',
     })
@@ -248,12 +253,26 @@ export function SaleConfirmation() {
     try {
       const pieceCount = editingSale.land_piece_ids.length
       const newPricePerPiece = parseFloat(editForm.total_selling_price) || 0
-      const newCompanyFeePercentage = parseFloat(editForm.company_fee_percentage) || 0
       
       if (newPricePerPiece <= 0) {
         showNotification('السعر يجب أن يكون أكبر من الصفر', 'error')
         setSavingEdit(false)
         return
+      }
+      
+      // Calculate commission based on input method
+      let newCompanyFeePercentage = 0
+      let newCompanyFee = 0
+      
+      if (editForm.commission_input_method === 'amount') {
+        // User entered amount directly
+        const enteredAmount = parseFloat(editForm.company_fee_amount) || 0
+        newCompanyFee = enteredAmount
+        newCompanyFeePercentage = newPricePerPiece > 0 ? (enteredAmount / newPricePerPiece) * 100 : 0
+      } else {
+        // User entered percentage
+        newCompanyFeePercentage = parseFloat(editForm.company_fee_percentage) || 0
+        newCompanyFee = (newPricePerPiece * newCompanyFeePercentage) / 100
       }
       
       // Calculate new totals for the sale
@@ -269,11 +288,10 @@ export function SaleConfirmation() {
         // Single piece - update price directly
         const pieceCost = editingPiece.purchase_cost || 0
         const newTotalPrice = newPricePerPiece
-        const newCompanyFee = (newTotalPrice * newCompanyFeePercentage) / 100
         const newProfit = newTotalPrice - pieceCost
         
         updates.total_selling_price = newTotalPrice
-        updates.company_fee_amount = newCompanyFee > 0 ? newCompanyFee : null
+        updates.company_fee_amount = newCompanyFee > 0 ? parseFloat(newCompanyFee.toFixed(2)) : null
         updates.profit_margin = newProfit
         
         // Update piece price if needed
@@ -309,12 +327,16 @@ export function SaleConfirmation() {
             totalCost += p.purchase_cost || 0
           })
           
-          const totalCompanyFee = (totalPrice * newCompanyFeePercentage) / 100
+          // For multi-piece, calculate total commission
+          // If user entered amount, multiply by piece count, otherwise calculate from percentage
+          const totalCompanyFee = editForm.commission_input_method === 'amount'
+            ? newCompanyFee * pieceCount
+            : (totalPrice * newCompanyFeePercentage) / 100
           const totalProfit = totalPrice - totalCost
           
           updates.total_selling_price = totalPrice
           updates.total_purchase_cost = totalCost
-          updates.company_fee_amount = totalCompanyFee > 0 ? totalCompanyFee : null
+          updates.company_fee_amount = totalCompanyFee > 0 ? parseFloat(totalCompanyFee.toFixed(2)) : null
           updates.profit_margin = totalProfit
           
           // Update the edited piece price
@@ -340,13 +362,29 @@ export function SaleConfirmation() {
       
       if (updateError) throw updateError
       
+      // Update the sale in state immediately to reflect changes
+      setSales(prevSales => prevSales.map(sale => {
+        if (sale.id === editingSale.id) {
+          return {
+            ...sale,
+            ...updates,
+            // Ensure company_fee_percentage is set correctly
+            company_fee_percentage: newCompanyFeePercentage > 0 ? newCompanyFeePercentage : null,
+            company_fee_amount: updates.company_fee_amount || null
+          }
+        }
+        return sale
+      }))
+      
       showNotification('تم تحديث بيانات البيع بنجاح', 'success')
       setEditDialogOpen(false)
       setEditingSale(null)
       setEditingPiece(null)
       
-      // Refresh sales list
-      fetchSales()
+      // Wait a bit to ensure database update is complete, then refresh sales list
+      // Increased delay to ensure database consistency
+      await new Promise(resolve => setTimeout(resolve, 300))
+      await fetchSales()
     } catch (error: any) {
       console.error('Error saving sale edit:', error)
       showNotification(error?.message || 'حدث خطأ أثناء حفظ التعديلات', 'error')
@@ -500,6 +538,7 @@ export function SaleConfirmation() {
         // Calculate total big advance paid per sale
         const bigAdvancePaidBySale: Record<string, number> = {}
         const totalPaidBySale: Record<string, number> = {}
+        const smallAdvancePaidBySale: Record<string, number> = {}
         paymentsData.forEach((payment: any) => {
           if (payment.sale_id) {
             const amount = parseFloat(payment.amount_paid || 0)
@@ -507,6 +546,8 @@ export function SaleConfirmation() {
             
             if (payment.payment_type === 'BigAdvance') {
               bigAdvancePaidBySale[payment.sale_id] = (bigAdvancePaidBySale[payment.sale_id] || 0) + amount
+            } else if (payment.payment_type === 'SmallAdvance') {
+              smallAdvancePaidBySale[payment.sale_id] = (smallAdvancePaidBySale[payment.sale_id] || 0) + amount
             }
           }
         })
@@ -589,6 +630,7 @@ export function SaleConfirmation() {
               // Attach payment info for display
               sale._totalBigAdvancePaid = bigAdvancePaidBySale[sale.id] || 0
               sale._totalPaid = totalPaidBySale[sale.id] || 0
+              sale._smallAdvancePaid = smallAdvancePaidBySale[sale.id] || 0
             })
           } else {
             salesNeedingConfirmation.forEach((sale: any) => {
@@ -693,13 +735,6 @@ export function SaleConfirmation() {
     
     setSelectedOffer(offer)
     
-    // Set company fee from offer or sale
-    if (offer) {
-      setCompanyFeePercentage(offer.company_fee_percentage.toString())
-    } else {
-    setCompanyFeePercentage(sale.company_fee_percentage?.toString() || '2')
-    }
-    
     // Calculate values using the offer - need to calculate pricePerPiece first
     let calculatedPricePerPiece = 0
     if (sale.payment_type === 'Installment' && offer && offer.price_per_m2_installment) {
@@ -720,15 +755,31 @@ export function SaleConfirmation() {
     const pieceCount = sale.land_piece_ids.length
     const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
     
-    // Calculate company fee
+    // Calculate company fee - prioritize sale's company_fee_percentage (user-edited value) over offer's commission
     let companyFeePercentage = 0
-    if (sale.payment_type === 'Installment' && offer) {
-      companyFeePercentage = offer.company_fee_percentage || 0
+    if (sale.payment_type === 'Installment') {
+      // For Installment, prioritize sale's company_fee_percentage (user-edited value) over offer's commission
+      if (sale.company_fee_percentage !== null && sale.company_fee_percentage !== undefined) {
+        companyFeePercentage = sale.company_fee_percentage
+      } else if (offer) {
+        companyFeePercentage = offer.company_fee_percentage || 0
+      } else {
+        companyFeePercentage = 0
+      }
     } else if (sale.payment_type === 'Full' || sale.payment_type === 'PromiseOfSale') {
       const batch = (piece as any).land_batch
       companyFeePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || 0
     } else {
       companyFeePercentage = sale.company_fee_percentage || 0
+    }
+    
+    // Set company fee percentage state for display (prioritize sale's value)
+    if (sale.company_fee_percentage !== null && sale.company_fee_percentage !== undefined) {
+      setCompanyFeePercentage(sale.company_fee_percentage.toString())
+    } else if (offer) {
+      setCompanyFeePercentage(offer.company_fee_percentage.toString())
+    } else {
+      setCompanyFeePercentage('2')
     }
     
     const companyFeePerPiece = (calculatedPricePerPiece * companyFeePercentage) / 100
@@ -867,20 +918,33 @@ export function SaleConfirmation() {
     
     const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
     
-    // Use company fee based on payment type
+    // Use stored company_fee_amount from sale directly (like SalesNew page does)
+    // This ensures we use the actual saved value, not recalculated from percentage
+    // Same logic as SalesNew.tsx line 345: companyFeeAmount: sale.company_fee_amount ? sale.company_fee_amount / sale.land_piece_ids.length : null
+    const companyFeePerPiece = sale.company_fee_amount && sale.company_fee_amount > 0
+      ? sale.company_fee_amount / pieceCount
+      : 0
+    
+    // Calculate fee percentage for display (needed for return value)
     let feePercentage = 0
-    if (sale.payment_type === 'Full' || sale.payment_type === 'PromiseOfSale') {
+    if (sale.company_fee_percentage !== null && sale.company_fee_percentage !== undefined && sale.company_fee_percentage > 0) {
+      // Use sale's stored percentage (prioritize user-edited value)
+      feePercentage = sale.company_fee_percentage
+    } else if (companyFeePerPiece > 0 && pricePerPiece > 0) {
+      // If percentage is 0 or null but amount exists, calculate percentage from amount
+      feePercentage = (companyFeePerPiece / pricePerPiece) * 100
+    } else if (sale.payment_type === 'Full' || sale.payment_type === 'PromiseOfSale') {
       // For Full payment or PromiseOfSale, use company_fee_percentage_full from batch
       const batch = (piece as any).land_batch
-      feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || parseFloat(companyFeePercentage) || 0
+      feePercentage = batch?.company_fee_percentage_full || parseFloat(companyFeePercentage) || 0
     } else {
-      // For Installment, use company fee from offer if available, otherwise from sale or form
-      feePercentage = offerToUse 
-        ? (offerToUse.company_fee_percentage || 0)
-        : (sale.company_fee_percentage || parseFloat(companyFeePercentage) || 0)
+      // For Installment, use offer's commission if sale doesn't have one
+      if (offerToUse && offerToUse.company_fee_percentage !== null && offerToUse.company_fee_percentage !== undefined) {
+        feePercentage = offerToUse.company_fee_percentage
+      } else {
+        feePercentage = parseFloat(companyFeePercentage) || 0
+      }
     }
-    
-    const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
     const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
     
     // Calculate advance amount (التسبقة) from offer if available
@@ -2217,7 +2281,19 @@ export function SaleConfirmation() {
           {selectedSale && selectedPiece && (() => {
                   // Get the offer to use - prioritize selectedOffer state, then sale's selected_offer
                   const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
-                  const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece, offer: calculatedOffer } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
+                  const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece, feePercentage, offer: calculatedOffer } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
+            
+            // Check if reservation has been paid
+            // By default, all reservations are paid unless small_advance_amount is 0
+            // Reservations are always paid when a sale is created, so we assume they're paid
+            const totalReservationForSale = (selectedSale.small_advance_amount || 0)
+            
+            // Reservation is unpaid ONLY if small_advance_amount is explicitly 0
+            // Otherwise, assume it's paid (default behavior)
+            const reservationPaid = totalReservationForSale > 0
+            
+            // Only include unpaid reservation in amount due - if paid, unpaidReservation = 0
+            const unpaidReservation = reservationPaid ? 0 : reservationPerPiece
             
             // Calculate advance amount from offer if available
             // NOTE: For installments, advance is calculated from PRICE (not total payable with commission)
@@ -2277,12 +2353,15 @@ export function SaleConfirmation() {
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
                       <div className="flex items-center gap-2">
                         <span className="text-sm sm:text-base text-gray-700">عمولة الشركة (%):</span>
-                        {calculatedOffer && (
+                        {calculatedOffer && selectedSale.company_fee_percentage === null && (
                           <Badge variant="default" className="text-xs">من العرض</Badge>
+                        )}
+                        {selectedSale.company_fee_percentage !== null && selectedSale.company_fee_percentage !== undefined && (
+                          <Badge variant="secondary" className="text-xs">معدلة</Badge>
                         )}
                       </div>
                       <span className="text-sm sm:text-base font-semibold text-blue-700">
-                        {calculatedOffer ? calculatedOffer.company_fee_percentage : companyFeePercentage}%
+                        {feePercentage > 0 ? feePercentage.toFixed(2) : (companyFeePerPiece > 0 && pricePerPiece > 0 ? ((companyFeePerPiece / pricePerPiece) * 100).toFixed(2) : '0')}%
                       </span>
                       </div>
                     
@@ -2298,17 +2377,22 @@ export function SaleConfirmation() {
                     
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
                       <span className="text-sm sm:text-base text-gray-700">المدفوع مسبقاً (العربون):</span>
-                      <span className="text-sm sm:text-base font-semibold text-green-600">{formatCurrency(reservationPerPiece)}</span>
+                      <span className="text-sm sm:text-base font-semibold text-green-600">
+                        {formatCurrency(reservationPaid ? reservationPerPiece : 0)}
+                        {!reservationPaid && reservationPerPiece > 0 && (
+                          <span className="text-xs text-orange-600 mr-1"> (غير مدفوع: {formatCurrency(reservationPerPiece)})</span>
+                        )}
+                      </span>
                     </div>
                     
                     {confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment' && calculatedOffer && (
                       <>
-                        {/* Amount to collect at confirmation = Advance + Commission */}
+                        {/* Amount to collect at confirmation = Advance + Commission + Unpaid Reservation */}
                         <div className="bg-purple-50 border border-purple-200 rounded p-2 mt-2">
                           <div className="flex justify-between items-center py-1.5">
-                            <span className="text-sm sm:text-base font-bold text-purple-800">المستحق عند التأكيد (التسبقة + العمولة):</span>
+                            <span className="text-sm sm:text-base font-bold text-purple-800">المستحق عند التأكيد (التسبقة + العمولة{unpaidReservation > 0 ? ' + العربون' : ''}):</span>
                             <span className="text-sm sm:text-base font-bold text-purple-800">
-                              {formatCurrency(advanceAmount + companyFeePerPiece)}
+                              {formatCurrency(advanceAmount + companyFeePerPiece + unpaidReservation)}
                           </span>
                           </div>
                           <div className="flex justify-between items-center py-1 text-purple-700 text-xs pl-2">
@@ -2316,9 +2400,15 @@ export function SaleConfirmation() {
                             <span>{formatCurrency(advanceAmount)}</span>
                           </div>
                           <div className="flex justify-between items-center py-1 text-purple-700 text-xs pl-2">
-                            <span>- العمولة ({calculatedOffer.company_fee_percentage || companyFeePercentage}%):</span>
+                            <span>- العمولة ({feePercentage > 0 ? feePercentage.toFixed(2) : (companyFeePerPiece > 0 && pricePerPiece > 0 ? ((companyFeePerPiece / pricePerPiece) * 100).toFixed(2) : '0')}%):</span>
                             <span>{formatCurrency(companyFeePerPiece)}</span>
                           </div>
+                          {unpaidReservation > 0 && (
+                            <div className="flex justify-between items-center py-1 text-purple-700 text-xs pl-2">
+                              <span>- العربون (غير مدفوع):</span>
+                              <span>{formatCurrency(unpaidReservation)}</span>
+                            </div>
+                          )}
                         </div>
                         
                         <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
@@ -2373,7 +2463,7 @@ export function SaleConfirmation() {
                         {formatCurrency(confirmationType === 'full' 
                           ? ((selectedSale.payment_type as any) === 'PromiseOfSale' && (selectedSale.promise_initial_payment || 0) > 0
                               ? advanceAmount  // Use calculated advanceAmount which already subtracts initial payment
-                              : (totalPayablePerPiece - reservationPerPiece))
+                              : (totalPayablePerPiece - (reservationPaid ? reservationPerPiece : 0))) // Subtract only if reservation is paid
                           : remainingAfterAdvance)}
                       </span>
                     </div>
@@ -2752,20 +2842,118 @@ export function SaleConfirmation() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="edit-company-fee">نسبة عمولة الشركة (%)</Label>
-                  <Input
-                    id="edit-company-fee"
-                    type="number"
-                    value={editForm.company_fee_percentage}
-                    onChange={(e) => setEditForm({ ...editForm, company_fee_percentage: e.target.value })}
-                    placeholder="نسبة العمولة"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    النسبة الحالية: {editingSale.company_fee_percentage || 0}%
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="edit-company-fee">عمولة الشركة</Label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const price = parseFloat(editForm.total_selling_price) || 0
+                          const currentAmount = parseFloat(editForm.company_fee_amount) || 0
+                          const currentPercentage = parseFloat(editForm.company_fee_percentage) || 0
+                          
+                          if (editForm.commission_input_method === 'percentage') {
+                            // Switching to amount: calculate amount from percentage
+                            const calculatedAmount = price > 0 ? (price * currentPercentage) / 100 : 0
+                            setEditForm({ ...editForm, commission_input_method: 'amount', company_fee_amount: calculatedAmount > 0 ? calculatedAmount.toFixed(2) : '' })
+                          } else {
+                            // Switching to percentage: calculate percentage from amount
+                            const calculatedPercentage = price > 0 ? (currentAmount / price) * 100 : 0
+                            setEditForm({ ...editForm, commission_input_method: 'percentage', company_fee_percentage: calculatedPercentage > 0 ? calculatedPercentage.toFixed(2) : '' })
+                          }
+                        }}
+                        className={`text-xs px-2 py-1 rounded border ${
+                          editForm.commission_input_method === 'percentage'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+                        }`}
+                      >
+                        نسبة (%)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const price = parseFloat(editForm.total_selling_price) || 0
+                          const currentAmount = parseFloat(editForm.company_fee_amount) || 0
+                          const currentPercentage = parseFloat(editForm.company_fee_percentage) || 0
+                          
+                          if (editForm.commission_input_method === 'amount') {
+                            // Switching to percentage: calculate percentage from amount
+                            const calculatedPercentage = price > 0 ? (currentAmount / price) * 100 : 0
+                            setEditForm({ ...editForm, commission_input_method: 'percentage', company_fee_percentage: calculatedPercentage > 0 ? calculatedPercentage.toFixed(2) : '' })
+                          } else {
+                            // Switching to amount: calculate amount from percentage
+                            const calculatedAmount = price > 0 ? (price * currentPercentage) / 100 : 0
+                            setEditForm({ ...editForm, commission_input_method: 'amount', company_fee_amount: calculatedAmount > 0 ? calculatedAmount.toFixed(2) : '' })
+                          }
+                        }}
+                        className={`text-xs px-2 py-1 rounded border ${
+                          editForm.commission_input_method === 'amount'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+                        }`}
+                      >
+                        مبلغ (DT)
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {editForm.commission_input_method === 'percentage' ? (
+                    <>
+                      <Input
+                        id="edit-company-fee"
+                        type="number"
+                        value={editForm.company_fee_percentage}
+                        onChange={(e) => {
+                          const percentage = parseFloat(e.target.value) || 0
+                          const price = parseFloat(editForm.total_selling_price) || 0
+                          const calculatedAmount = price > 0 ? (price * percentage) / 100 : 0
+                          setEditForm({
+                            ...editForm,
+                            company_fee_percentage: e.target.value,
+                            company_fee_amount: calculatedAmount > 0 ? calculatedAmount.toFixed(2) : ''
+                          })
+                        }}
+                        placeholder="نسبة العمولة"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        النسبة الحالية: {editingSale.company_fee_percentage || 0}%
+                        {parseFloat(editForm.company_fee_percentage) > 0 && parseFloat(editForm.total_selling_price) > 0 && (
+                          <span className="mr-2"> = {formatCurrency((parseFloat(editForm.total_selling_price) * parseFloat(editForm.company_fee_percentage)) / 100)}</span>
+                        )}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Input
+                        id="edit-company-fee-amount"
+                        type="number"
+                        value={editForm.company_fee_amount}
+                        onChange={(e) => {
+                          const amount = parseFloat(e.target.value) || 0
+                          const price = parseFloat(editForm.total_selling_price) || 0
+                          const calculatedPercentage = price > 0 ? (amount / price) * 100 : 0
+                          setEditForm({
+                            ...editForm,
+                            company_fee_amount: e.target.value,
+                            company_fee_percentage: calculatedPercentage > 0 ? calculatedPercentage.toFixed(2) : ''
+                          })
+                        }}
+                        placeholder="مبلغ العمولة"
+                        min="0"
+                        step="0.01"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        المبلغ الحالي: {formatCurrency((editingSale.company_fee_amount || 0) / editingSale.land_piece_ids.length)}
+                        {parseFloat(editForm.company_fee_amount) > 0 && parseFloat(editForm.total_selling_price) > 0 && (
+                          <span className="mr-2"> = {((parseFloat(editForm.company_fee_amount) / parseFloat(editForm.total_selling_price)) * 100).toFixed(2)}%</span>
+                        )}
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 {editingSale.payment_type === 'Installment' && (
