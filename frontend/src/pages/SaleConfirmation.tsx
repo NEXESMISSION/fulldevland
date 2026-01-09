@@ -2315,9 +2315,10 @@ export function SaleConfirmation() {
             }
             }
             
-            // Calculate remaining for installments = Price - Reservation - Advance (WITHOUT commission)
+            // Calculate remaining for installments = Price - Advance (WITHOUT commission, WITHOUT reservation)
+            // Reservation is NOT subtracted from remaining - it's already paid separately
             // Commission is collected separately at confirmation with advance
-            let remainingAfterAdvance = pricePerPiece - reservationPerPiece - advanceAmount
+            let remainingAfterAdvance = pricePerPiece - advanceAmount
             if (confirmationType === 'full' && selectedSale.payment_type === 'PromiseOfSale') {
               // For PromiseOfSale, remaining is already calculated in advanceAmount
               remainingAfterAdvance = advanceAmount
@@ -2387,17 +2388,17 @@ export function SaleConfirmation() {
                     
                     {confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment' && calculatedOffer && (
                       <>
-                        {/* Amount to collect at confirmation = Advance + Commission + Unpaid Reservation */}
+                        {/* Amount to collect at confirmation = Advance (minus paid reservation) + Commission + Unpaid Reservation */}
                         <div className="bg-purple-50 border border-purple-200 rounded p-2 mt-2">
                           <div className="flex justify-between items-center py-1.5">
                             <span className="text-sm sm:text-base font-bold text-purple-800">المستحق عند التأكيد (التسبقة + العمولة{unpaidReservation > 0 ? ' + العربون' : ''}):</span>
                             <span className="text-sm sm:text-base font-bold text-purple-800">
-                              {formatCurrency(advanceAmount + companyFeePerPiece + unpaidReservation)}
+                              {formatCurrency((advanceAmount - (reservationPaid ? reservationPerPiece : 0)) + companyFeePerPiece + unpaidReservation)}
                           </span>
                           </div>
                           <div className="flex justify-between items-center py-1 text-purple-700 text-xs pl-2">
                             <span>- التسبقة {calculatedOffer.advance_is_percentage ? `(${calculatedOffer.advance_amount}%)` : ''}:</span>
-                            <span>{formatCurrency(advanceAmount)}</span>
+                            <span>{formatCurrency(advanceAmount - (reservationPaid ? reservationPerPiece : 0))}</span>
                           </div>
                           <div className="flex justify-between items-center py-1 text-purple-700 text-xs pl-2">
                             <span>- العمولة ({feePercentage > 0 ? feePercentage.toFixed(2) : (companyFeePerPiece > 0 && pricePerPiece > 0 ? ((companyFeePerPiece / pricePerPiece) * 100).toFixed(2) : '0')}%):</span>

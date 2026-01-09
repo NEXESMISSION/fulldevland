@@ -120,6 +120,9 @@ export function Financial() {
   const [selectedPaymentTypeForDialog, setSelectedPaymentTypeForDialog] = useState<PaymentTypeFilter | null>(null)
   const [paymentDetailDialogOpen, setPaymentDetailDialogOpen] = useState(false)
   const [companyFeeDialogOpen, setCompanyFeeDialogOpen] = useState(false)
+  const [selectedGroupForDetails, setSelectedGroupForDetails] = useState<PaymentByLand | null>(null)
+  const [selectedGroupPaymentType, setSelectedGroupPaymentType] = useState<PaymentTypeFilter | null>(null)
+  const [groupDetailsDialogOpen, setGroupDetailsDialogOpen] = useState(false)
 
   useEffect(() => {
     if (!hasPermission('view_financial')) return
@@ -327,10 +330,15 @@ export function Financial() {
       totalPromiseOfSalePayments
 
     // Calculate company fees from sales
-    // NOTE: Commission is ONLY counted for CONFIRMED (Completed) sales
+    // NOTE: Commission is counted for CONFIRMED sales (either Completed status OR has been confirmed)
     // Commission is collected at confirmation time, not at reservation
     const companyFeesTotal = filteredSales
-      .filter(s => s.status === 'Completed')
+      .filter(s => {
+        // Include if:
+        // 1. Status is Completed, OR
+        // 2. Has company_fee_amount > 0 (means it was confirmed and commission was set)
+        return (s.status === 'Completed' || (s.company_fee_amount && s.company_fee_amount > 0)) && s.status !== 'Cancelled'
+      })
       .reduce((sum, s) => sum + (s.company_fee_amount || 0), 0)
 
     // Group payments by client and date
@@ -375,10 +383,10 @@ export function Financial() {
     const groupedInitialPayments = groupPayments(initialPaymentsList)
 
     // Group company fees by client and date
-    // NOTE: Commission is ONLY counted for CONFIRMED (Completed) sales
+    // NOTE: Commission is counted for CONFIRMED sales (either Completed status OR has been confirmed)
     const groupCompanyFees = (): GroupedCompanyFee[] => {
       const companyFeeSales = filteredSales
-        .filter(s => s.company_fee_amount && s.company_fee_amount > 0 && s.status === 'Completed')
+        .filter(s => s.company_fee_amount && s.company_fee_amount > 0 && s.status !== 'Cancelled')
       
       const groups = new Map<string, GroupedCompanyFee>()
       
@@ -418,10 +426,10 @@ export function Financial() {
     const groupedCompanyFees = groupCompanyFees()
 
     // Group company fees by land batch for table display
-    // NOTE: Commission is ONLY counted for CONFIRMED (Completed) sales
+    // NOTE: Commission is counted for CONFIRMED sales (either Completed status OR has been confirmed)
     const groupCompanyFeesByLand = (): CompanyFeeByLand[] => {
       const companyFeeSales = filteredSales
-        .filter(s => s.company_fee_amount && s.company_fee_amount > 0 && s.status === 'Completed')
+        .filter(s => s.company_fee_amount && s.company_fee_amount > 0 && s.status !== 'Cancelled')
       
       const landGroups = new Map<string, CompanyFeeByLand>()
       
@@ -1233,28 +1241,45 @@ export function Financial() {
                       )
                     }
                     return [
-                      ...data.map((group, idx) => (
-                      <TableRow key={`inst-${idx}`} className="bg-blue-50/50 hover:bg-blue-100/50">
-                        <TableCell className="font-bold text-blue-700 text-right">{idx === 0 ? 'الأقساط' : ''}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-medium">{group.landBatchName}</div>
-                          {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                        </TableCell>
-                        <TableCell className="text-center">{group.pieces.length}</TableCell>
-                        <TableCell className="text-center">{group.paymentCount}</TableCell>
-                        <TableCell className="text-right font-bold text-blue-600">{formatCurrency(group.totalAmount)}</TableCell>
-                        <TableCell className="text-center">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => openPaymentDetailsDialog('Installment')}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                      )),
+                      ...data.map((group, idx) => {
+                        // Get unique clients and piece numbers for this group
+                        const uniqueClients = new Set<string>()
+                        const pieceNumbers = group.pieces.map(p => p.pieceNumber).join(', ')
+                        group.payments.forEach(p => {
+                          const clientName = (p.client as any)?.name
+                          if (clientName) uniqueClients.add(clientName)
+                        })
+                        
+                        return (
+                        <TableRow key={`inst-${idx}`} className="bg-blue-50/50 hover:bg-blue-100/50">
+                          <TableCell className="font-bold text-blue-700 text-right">{idx === 0 ? 'الأقساط' : ''}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="font-medium">{group.landBatchName}</div>
+                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
+                            {pieceNumbers && <div className="text-xs text-blue-600 mt-1">#{pieceNumbers}</div>}
+                            {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
+                          </TableCell>
+                          <TableCell className="text-center">{group.pieces.length}</TableCell>
+                          <TableCell className="text-center">{group.paymentCount}</TableCell>
+                          <TableCell className="text-right font-bold text-blue-600">{formatCurrency(group.totalAmount)}</TableCell>
+                          <TableCell className="text-center">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => {
+                                setSelectedGroupForDetails(group)
+                                setSelectedGroupPaymentType('Installment')
+                                setGroupDetailsDialogOpen(true)
+                              }}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="عرض التفاصيل"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                        )
+                      }),
                       data.length > 1 && (
                         <TableRow key="inst-summary" className="bg-blue-100/50 font-bold">
                           <TableCell className="text-blue-800 text-right">إجمالي الأقساط</TableCell>
@@ -1293,28 +1318,45 @@ export function Financial() {
                       )
                     }
                     return [
-                      ...data.map((group, idx) => (
-                      <TableRow key={`small-${idx}`} className="bg-orange-50/50 hover:bg-orange-100/50">
-                        <TableCell className="font-bold text-orange-700 text-right">{idx === 0 ? 'العربون' : ''}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-medium">{group.landBatchName}</div>
-                          {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                        </TableCell>
-                        <TableCell className="text-center">{group.pieces.length}</TableCell>
-                        <TableCell className="text-center">{group.paymentCount}</TableCell>
-                        <TableCell className="text-right font-bold text-orange-600">{formatCurrency(group.totalAmount)}</TableCell>
-                        <TableCell className="text-center">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => openPaymentDetailsDialog('SmallAdvance')}
-                            className="text-orange-600 hover:text-orange-800"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                      )),
+                      ...data.map((group, idx) => {
+                        // Get unique clients and piece numbers for this group
+                        const uniqueClients = new Set<string>()
+                        const pieceNumbers = group.pieces.map(p => p.pieceNumber).join(', ')
+                        group.payments.forEach(p => {
+                          const clientName = (p.client as any)?.name
+                          if (clientName) uniqueClients.add(clientName)
+                        })
+                        
+                        return (
+                        <TableRow key={`small-${idx}`} className="bg-orange-50/50 hover:bg-orange-100/50">
+                          <TableCell className="font-bold text-orange-700 text-right">{idx === 0 ? 'العربون' : ''}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="font-medium">{group.landBatchName}</div>
+                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
+                            {pieceNumbers && <div className="text-xs text-orange-600 mt-1">#{pieceNumbers}</div>}
+                            {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
+                          </TableCell>
+                          <TableCell className="text-center">{group.pieces.length}</TableCell>
+                          <TableCell className="text-center">{group.paymentCount}</TableCell>
+                          <TableCell className="text-right font-bold text-orange-600">{formatCurrency(group.totalAmount)}</TableCell>
+                          <TableCell className="text-center">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => {
+                                setSelectedGroupForDetails(group)
+                                setSelectedGroupPaymentType('SmallAdvance')
+                                setGroupDetailsDialogOpen(true)
+                              }}
+                              className="text-orange-600 hover:text-orange-800"
+                              title="عرض التفاصيل"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                        )
+                      }),
                       data.length > 1 && (
                         <TableRow key="small-summary" className="bg-orange-100/50 font-bold">
                           <TableCell className="text-orange-800 text-right">إجمالي العربون</TableCell>
@@ -1393,10 +1435,37 @@ export function Financial() {
                     <TableCell colSpan={6} className="p-0"></TableCell>
                   </TableRow>
                   
-                  {/* التسبقة */}
+                  {/* التسبقة - includes both BigAdvance and SmallAdvance (العربون is part of التسبقة) */}
                   {(() => {
-                    const data = getPaymentsByLand('BigAdvance')
-                    const totalAmount = filteredData.bigAdvanceTotal
+                    const bigAdvanceData = getPaymentsByLand('BigAdvance')
+                    const smallAdvanceData = getPaymentsByLand('SmallAdvance')
+                    
+                    // Combine BigAdvance and SmallAdvance data
+                    const combinedDataMap = new Map<string, PaymentByLand>()
+                    
+                    // Add BigAdvance data
+                    bigAdvanceData.forEach(group => {
+                      const key = `${group.landBatchName}-${group.location || ''}`
+                      combinedDataMap.set(key, { ...group })
+                    })
+                    
+                    // Add SmallAdvance data (merge with existing or create new)
+                    smallAdvanceData.forEach(group => {
+                      const key = `${group.landBatchName}-${group.location || ''}`
+                      if (combinedDataMap.has(key)) {
+                        const existing = combinedDataMap.get(key)!
+                        existing.totalAmount += group.totalAmount
+                        existing.paymentCount += group.paymentCount
+                        existing.pieces = [...existing.pieces, ...group.pieces]
+                        existing.payments = [...existing.payments, ...group.payments]
+                      } else {
+                        combinedDataMap.set(key, { ...group })
+                      }
+                    })
+                    
+                    const data = Array.from(combinedDataMap.values())
+                    // Total includes both BigAdvance and SmallAdvance
+                    const totalAmount = filteredData.bigAdvanceTotal + filteredData.smallAdvanceTotal
                     const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
                     const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
                     
@@ -1413,28 +1482,45 @@ export function Financial() {
                       )
                     }
                     return [
-                      ...data.map((group, idx) => (
-                      <TableRow key={`big-${idx}`} className="bg-purple-50/50 hover:bg-purple-100/50">
-                        <TableCell className="font-bold text-purple-700 text-right">{idx === 0 ? 'التسبقة' : ''}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-medium">{group.landBatchName}</div>
-                          {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                        </TableCell>
-                        <TableCell className="text-center">{group.pieces.length}</TableCell>
-                        <TableCell className="text-center">{group.paymentCount}</TableCell>
-                        <TableCell className="text-right font-bold text-purple-600">{formatCurrency(group.totalAmount)}</TableCell>
-                        <TableCell className="text-center">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => openPaymentDetailsDialog('BigAdvance')}
-                            className="text-purple-600 hover:text-purple-800"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                      )),
+                      ...data.map((group, idx) => {
+                        // Get unique clients and piece numbers for this group
+                        const uniqueClients = new Set<string>()
+                        const pieceNumbers = group.pieces.map(p => p.pieceNumber).join(', ')
+                        group.payments.forEach(p => {
+                          const clientName = (p.client as any)?.name
+                          if (clientName) uniqueClients.add(clientName)
+                        })
+                        
+                        return (
+                        <TableRow key={`big-${idx}`} className="bg-purple-50/50 hover:bg-purple-100/50">
+                          <TableCell className="font-bold text-purple-700 text-right">{idx === 0 ? 'التسبقة' : ''}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="font-medium">{group.landBatchName}</div>
+                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
+                            {pieceNumbers && <div className="text-xs text-purple-600 mt-1">#{pieceNumbers}</div>}
+                            {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
+                          </TableCell>
+                          <TableCell className="text-center">{group.pieces.length}</TableCell>
+                          <TableCell className="text-center">{group.paymentCount}</TableCell>
+                          <TableCell className="text-right font-bold text-purple-600">{formatCurrency(group.totalAmount)}</TableCell>
+                          <TableCell className="text-center">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => {
+                                setSelectedGroupForDetails(group)
+                                setSelectedGroupPaymentType('BigAdvance')
+                                setGroupDetailsDialogOpen(true)
+                              }}
+                              className="text-purple-600 hover:text-purple-800"
+                              title="عرض التفاصيل"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                        )
+                      }),
                       data.length > 1 && (
                         <TableRow key="big-summary" className="bg-purple-100/50 font-bold">
                           <TableCell className="text-purple-800 text-right">إجمالي التسبقة</TableCell>
@@ -1473,28 +1559,45 @@ export function Financial() {
                       )
                     }
                     return [
-                      ...data.map((group, idx) => (
-                      <TableRow key={`promise-${idx}`} className="bg-pink-50/50 hover:bg-pink-100/50">
-                        <TableCell className="font-bold text-pink-700 text-right">{idx === 0 ? 'وعد بالبيع' : ''}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-medium">{group.landBatchName}</div>
-                          {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                        </TableCell>
-                        <TableCell className="text-center">{group.pieces.length}</TableCell>
-                        <TableCell className="text-center">{group.paymentCount}</TableCell>
-                        <TableCell className="text-right font-bold text-pink-600">{formatCurrency(group.totalAmount)}</TableCell>
-                        <TableCell className="text-center">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => openPaymentDetailsDialog('InitialPayment' as PaymentTypeFilter)}
-                            className="text-pink-600 hover:text-pink-800"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                      )),
+                      ...data.map((group, idx) => {
+                        // Get unique clients and piece numbers for this group
+                        const uniqueClients = new Set<string>()
+                        const pieceNumbers = group.pieces.map(p => p.pieceNumber).join(', ')
+                        group.payments.forEach(p => {
+                          const clientName = (p.client as any)?.name
+                          if (clientName) uniqueClients.add(clientName)
+                        })
+                        
+                        return (
+                        <TableRow key={`promise-${idx}`} className="bg-pink-50/50 hover:bg-pink-100/50">
+                          <TableCell className="font-bold text-pink-700 text-right">{idx === 0 ? 'وعد بالبيع' : ''}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="font-medium">{group.landBatchName}</div>
+                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
+                            {pieceNumbers && <div className="text-xs text-pink-600 mt-1">#{pieceNumbers}</div>}
+                            {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
+                          </TableCell>
+                          <TableCell className="text-center">{group.pieces.length}</TableCell>
+                          <TableCell className="text-center">{group.paymentCount}</TableCell>
+                          <TableCell className="text-right font-bold text-pink-600">{formatCurrency(group.totalAmount)}</TableCell>
+                          <TableCell className="text-center">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => {
+                                setSelectedGroupForDetails(group)
+                                setSelectedGroupPaymentType('InitialPayment')
+                                setGroupDetailsDialogOpen(true)
+                              }}
+                              className="text-pink-600 hover:text-pink-800"
+                              title="عرض التفاصيل"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                        )
+                      }),
                       data.length > 1 && (
                         <TableRow key="promise-summary" className="bg-pink-100/50 font-bold">
                           <TableCell className="text-pink-800 text-right">إجمالي وعد بالبيع</TableCell>
@@ -1528,28 +1631,44 @@ export function Financial() {
                         </TableRow>
                       )
                     }
-                    return data.map((group, idx) => (
-                      <TableRow key={`fee-${idx}`} className="bg-indigo-50/50 hover:bg-indigo-100/50">
-                        <TableCell className="font-bold text-indigo-700">{idx === 0 ? 'العمولة' : ''}</TableCell>
-                        <TableCell>
-                          <div className="font-medium">{group.landBatchName}</div>
-                          {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                        </TableCell>
-                        <TableCell className="text-center">{group.piecesCount}</TableCell>
-                        <TableCell className="text-center">{group.salesCount}</TableCell>
-                        <TableCell className="text-right font-bold text-indigo-600">{formatCurrency(group.totalAmount)}</TableCell>
-                        <TableCell className="text-center">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-          onClick={() => setCompanyFeeDialogOpen(true)}
-                            className="text-indigo-600 hover:text-indigo-800"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    return data.map((group, idx) => {
+                      // Get unique clients and piece numbers for this group
+                      const uniqueClients = new Set<string>()
+                      const pieceNumbers: string[] = []
+                      group.sales.forEach(sale => {
+                        const client = (sale.client as any)
+                        if (client?.name) uniqueClients.add(client.name)
+                        // Get piece numbers for this sale
+                        const salePieces = landPieces.filter(p => sale.land_piece_ids?.includes(p.id))
+                        salePieces.forEach(p => pieceNumbers.push(p.piece_number || ''))
+                      })
+                      
+                      return (
+                        <TableRow key={`fee-${idx}`} className="bg-indigo-50/50 hover:bg-indigo-100/50">
+                          <TableCell className="font-bold text-indigo-700">{idx === 0 ? 'العمولة' : ''}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{group.landBatchName}</div>
+                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
+                            {pieceNumbers.length > 0 && <div className="text-xs text-indigo-600 mt-1">#{pieceNumbers.slice(0, 5).join(', ')}{pieceNumbers.length > 5 ? '...' : ''}</div>}
+                            {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
+                          </TableCell>
+                          <TableCell className="text-center">{group.piecesCount}</TableCell>
+                          <TableCell className="text-center">{group.salesCount}</TableCell>
+                          <TableCell className="text-right font-bold text-indigo-600">{formatCurrency(group.totalAmount)}</TableCell>
+                          <TableCell className="text-center">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => setCompanyFeeDialogOpen(true)}
+                              className="text-indigo-600 hover:text-indigo-800"
+                              title="عرض التفاصيل"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
                   })()}
                   
                   {/* Total Row */}
@@ -1558,9 +1677,9 @@ export function Financial() {
                     <TableCell className="text-right font-bold text-lg text-green-700">
                       {formatCurrency(
                         filteredData.installmentPaymentsTotal + 
-                        filteredData.smallAdvanceTotal + 
                         filteredData.fullPaymentsTotal + 
                         filteredData.bigAdvanceTotal + 
+                        filteredData.smallAdvanceTotal + // Included in bigAdvanceTotal for التسبقة display, but still counted in total
                         filteredData.promiseOfSalePaymentsTotal + 
                         filteredData.companyFeesTotal
                       )}
@@ -2663,6 +2782,121 @@ export function Financial() {
               </div>
             )
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Group Details Dialog - Shows detailed information for a specific land group */}
+      <Dialog open={groupDetailsDialogOpen} onOpenChange={setGroupDetailsDialogOpen}>
+        <DialogContent className="w-[95vw] sm:w-full max-w-6xl max-h-[95vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5" />
+              <span>تفاصيل {selectedGroupPaymentType ? getPaymentTypeLabel(selectedGroupPaymentType) : 'المدفوعات'} - {selectedGroupForDetails?.landBatchName}</span>
+            </DialogTitle>
+          </DialogHeader>
+          {selectedGroupForDetails && (
+            <div className="space-y-4">
+              {/* Summary Card */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>ملخص</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">المكان</p>
+                      <p className="font-semibold">{selectedGroupForDetails.landBatchName}</p>
+                      {selectedGroupForDetails.location && (
+                        <p className="text-xs text-muted-foreground">{selectedGroupForDetails.location}</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">عدد القطع</p>
+                      <p className="font-semibold">{selectedGroupForDetails.pieces.length}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">عدد العمليات</p>
+                      <p className="font-semibold">{selectedGroupForDetails.paymentCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">المبلغ الإجمالي</p>
+                      <p className="font-semibold text-green-600">{formatCurrency(selectedGroupForDetails.totalAmount)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Pieces Details */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>تفاصيل القطع</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {selectedGroupForDetails.pieces.map((piece, idx) => {
+                      const uniqueClients = new Set<string>()
+                      const paymentDates = new Set<string>()
+                      piece.payments.forEach(p => {
+                        const clientName = (p.client as any)?.name
+                        if (clientName) uniqueClients.add(clientName)
+                        paymentDates.add(p.payment_date)
+                      })
+                      
+                      return (
+                        <div key={idx} className="border rounded-lg p-4 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-semibold">#{piece.pieceNumber}</p>
+                              {piece.landBatchName && (
+                                <p className="text-sm text-muted-foreground">{piece.landBatchName}</p>
+                              )}
+                            </div>
+                            <div className="text-left">
+                              <p className="font-bold text-green-600">{formatCurrency(piece.totalAmount)}</p>
+                              {piece.installmentCount > 0 && (
+                                <p className="text-xs text-muted-foreground">{piece.installmentCount} قسط</p>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {uniqueClients.size > 0 && (
+                            <div className="text-sm">
+                              <span className="text-muted-foreground">العميل: </span>
+                              <span className="font-medium">{Array.from(uniqueClients).join(', ')}</span>
+                            </div>
+                          )}
+                          
+                          {/* Individual Payments */}
+                          {piece.payments.length > 0 && (
+                            <div className="mt-2 pt-2 border-t space-y-1">
+                              <p className="text-xs font-semibold text-muted-foreground mb-1">المدفوعات:</p>
+                              {piece.payments.map((payment, payIdx) => {
+                                const recordedBy = (payment as any).recorded_by_user?.name || '-'
+                                const soldBy = (payment.sale as any)?.created_by_user?.name || '-'
+                                return (
+                                  <div key={payIdx} className="flex items-center justify-between text-xs bg-gray-50 p-2 rounded">
+                                    <div>
+                                      <span className="font-medium">{formatCurrency(payment.amount_paid)}</span>
+                                      <span className="text-muted-foreground mr-2"> - {formatDate(payment.payment_date)}</span>
+                                    </div>
+                                    <div className="text-left text-muted-foreground">
+                                      {recordedBy !== '-' && <span>سجل: {recordedBy}</span>}
+                                      {soldBy !== '-' && recordedBy !== '-' && <span className="mx-1">•</span>}
+                                      {soldBy !== '-' && <span>باع: {soldBy}</span>}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
