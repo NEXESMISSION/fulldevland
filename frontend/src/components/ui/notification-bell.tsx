@@ -111,7 +111,11 @@ export function NotificationBell() {
           if (status === 'SUBSCRIBED') {
             console.log('Notifications subscription active')
           } else if (status === 'CHANNEL_ERROR') {
-            console.warn('Notifications subscription error, will retry on next fetch')
+            // Silently handle subscription errors - will retry on next fetch automatically
+            // Only log in development mode to reduce console noise
+            if (import.meta.env.DEV) {
+              console.debug('Notifications subscription error, will retry on next fetch')
+            }
           }
         })
     } catch (err) {

@@ -98,9 +98,20 @@ export function SaleConfirmation() {
     company_fee_percentage: '',
     company_fee_amount: '',
     commission_input_method: 'percentage' as 'percentage' | 'amount',
+    company_fee_note: '', // Note explaining why commission is 0 or different
     small_advance_amount: '',
     selected_offer_id: '',
     notes: '',
+    sale_date: '',
+    deadline_date: '',
+    contract_editor_id: '',
+    // Installment fields
+    installment_start_date: '',
+    number_of_installments: '',
+    monthly_installment_amount: '',
+    // Promise of Sale fields
+    promise_initial_payment: '',
+    promise_completion_date: '',
   })
   const [availableOffersForEdit, setAvailableOffersForEdit] = useState<PaymentOffer[]>([])
   
@@ -188,9 +199,18 @@ export function SaleConfirmation() {
       company_fee_percentage: (sale.company_fee_percentage || 0).toString(),
       company_fee_amount: currentCommissionAmount,
       commission_input_method: 'percentage',
+      company_fee_note: (sale as any).company_fee_note || '',
       small_advance_amount: currentReservationPerPiece,
       selected_offer_id: sale.selected_offer_id || '',
       notes: sale.notes || '',
+      sale_date: sale.sale_date || '',
+      deadline_date: sale.deadline_date || '',
+      contract_editor_id: sale.contract_editor_id || '',
+      installment_start_date: sale.installment_start_date || '',
+      number_of_installments: sale.number_of_installments?.toString() || '',
+      monthly_installment_amount: sale.monthly_installment_amount ? (sale.monthly_installment_amount / pieceCount).toFixed(2) : '',
+      promise_initial_payment: sale.promise_initial_payment ? (sale.promise_initial_payment / pieceCount).toFixed(2) : '',
+      promise_completion_date: sale.promise_completion_date || '',
     })
     
     // Load available payment offers for this piece
@@ -287,9 +307,66 @@ export function SaleConfirmation() {
       // If multi-piece sale, recalculate totals
       let updates: any = {
         company_fee_percentage: newCompanyFeePercentage > 0 ? newCompanyFeePercentage : null,
+        company_fee_note: editForm.company_fee_note || null,
         small_advance_amount: newTotalReservation > 0 ? parseFloat(newTotalReservation.toFixed(2)) : 0,
         selected_offer_id: editForm.selected_offer_id || null,
         notes: editForm.notes || null,
+        sale_date: editForm.sale_date || null,
+        deadline_date: editForm.deadline_date || null,
+        contract_editor_id: editForm.contract_editor_id || null,
+      }
+      
+      // Add installment fields if payment type is Installment
+      if (editingSale.payment_type === 'Installment') {
+        updates.installment_start_date = editForm.installment_start_date || null
+        
+        // Calculate relationship between number_of_installments and monthly_installment_amount
+        const pricePerPiece = parseFloat(editForm.total_selling_price) || 0
+        const reservationPerPiece = parseFloat(editForm.small_advance_amount) || 0
+        const advancePerPiece = editingSale.big_advance_amount ? (editingSale.big_advance_amount / pieceCount) : 0
+        const commissionPerPiece = newCompanyFee > 0 ? (newCompanyFee / pieceCount) : 0
+        const remainingForInstallments = pricePerPiece - reservationPerPiece - advancePerPiece - commissionPerPiece
+        
+        if (editForm.number_of_installments && editForm.monthly_installment_amount) {
+          // Both provided - use monthly_installment_amount and recalculate number_of_installments
+          const monthlyAmount = parseFloat(editForm.monthly_installment_amount)
+          if (monthlyAmount > 0 && remainingForInstallments > 0) {
+            const calculatedMonths = Math.ceil(remainingForInstallments / monthlyAmount)
+            updates.number_of_installments = calculatedMonths
+            updates.monthly_installment_amount = parseFloat(monthlyAmount.toFixed(2)) * pieceCount
+          }
+        } else if (editForm.number_of_installments) {
+          // Only number_of_installments provided - calculate monthly_installment_amount
+          const months = parseInt(editForm.number_of_installments)
+          if (months > 0 && remainingForInstallments > 0) {
+            const monthlyAmount = remainingForInstallments / months
+            updates.number_of_installments = months
+            updates.monthly_installment_amount = parseFloat(monthlyAmount.toFixed(2)) * pieceCount
+          }
+        } else if (editForm.monthly_installment_amount) {
+          // Only monthly_installment_amount provided - calculate number_of_installments
+          const monthlyAmount = parseFloat(editForm.monthly_installment_amount)
+          if (monthlyAmount > 0 && remainingForInstallments > 0) {
+            const calculatedMonths = Math.ceil(remainingForInstallments / monthlyAmount)
+            updates.number_of_installments = calculatedMonths
+            updates.monthly_installment_amount = parseFloat(monthlyAmount.toFixed(2)) * pieceCount
+          }
+        }
+        
+        // Calculate installment end date
+        if (updates.installment_start_date && updates.number_of_installments) {
+          const startDate = new Date(updates.installment_start_date)
+          startDate.setMonth(startDate.getMonth() + updates.number_of_installments - 1)
+          updates.installment_end_date = startDate.toISOString().split('T')[0]
+        }
+      }
+      
+      // Add promise of sale fields if payment type is PromiseOfSale
+      if (editingSale.payment_type === 'PromiseOfSale') {
+        if (editForm.promise_initial_payment) {
+          updates.promise_initial_payment = parseFloat(editForm.promise_initial_payment) * pieceCount
+        }
+        updates.promise_completion_date = editForm.promise_completion_date || null
       }
       
       if (pieceCount === 1) {
@@ -1285,8 +1362,16 @@ export function SaleConfirmation() {
             
             if (deleteError) {
               console.warn('Error deleting existing installments:', deleteError)
-              // Continue anyway - might be first time creating installments
+              // If delete fails, try to continue - might be first time creating installments
+              // But if it's a constraint error, we need to handle it differently
+              if (deleteError.code === '23503' || deleteError.message?.includes('foreign key')) {
+                // Foreign key constraint - might have payments linked, skip deletion
+                console.warn('Cannot delete installments due to foreign key constraints, will attempt upsert instead')
+              }
             }
+            
+            // Wait a moment for delete to complete
+            await new Promise(resolve => setTimeout(resolve, 100))
             
             // Create installments schedule
             const installmentsToCreate = []
@@ -1307,8 +1392,24 @@ export function SaleConfirmation() {
               })
             }
             
+            // Try to insert installments, handle duplicate key errors
             const { error: installmentsError } = await supabase.from('installments').insert(installmentsToCreate as any)
-            if (installmentsError) throw installmentsError
+            if (installmentsError) {
+              // If it's a duplicate key error (409/23505), try to update existing ones instead
+              if (installmentsError.code === '23505' || installmentsError.message?.includes('duplicate') || installmentsError.message?.includes('unique')) {
+                console.warn('Duplicate installments detected, attempting to update existing ones')
+                // Delete and retry once more
+                await supabase
+                  .from('installments')
+                  .delete()
+                  .eq('sale_id', selectedSale.id)
+                await new Promise(resolve => setTimeout(resolve, 200))
+                const { error: retryError } = await supabase.from('installments').insert(installmentsToCreate as any)
+                if (retryError) throw retryError
+              } else {
+                throw installmentsError
+              }
+            }
           }
         }
 
@@ -1640,6 +1741,15 @@ export function SaleConfirmation() {
 
         // Create installments schedule if needed (for bigAdvance with installments)
         if (confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment' && newSaleData.number_of_installments) {
+          // Delete any existing installments for the new sale (shouldn't exist, but just in case)
+          await supabase
+            .from('installments')
+            .delete()
+            .eq('sale_id', newSale.id)
+          
+          // Wait a moment for delete to complete
+          await new Promise(resolve => setTimeout(resolve, 100))
+          
           const installmentsToCreate = []
           const startDate = new Date(newSaleData.installment_start_date || new Date())
           startDate.setHours(0, 0, 0, 0) // Ensure consistent date handling
@@ -1660,8 +1770,23 @@ export function SaleConfirmation() {
             })
           }
           
+          // Try to insert installments, handle duplicate key errors
           const { error: installmentsError } = await supabase.from('installments').insert(installmentsToCreate as any)
-          if (installmentsError) throw installmentsError
+          if (installmentsError) {
+            // If it's a duplicate key error (409/23505), try to delete and retry once more
+            if (installmentsError.code === '23505' || installmentsError.message?.includes('duplicate') || installmentsError.message?.includes('unique')) {
+              console.warn('Duplicate installments detected, attempting to delete and retry')
+              await supabase
+                .from('installments')
+                .delete()
+                .eq('sale_id', newSale.id)
+              await new Promise(resolve => setTimeout(resolve, 200))
+              const { error: retryError } = await supabase.from('installments').insert(installmentsToCreate as any)
+              if (retryError) throw retryError
+            } else {
+              throw installmentsError
+            }
+          }
         }
 
         // Update the original sale - remove this piece and recalculate
@@ -2374,6 +2499,14 @@ export function SaleConfirmation() {
                       </span>
                       </div>
                     
+                    {/* Commission Note */}
+                    {(selectedSale as any).company_fee_note && (
+                      <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-800 italic">
+                        <span className="font-medium">ملاحظة على العمولة: </span>
+                        {(selectedSale as any).company_fee_note}
+                      </div>
+                    )}
+                    
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
                       <span className="text-sm sm:text-base text-gray-700">عمولة الشركة:</span>
                       <span className="text-sm sm:text-base font-semibold text-blue-600">{formatCurrency(companyFeePerPiece)}</span>
@@ -2396,28 +2529,14 @@ export function SaleConfirmation() {
                     
                     {confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment' && calculatedOffer && (
                       <>
-                        {/* Amount to collect at confirmation = Advance (minus paid reservation) + Commission + Unpaid Reservation */}
+                        {/* Amount to collect at confirmation = Advance (minus paid reservation) + Commission */}
                         <div className="bg-purple-50 border border-purple-200 rounded p-2 mt-2">
                           <div className="flex justify-between items-center py-1.5">
-                            <span className="text-sm sm:text-base font-bold text-purple-800">المستحق عند التأكيد (التسبقة + العمولة{unpaidReservation > 0 ? ' + العربون' : ''}):</span>
+                            <span className="text-sm sm:text-base font-bold text-purple-800">المستحق عند التأكيد (التسبقة + العمولة):</span>
                             <span className="text-sm sm:text-base font-bold text-purple-800">
-                              {formatCurrency((advanceAmount - (reservationPaid ? reservationPerPiece : 0)) + companyFeePerPiece + unpaidReservation)}
+                              {formatCurrency((advanceAmount - (reservationPaid ? reservationPerPiece : 0)) + companyFeePerPiece)}
                           </span>
                           </div>
-                          <div className="flex justify-between items-center py-1 text-purple-700 text-xs pl-2">
-                            <span>- التسبقة {calculatedOffer.advance_is_percentage ? `(${calculatedOffer.advance_amount}%)` : ''}:</span>
-                            <span>{formatCurrency(advanceAmount - (reservationPaid ? reservationPerPiece : 0))}</span>
-                          </div>
-                          <div className="flex justify-between items-center py-1 text-purple-700 text-xs pl-2">
-                            <span>- العمولة ({feePercentage > 0 ? feePercentage.toFixed(2) : (companyFeePerPiece > 0 && pricePerPiece > 0 ? ((companyFeePerPiece / pricePerPiece) * 100).toFixed(2) : '0')}%):</span>
-                            <span>{formatCurrency(companyFeePerPiece)}</span>
-                          </div>
-                          {unpaidReservation > 0 && (
-                            <div className="flex justify-between items-center py-1 text-purple-700 text-xs pl-2">
-                              <span>- العربون (غير مدفوع):</span>
-                              <span>{formatCurrency(unpaidReservation)}</span>
-                            </div>
-                          )}
                         </div>
                         
                         <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
@@ -2709,6 +2828,10 @@ export function SaleConfirmation() {
             const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
             const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
             
+            // Check if reservation has been paid (same logic as main dialog)
+            const totalReservationForSale = (selectedSale.small_advance_amount || 0)
+            const reservationPaid = totalReservationForSale > 0
+            
             let amountToReceive = 0
             if (pendingConfirmationType === 'full') {
               if ((selectedSale.payment_type as any) === 'PromiseOfSale') {
@@ -2737,11 +2860,18 @@ export function SaleConfirmation() {
                 const advanceAmount = calculatedOffer.advance_is_percentage
                   ? (pricePerPiece * calculatedOffer.advance_amount) / 100
                   : calculatedOffer.advance_amount
-                // Total to receive = Advance + Commission
-                amountToReceive = advanceAmount + companyFeePerPiece
+                // Total to receive = Advance (minus paid reservation) + Commission
+                // This matches the calculation in the main dialog
+                amountToReceive = (advanceAmount - (reservationPaid ? reservationPerPiece : 0)) + companyFeePerPiece
               }
             }
             
+            // For installment sales (bigAdvance), show simplified format
+            if (pendingConfirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
+              return `المستحق عند التأكيد (التسبقة + العمولة): ${formatCurrency(amountToReceive)}`
+            }
+            
+            // For other payment types, show the full confirmation message
             const paymentTypeText = (selectedSale.payment_type as any) === 'PromiseOfSale'
               ? ((selectedSale.promise_initial_payment || 0) > 0 ? 'استكمال الوعد بالبيع' : 'تأكيد الوعد بالبيع')
               : (pendingConfirmationType === 'full' ? 'البيع بالحاضر' : 'البيع بالتقسيط')
@@ -2963,6 +3093,22 @@ export function SaleConfirmation() {
                       </p>
                     </>
                   )}
+                  
+                  {/* Commission Note Field */}
+                  <div className="mt-2">
+                    <Label htmlFor="edit-company-fee-note" className="text-xs text-muted-foreground">ملاحظة على العمولة (اختياري)</Label>
+                    <Textarea
+                      id="edit-company-fee-note"
+                      value={editForm.company_fee_note}
+                      onChange={(e) => setEditForm({ ...editForm, company_fee_note: e.target.value })}
+                      placeholder="مثال: خطأ في الحساب - تم تعديل المبلغ يدوياً"
+                      rows={2}
+                      className="text-xs"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      استخدم هذا الحقل لتوضيح سبب اختلاف العمولة عن النسبة المحددة
+                    </p>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -3035,6 +3181,138 @@ export function SaleConfirmation() {
                     rows={3}
                   />
                 </div>
+
+                {/* Sale Date */}
+                <div className="space-y-2">
+                  <Label htmlFor="edit-sale-date">تاريخ البيع *</Label>
+                  <Input
+                    id="edit-sale-date"
+                    type="date"
+                    value={editForm.sale_date}
+                    onChange={(e) => setEditForm({ ...editForm, sale_date: e.target.value })}
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    التاريخ الحالي: {editingSale.sale_date ? formatDate(editingSale.sale_date) : 'غير محدد'}
+                  </p>
+                </div>
+
+                {/* Deadline Date */}
+                <div className="space-y-2">
+                  <Label htmlFor="edit-deadline-date">آخر أجل لإتمام الإجراءات</Label>
+                  <Input
+                    id="edit-deadline-date"
+                    type="date"
+                    value={editForm.deadline_date}
+                    onChange={(e) => setEditForm({ ...editForm, deadline_date: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    التاريخ الحالي: {editingSale.deadline_date ? formatDate(editingSale.deadline_date) : 'غير محدد'}
+                  </p>
+                </div>
+
+                {/* Contract Editor */}
+                <div className="space-y-2">
+                  <Label htmlFor="edit-contract-editor">محرر العقد</Label>
+                  <Select
+                    id="edit-contract-editor"
+                    value={editForm.contract_editor_id}
+                    onChange={(e) => setEditForm({ ...editForm, contract_editor_id: e.target.value })}
+                  >
+                    <option value="">-- اختر محرر العقد --</option>
+                    {contractEditors.map((editor) => (
+                      <option key={editor.id} value={editor.id}>
+                        {editor.type} - {editor.name} ({editor.place})
+                      </option>
+                    ))}
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    المحرر الحالي: {editingSale.contract_editor_id ? (contractEditors.find(e => e.id === editingSale.contract_editor_id) ? `${contractEditors.find(e => e.id === editingSale.contract_editor_id)?.type} - ${contractEditors.find(e => e.id === editingSale.contract_editor_id)?.name} (${contractEditors.find(e => e.id === editingSale.contract_editor_id)?.place})` : 'غير محدد') : 'غير محدد'}
+                  </p>
+                </div>
+
+                {/* Installment Fields - Only for Installment sales */}
+                {editingSale.payment_type === 'Installment' && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-installment-start-date">تاريخ بداية الأقساط</Label>
+                      <Input
+                        id="edit-installment-start-date"
+                        type="date"
+                        value={editForm.installment_start_date}
+                        onChange={(e) => setEditForm({ ...editForm, installment_start_date: e.target.value })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        التاريخ الحالي: {editingSale.installment_start_date ? formatDate(editingSale.installment_start_date) : 'غير محدد'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-number-of-installments">عدد الأقساط</Label>
+                      <Input
+                        id="edit-number-of-installments"
+                        type="number"
+                        value={editForm.number_of_installments}
+                        onChange={(e) => setEditForm({ ...editForm, number_of_installments: e.target.value })}
+                        placeholder="عدد الأشهر"
+                        min="1"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        العدد الحالي: {editingSale.number_of_installments || 'غير محدد'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-monthly-installment-amount">المبلغ الشهري (DT)</Label>
+                      <Input
+                        id="edit-monthly-installment-amount"
+                        type="number"
+                        value={editForm.monthly_installment_amount}
+                        onChange={(e) => setEditForm({ ...editForm, monthly_installment_amount: e.target.value })}
+                        placeholder="المبلغ الشهري"
+                        min="0"
+                        step="0.01"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        المبلغ الحالي: {editingSale.monthly_installment_amount ? formatCurrency(editingSale.monthly_installment_amount / editingSale.land_piece_ids.length) : 'غير محدد'}
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                {/* Promise of Sale Fields - Only for PromiseOfSale sales */}
+                {editingSale.payment_type === 'PromiseOfSale' && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-promise-initial-payment">المبلغ المستلم (DT)</Label>
+                      <Input
+                        id="edit-promise-initial-payment"
+                        type="number"
+                        value={editForm.promise_initial_payment}
+                        onChange={(e) => setEditForm({ ...editForm, promise_initial_payment: e.target.value })}
+                        placeholder="المبلغ المستلم"
+                        min="0"
+                        step="0.01"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        المبلغ الحالي: {editingSale.promise_initial_payment ? formatCurrency(editingSale.promise_initial_payment / editingSale.land_piece_ids.length) : 'غير محدد'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-promise-completion-date">تاريخ إتمام الوعد</Label>
+                      <Input
+                        id="edit-promise-completion-date"
+                        type="date"
+                        value={editForm.promise_completion_date}
+                        onChange={(e) => setEditForm({ ...editForm, promise_completion_date: e.target.value })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        التاريخ الحالي: {editingSale.promise_completion_date ? formatDate(editingSale.promise_completion_date) : 'غير محدد'}
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
 
               <DialogFooter className="gap-2">
@@ -3322,3 +3600,4 @@ export function SaleConfirmation() {
     </div>
   )
 }
+
