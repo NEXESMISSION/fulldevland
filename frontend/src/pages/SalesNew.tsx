@@ -1968,7 +1968,7 @@ export function SalesNew() {
             <DialogTitle>تفاصيل البيع الكاملة</DialogTitle>
           </DialogHeader>
           {selectedSaleForDetails && (() => {
-            const saleData = sales.find(s => s.id === selectedSaleForDetails.saleId)
+            const saleData = sales.find(s => s.id === selectedSaleForDetails.saleId) as any
             const piece = pieces.find(p => p.id === selectedSaleForDetails.pieceId) as any
             const client = clients.find(c => c.id === selectedSaleForDetails.clientId)
             const salePayments = payments.filter(p => p.sale_id === selectedSaleForDetails.saleId)
@@ -2182,24 +2182,36 @@ export function SalesNew() {
                           <p className="text-sm text-muted-foreground">سعر البيع</p>
                           <p className="font-medium text-lg">{formatCurrency(selectedSaleForDetails.price)}</p>
                         </div>
-                        {selectedSaleForDetails.companyFeeAmount && selectedSaleForDetails.companyFeeAmount > 0 && (
+                        {(selectedSaleForDetails.companyFeeAmount && selectedSaleForDetails.companyFeeAmount > 0) || saleData?.company_fee_note ? (
                           <>
-                            <div>
-                              <p className="text-sm text-muted-foreground">عمولة الشركة (%)</p>
-                              <p className="font-medium">{selectedSaleForDetails.companyFeePercentage || 0}%</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">عمولة الشركة</p>
-                              <p className="font-medium text-blue-600">{formatCurrency(selectedSaleForDetails.companyFeeAmount)}</p>
-                            </div>
-                            <div className="sm:col-span-2">
-                              <p className="text-sm text-muted-foreground">المبلغ الإجمالي المستحق</p>
-                              <p className="font-medium text-lg text-green-600">
-                                {formatCurrency(selectedSaleForDetails.price + (selectedSaleForDetails.companyFeeAmount || 0))}
-                              </p>
-                            </div>
+                            {selectedSaleForDetails.companyFeeAmount && selectedSaleForDetails.companyFeeAmount > 0 && (
+                              <>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">عمولة الشركة (%)</p>
+                                  <p className="font-medium">{selectedSaleForDetails.companyFeePercentage || 0}%</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">عمولة الشركة</p>
+                                  <p className="font-medium text-blue-600">{formatCurrency(selectedSaleForDetails.companyFeeAmount)}</p>
+                                </div>
+                              </>
+                            )}
+                            {saleData?.company_fee_note && (
+                              <div className="sm:col-span-2">
+                                <p className="text-sm text-muted-foreground">ملاحظة على العمولة</p>
+                                <p className="font-medium text-orange-600 italic">{saleData.company_fee_note}</p>
+                              </div>
+                            )}
+                            {selectedSaleForDetails.companyFeeAmount && selectedSaleForDetails.companyFeeAmount > 0 && (
+                              <div className="sm:col-span-2">
+                                <p className="text-sm text-muted-foreground">المبلغ الإجمالي المستحق</p>
+                                <p className="font-medium text-lg text-green-600">
+                                  {formatCurrency(selectedSaleForDetails.price + (selectedSaleForDetails.companyFeeAmount || 0))}
+                                </p>
+                              </div>
+                            )}
                           </>
-            )}
+                        ) : null}
           </div>
                       
                       {selectedSaleForDetails.deadlineDate && (
