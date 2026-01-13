@@ -446,11 +446,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data, error } = await supabase.auth.refreshSession()
       if (error) {
-        console.error('Token refresh error:', error)
-        // If refresh fails, sign out
-        if (error.message?.includes('refresh_token_not_found') || 
-            error.message?.includes('invalid_grant')) {
+        // Check for invalid refresh token errors (case-insensitive)
+        const errorMessage = error.message?.toLowerCase() || ''
+        const isInvalidTokenError = 
+          errorMessage.includes('refresh_token_not_found') ||
+          errorMessage.includes('invalid_grant') ||
+          errorMessage.includes('invalid refresh token') ||
+          errorMessage.includes('refresh token not found') ||
+          (error as any).status === 400
+        
+        if (isInvalidTokenError) {
+          // Silently handle invalid refresh token - sign out without logging
           signOut()
+        } else {
+          // Log other errors
+          console.error('Token refresh error:', error)
         }
       } else if (data?.session) {
         setSession(data.session)
@@ -458,8 +468,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Update last auth time on successful refresh
         lastAuthTimeRef.current = Date.now()
       }
-    } catch (error) {
-      console.error('Token refresh exception:', error)
+    } catch (error: any) {
+      // Check if it's an invalid refresh token error
+      const errorMessage = error?.message?.toLowerCase() || ''
+      const isInvalidTokenError = 
+        errorMessage.includes('refresh_token_not_found') ||
+        errorMessage.includes('invalid_grant') ||
+        errorMessage.includes('invalid refresh token') ||
+        errorMessage.includes('refresh token not found') ||
+        error?.status === 400
+      
+      if (isInvalidTokenError) {
+        // Silently handle invalid refresh token - sign out without logging
+        signOut()
+      } else {
+        // Log other exceptions
+        console.error('Token refresh exception:', error)
+      }
     }
   }
 
