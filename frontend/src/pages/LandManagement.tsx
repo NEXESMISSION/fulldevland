@@ -1393,28 +1393,32 @@ export function LandManagement() {
         }
         
         // Create piece-specific copies of this offer for all Available pieces
+        // Ensure all required fields have valid values (not null/undefined)
         const pieceOffersToCreate = pieceIds.map(pieceId => ({
           land_batch_id: null, // Piece-specific offers don't reference batch
           land_piece_id: pieceId,
-          price_per_m2_installment: offerData.price_per_m2_installment,
-          company_fee_percentage: offerData.company_fee_percentage,
-          advance_amount: offerData.advance_amount,
-          advance_is_percentage: offerData.advance_is_percentage,
-          monthly_payment: offerData.monthly_payment,
-          number_of_months: offerData.number_of_months,
-          offer_name: offerData.offer_name,
-          notes: offerData.notes,
-          is_default: offerData.is_default,
+          price_per_m2_installment: offerData.price_per_m2_installment ?? null,
+          company_fee_percentage: offerData.company_fee_percentage ?? 0,
+          advance_amount: offerData.advance_amount ?? 0,
+          advance_is_percentage: offerData.advance_is_percentage ?? false,
+          monthly_payment: offerData.monthly_payment ?? 0,
+          number_of_months: offerData.number_of_months ?? null,
+          offer_name: offerData.offer_name ?? null,
+          notes: offerData.notes ?? null,
+          is_default: offerData.is_default ?? false,
           created_by: user?.id || null,
         }))
         
-        const { error: pieceOffersError } = await supabase
-          .from('payment_offers')
-          .insert(pieceOffersToCreate)
-        
-        if (pieceOffersError) {
-          console.error('Error syncing offers to pieces:', pieceOffersError)
-          // Don't throw - batch offer was saved successfully
+        // Only insert if we have pieces to create offers for
+        if (pieceOffersToCreate.length > 0) {
+          const { error: pieceOffersError } = await supabase
+            .from('payment_offers')
+            .insert(pieceOffersToCreate)
+          
+          if (pieceOffersError) {
+            console.error('Error syncing offers to pieces:', pieceOffersError)
+            // Don't throw - batch offer was saved successfully
+          }
         }
       }
       
