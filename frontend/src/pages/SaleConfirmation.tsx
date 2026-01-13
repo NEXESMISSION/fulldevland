@@ -64,6 +64,7 @@ export function SaleConfirmation() {
   
   // Search state
   const [searchTerm, setSearchTerm] = useState('')
+  const [locationFilter, setLocationFilter] = useState<string>('all')
   
   // Confirmation form state
   const [companyFeePercentage, setCompanyFeePercentage] = useState('2')
@@ -76,6 +77,7 @@ export function SaleConfirmation() {
   const [selectedOffer, setSelectedOffer] = useState<PaymentOffer | null>(null)
   const [contractEditors, setContractEditors] = useState<Array<{ id: string; type: string; name: string; place: string }>>([])
   const [selectedContractEditorId, setSelectedContractEditorId] = useState<string>('')
+  const [confirmingAllPieces, setConfirmingAllPieces] = useState(false)
   
   // Client details dialog
   const [clientDetailsOpen, setClientDetailsOpen] = useState(false)
@@ -185,33 +187,89 @@ export function SaleConfirmation() {
       return
     }
 
-    setEditingSale(sale)
-    setEditingPiece(piece)
+    // Fetch fresh sale data from database to ensure we have the latest values
+    let freshSale: SaleWithDetails | null = null
+    try {
+      const { data, error: saleError } = await supabase
+        .from('sales')
+        .select(`
+          *,
+          client:clients(*),
+          contract_editor:contract_editors(*)
+        `)
+        .eq('id', sale.id)
+        .single()
+
+      if (saleError) {
+        console.error('Error fetching fresh sale data:', saleError)
+        freshSale = sale // Fallback to passed sale data
+      } else if (data) {
+        freshSale = data as SaleWithDetails
+      } else {
+        freshSale = sale
+      }
+    } catch (error) {
+      console.error('Error fetching fresh sale:', error)
+      freshSale = sale
+    }
+
+    // Fetch fresh piece data from database
+    let freshPiece: LandPiece | null = null
+    try {
+      const { data, error: pieceError } = await supabase
+        .from('land_pieces')
+        .select(`
+          *,
+          land_batch:land_batches(*)
+        `)
+        .eq('id', piece.id)
+        .single()
+
+      if (pieceError) {
+        console.error('Error fetching fresh piece data:', pieceError)
+        freshPiece = piece
+      } else if (data) {
+        freshPiece = data as LandPiece
+      } else {
+        freshPiece = piece
+      }
+    } catch (error) {
+      console.error('Error fetching fresh piece:', error)
+      freshPiece = piece
+    }
+
+    // Set the fresh data
+    if (freshSale) setEditingSale(freshSale)
+    if (freshPiece) setEditingPiece(freshPiece)
+    
+    // Use the fresh sale data (or fallback to passed sale)
+    const currentSale = freshSale || sale
+    const currentPiece = freshPiece || piece
     
     // Calculate per-piece price
-    const pieceCount = sale.land_piece_ids.length
-    const pricePerPiece = sale.total_selling_price / pieceCount
+    const pieceCount = currentSale.land_piece_ids.length
+    const pricePerPiece = currentSale.total_selling_price / pieceCount
     
     // Initialize form with current sale values
-    const currentCommissionAmount = sale.company_fee_amount ? (sale.company_fee_amount / pieceCount).toFixed(2) : ''
-    const currentReservationPerPiece = sale.small_advance_amount ? (sale.small_advance_amount / pieceCount).toFixed(2) : ''
+    const currentCommissionAmount = currentSale.company_fee_amount ? (currentSale.company_fee_amount / pieceCount).toFixed(2) : ''
+    const currentReservationPerPiece = currentSale.small_advance_amount ? (currentSale.small_advance_amount / pieceCount).toFixed(2) : ''
     setEditForm({
       total_selling_price: pricePerPiece.toFixed(2),
-      company_fee_percentage: (sale.company_fee_percentage || 0).toString(),
+      company_fee_percentage: (currentSale.company_fee_percentage || 0).toString(),
       company_fee_amount: currentCommissionAmount,
       commission_input_method: 'percentage',
-      company_fee_note: (sale as any).company_fee_note || '',
+      company_fee_note: (currentSale as any).company_fee_note || '',
       small_advance_amount: currentReservationPerPiece,
-      selected_offer_id: sale.selected_offer_id || '',
-      notes: sale.notes || '',
-      sale_date: sale.sale_date || '',
-      deadline_date: sale.deadline_date || '',
-      contract_editor_id: sale.contract_editor_id || '',
-      installment_start_date: sale.installment_start_date || '',
-      number_of_installments: sale.number_of_installments?.toString() || '',
-      monthly_installment_amount: sale.monthly_installment_amount ? (sale.monthly_installment_amount / pieceCount).toFixed(2) : '',
-      promise_initial_payment: sale.promise_initial_payment ? (sale.promise_initial_payment / pieceCount).toFixed(2) : '',
-      promise_completion_date: sale.promise_completion_date || '',
+      selected_offer_id: currentSale.selected_offer_id || '',
+      notes: currentSale.notes || '',
+      sale_date: currentSale.sale_date || '',
+      deadline_date: currentSale.deadline_date || '',
+      contract_editor_id: currentSale.contract_editor_id || '',
+      installment_start_date: currentSale.installment_start_date || '',
+      number_of_installments: currentSale.number_of_installments?.toString() || '',
+      monthly_installment_amount: currentSale.monthly_installment_amount ? (currentSale.monthly_installment_amount / pieceCount).toFixed(2) : '',
+      promise_initial_payment: currentSale.promise_initial_payment ? (currentSale.promise_initial_payment / pieceCount).toFixed(2) : '',
+      promise_completion_date: currentSale.promise_completion_date || '',
     })
     
     // Load available payment offers for this piece
@@ -389,19 +447,6 @@ export function SaleConfirmation() {
           updates.company_fee_amount = newCompanyFee > 0 ? parseFloat(newCompanyFee.toFixed(2)) : null
         }
         updates.profit_margin = newProfit
-        
-        // Update piece price if needed
-        if (editingSale.payment_type === 'Full' || editingSale.payment_type === 'PromiseOfSale') {
-          await supabase
-            .from('land_pieces')
-            .update({ selling_price_full: newPricePerPiece })
-            .eq('id', editingPiece.id)
-        } else {
-          await supabase
-            .from('land_pieces')
-            .update({ selling_price_installment: newPricePerPiece })
-            .eq('id', editingPiece.id)
-        }
       } else {
         // Multi-piece sale - need to recalculate totals
         // Get all pieces for this sale
@@ -439,19 +484,161 @@ export function SaleConfirmation() {
             updates.company_fee_amount = totalCompanyFee > 0 ? parseFloat(totalCompanyFee.toFixed(2)) : null
           }
           updates.profit_margin = totalProfit
-          
-          // Update the edited piece price
-          if (editingSale.payment_type === 'Full' || editingSale.payment_type === 'PromiseOfSale') {
-            await supabase
-              .from('land_pieces')
-              .update({ selling_price_full: newPricePerPiece })
-              .eq('id', editingPiece.id)
-          } else {
-            await supabase
-              .from('land_pieces')
-              .update({ selling_price_installment: newPricePerPiece })
-              .eq('id', editingPiece.id)
+        }
+      }
+      
+      // Handle offer updates when price or installments change
+      if (editingSale.payment_type === 'Installment') {
+        const pricePerPiece = parseFloat(editForm.total_selling_price) || 0
+        const reservationPerPiece = parseFloat(editForm.small_advance_amount) || 0
+        
+        // Get advance amount from selected offer or existing sale
+        let advancePerPiece = 0
+        if (editForm.selected_offer_id) {
+          const selectedOffer = availableOffersForEdit.find(o => o.id === editForm.selected_offer_id)
+          if (selectedOffer) {
+            advancePerPiece = selectedOffer.advance_is_percentage
+              ? (pricePerPiece * selectedOffer.advance_amount) / 100
+              : selectedOffer.advance_amount
           }
+        } else {
+          advancePerPiece = editingSale.big_advance_amount ? (editingSale.big_advance_amount / pieceCount) : 0
+        }
+        
+        const commissionPerPiece = newCompanyFee > 0 ? (newCompanyFee / pieceCount) : 0
+        const remainingForInstallments = pricePerPiece - reservationPerPiece - advancePerPiece - commissionPerPiece
+        
+        // Calculate monthly amount and months
+        let monthlyAmount = 0
+        let months = 0
+        
+        // Priority: form values > updates > existing sale values
+        if (editForm.monthly_installment_amount) {
+          monthlyAmount = parseFloat(editForm.monthly_installment_amount)
+          months = remainingForInstallments > 0 ? Math.ceil(remainingForInstallments / monthlyAmount) : 0
+        } else if (editForm.number_of_installments) {
+          months = parseInt(editForm.number_of_installments)
+          monthlyAmount = remainingForInstallments > 0 ? remainingForInstallments / months : 0
+        } else if (updates.monthly_installment_amount) {
+          monthlyAmount = updates.monthly_installment_amount / pieceCount
+          months = updates.number_of_installments || 0
+        } else {
+          // Use existing values
+          monthlyAmount = editingSale.monthly_installment_amount ? (editingSale.monthly_installment_amount / pieceCount) : 0
+          months = editingSale.number_of_installments || 0
+        }
+        
+        // Update offer's price_per_m2_installment to match the new price (always update if offer exists)
+        const pricePerM2 = editingPiece.surface_area > 0 ? (pricePerPiece / editingPiece.surface_area) : 0
+        
+        if (editForm.selected_offer_id) {
+          // Update selected offer with new price and installments
+          const selectedOffer = availableOffersForEdit.find(o => o.id === editForm.selected_offer_id)
+          
+          try {
+            // If user manually changed installments/monthly amount, use those values
+            // Otherwise, recalculate from offer's monthly_payment
+            let finalMonthlyAmount = monthlyAmount
+            let finalMonths = months
+            
+            if (!editForm.monthly_installment_amount && !editForm.number_of_installments && selectedOffer) {
+              // User didn't manually change installments, recalculate from offer
+              if (selectedOffer.monthly_payment && selectedOffer.monthly_payment > 0) {
+                finalMonths = remainingForInstallments > 0 ? Math.ceil(remainingForInstallments / selectedOffer.monthly_payment) : 0
+                finalMonthlyAmount = selectedOffer.monthly_payment
+                updates.number_of_installments = finalMonths
+                updates.monthly_installment_amount = parseFloat(finalMonthlyAmount.toFixed(2)) * pieceCount
+              } else if (selectedOffer.number_of_months && selectedOffer.number_of_months > 0) {
+                finalMonths = selectedOffer.number_of_months
+                finalMonthlyAmount = remainingForInstallments / finalMonths
+                updates.number_of_installments = finalMonths
+                updates.monthly_installment_amount = parseFloat(finalMonthlyAmount.toFixed(2)) * pieceCount
+              }
+            } else {
+              // User manually changed installments, use those values and update offer
+              updates.number_of_installments = months
+              updates.monthly_installment_amount = monthlyAmount > 0 ? parseFloat(monthlyAmount.toFixed(2)) * pieceCount : null
+            }
+            
+            // Always update offer with new price_per_m2_installment
+            await supabase
+              .from('payment_offers')
+              .update({
+                price_per_m2_installment: pricePerM2,
+                company_fee_percentage: newCompanyFeePercentage,
+                monthly_payment: finalMonthlyAmount > 0 ? finalMonthlyAmount : null,
+                number_of_months: finalMonths > 0 ? finalMonths : null,
+              })
+              .eq('id', editForm.selected_offer_id)
+          } catch (error) {
+            console.error('Error updating offer:', error)
+          }
+        } else if (editForm.number_of_installments || editForm.monthly_installment_amount) {
+          // Create or update default offer if installments changed manually
+          try {
+            const { data: existingOffer } = await supabase
+              .from('payment_offers')
+              .select('id')
+              .eq('land_piece_id', editingPiece.id)
+              .eq('is_default', true)
+              .maybeSingle()
+            
+            const offerData = {
+              land_piece_id: editingPiece.id,
+              land_batch_id: editingPiece.land_batch_id,
+              price_per_m2_installment: pricePerM2,
+              company_fee_percentage: newCompanyFeePercentage,
+              advance_amount: advancePerPiece,
+              advance_is_percentage: false,
+              monthly_payment: monthlyAmount > 0 ? monthlyAmount : null,
+              number_of_months: months > 0 ? months : null,
+              is_default: true,
+            }
+            
+            if (existingOffer) {
+              await supabase
+                .from('payment_offers')
+                .update(offerData)
+                .eq('id', existingOffer.id)
+            } else {
+              const { data: newOffer } = await supabase
+                .from('payment_offers')
+                .insert([offerData])
+                .select()
+                .single()
+              
+              if (newOffer) {
+                updates.selected_offer_id = newOffer.id
+              }
+            }
+          } catch (error) {
+            console.error('Error creating/updating offer:', error)
+            // Continue without offer - not critical
+          }
+        }
+      }
+      
+      // Update piece price in database FIRST (for both single and multi-piece sales)
+      // This ensures the piece price is stored and will be used by calculatePieceValues
+      const updatedPiecePrice = newPricePerPiece
+      if (editingSale.payment_type === 'Full' || editingSale.payment_type === 'PromiseOfSale') {
+        const { error: pieceUpdateError } = await supabase
+          .from('land_pieces')
+          .update({ selling_price_full: newPricePerPiece })
+          .eq('id', editingPiece.id)
+        if (pieceUpdateError) {
+          console.error('Error updating piece price:', pieceUpdateError)
+          throw pieceUpdateError
+        }
+      } else {
+        // For installment, update selling_price_installment
+        const { error: pieceUpdateError } = await supabase
+          .from('land_pieces')
+          .update({ selling_price_installment: newPricePerPiece })
+          .eq('id', editingPiece.id)
+        if (pieceUpdateError) {
+          console.error('Error updating piece price:', pieceUpdateError)
+          throw pieceUpdateError
         }
       }
       
@@ -463,12 +650,45 @@ export function SaleConfirmation() {
       
       if (updateError) throw updateError
       
+      // Fetch updated offer if one was selected/created or if offer was updated
+      let updatedOffer: PaymentOffer | null = null
+      const offerIdToFetch = updates.selected_offer_id || editForm.selected_offer_id
+      if (offerIdToFetch) {
+        try {
+          const { data: offerData } = await supabase
+            .from('payment_offers')
+            .select('*')
+            .eq('id', offerIdToFetch)
+            .single()
+          if (offerData) {
+            updatedOffer = offerData as PaymentOffer
+          }
+        } catch (error) {
+          console.error('Error fetching updated offer:', error)
+        }
+      }
+      
       // Update the sale in state immediately to reflect changes
       setSales(prevSales => prevSales.map(sale => {
         if (sale.id === editingSale.id) {
+          // Update the piece in land_pieces array with new price
+          const updatedPieces = sale.land_pieces?.map((p: any) => {
+            if (p.id === editingPiece.id) {
+              if (sale.payment_type === 'Full' || sale.payment_type === 'PromiseOfSale') {
+                return { ...p, selling_price_full: updatedPiecePrice }
+              } else {
+                return { ...p, selling_price_installment: updatedPiecePrice }
+              }
+            }
+            return p
+          }) || []
+          
           return {
             ...sale,
             ...updates,
+            land_pieces: updatedPieces,
+            // Update selected_offer if it was changed
+            selected_offer: updatedOffer || (sale as any).selected_offer,
             // Ensure company_fee_percentage is set correctly (preserve 0 as 0, not null)
             company_fee_percentage: (editForm.commission_input_method === 'percentage' && editForm.company_fee_percentage !== '') 
               ? newCompanyFeePercentage  // User specified a percentage (including 0), use it
@@ -485,10 +705,8 @@ export function SaleConfirmation() {
       setEditingSale(null)
       setEditingPiece(null)
       
-      // Wait a bit to ensure database update is complete, then refresh sales list
-      // Increased delay to ensure database consistency
-      await new Promise(resolve => setTimeout(resolve, 300))
-      await fetchSales()
+      // No need to refresh - state is already updated above
+      // This prevents losing scroll position
     } catch (error: any) {
       console.error('Error saving sale edit:', error)
       showNotification(error?.message || 'حدث خطأ أثناء حفظ التعديلات', 'error')
@@ -532,6 +750,19 @@ export function SaleConfirmation() {
     }
   }
   
+  // Get unique locations from sales for filter dropdown
+  const uniqueLocations = useMemo(() => {
+    const locations = new Set<string>()
+    sales.forEach(sale => {
+      sale.land_pieces?.forEach((p: any) => {
+        if (p.land_batch?.location) {
+          locations.add(p.land_batch.location)
+        }
+      })
+    })
+    return Array.from(locations).sort()
+  }, [sales])
+
   // Filter sales based on search and filters - MUST be before any early returns
   const filteredSales = useMemo(() => {
     return sales.filter(sale => {
@@ -539,6 +770,14 @@ export function SaleConfirmation() {
       const clientName = client?.name?.toLowerCase() || ''
       const clientPhone = client?.phone?.toLowerCase() || ''
       const saleId = sale.id.toLowerCase()
+      
+      // Location filter
+      if (locationFilter !== 'all') {
+        const hasMatchingLocation = sale.land_pieces?.some((p: any) => 
+          p.land_batch?.location === locationFilter
+        )
+        if (!hasMatchingLocation) return false
+      }
       
       // Search filter
       if (searchTerm) {
@@ -556,7 +795,7 @@ export function SaleConfirmation() {
       
       return true
     })
-  }, [sales, searchTerm])
+  }, [sales, searchTerm, locationFilter])
 
 
   useEffect(() => {
@@ -718,7 +957,7 @@ export function SaleConfirmation() {
           if (allPieceIds.size > 0) {
             const { data: piecesData, error: piecesError } = await supabase
               .from('land_pieces')
-              .select('*, land_batch:land_batches(name, company_fee_percentage_full)')
+              .select('*, land_batch:land_batches(name, location, company_fee_percentage_full)')
               .in('id', Array.from(allPieceIds))
             
             if (piecesError) {
@@ -780,7 +1019,10 @@ export function SaleConfirmation() {
     }
   }
 
-  const openConfirmDialog = async (sale: SaleWithDetails, piece: LandPiece, type: 'full' | 'bigAdvance') => {
+  const openConfirmDialog = async (sale: SaleWithDetails, piece: LandPiece, type: 'full' | 'bigAdvance', isConfirmingAll: boolean = false) => {
+    // Set confirmingAllPieces flag based on parameter
+    setConfirmingAllPieces(isConfirmingAll)
+    
     // Fetch the latest sale data to ensure we have the most up-to-date company_fee_percentage
     const { data: latestSaleData, error: saleError } = await supabase
       .from('sales')
@@ -948,45 +1190,105 @@ export function SaleConfirmation() {
     
     // Auto-fill received amount (advance + commission) for installment from offer
     if (type === 'bigAdvance' && sale.payment_type === 'Installment' && offer) {
-      // Advance is calculated from PRICE (without commission)
-      const advanceAmount = offer.advance_is_percentage
-        ? (calculatedPricePerPiece * offer.advance_amount) / 100
-        : offer.advance_amount
-      // Calculate reservation per piece
-      const pieceCount = sale.land_piece_ids.length
-      const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
-      // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
-      const advanceAmountAfterReservation = Math.max(0, advanceAmount - reservationPerPiece)
-      // Total to receive = Advance (after reservation) + Commission
-      const totalToReceive = advanceAmountAfterReservation + companyFeePerPiece
-      setReceivedAmount(totalToReceive.toFixed(2))
+      // If confirming all pieces, calculate totals for all pieces
+      if (confirmingAllPieces && sale.land_pieces && sale.land_pieces.length > 1) {
+        let totalPrice = 0
+        let totalReservation = 0
+        let totalCompanyFee = 0
+        
+        sale.land_pieces.forEach((piece: any) => {
+          const pieceValues = calculatePieceValues(sale, piece, offer)
+          totalPrice += pieceValues.pricePerPiece
+          totalReservation += pieceValues.reservationPerPiece
+          totalCompanyFee += pieceValues.companyFeePerPiece
+        })
+        
+        // Advance is calculated from PRICE (without commission)
+        const advanceAmount = offer.advance_is_percentage
+          ? (totalPrice * offer.advance_amount) / 100
+          : offer.advance_amount * sale.land_pieces.length
+        // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
+        const advanceAmountAfterReservation = Math.max(0, advanceAmount - totalReservation)
+        // Total to receive = Advance (after reservation) + Commission
+        const totalToReceive = advanceAmountAfterReservation + totalCompanyFee
+        setReceivedAmount(totalToReceive.toFixed(2))
+      } else {
+        // Single piece calculation
+        const advanceAmount = offer.advance_is_percentage
+          ? (calculatedPricePerPiece * offer.advance_amount) / 100
+          : offer.advance_amount
+        // Calculate reservation per piece
+        const pieceCount = sale.land_piece_ids.length
+        const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
+        // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
+        const advanceAmountAfterReservation = Math.max(0, advanceAmount - reservationPerPiece)
+        // Total to receive = Advance (after reservation) + Commission
+        const totalToReceive = advanceAmountAfterReservation + companyFeePerPiece
+        setReceivedAmount(totalToReceive.toFixed(2))
+      }
     } else if (type === 'full') {
       // For PromiseOfSale
       if ((sale.payment_type as any) === 'PromiseOfSale') {
-        const pieceCount = sale.land_piece_ids.length
-        // Use actual piece price if available
-        let pricePerPiece = piece.selling_price_full || 0
-        if (pricePerPiece === 0) {
-          pricePerPiece = sale.total_selling_price / pieceCount
-        }
-        const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
-        
-        // Get company fee from batch
-        const batch = (piece as any).land_batch
-        const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || (companyFeePercentage ? parseFloat(String(companyFeePercentage)) : 0) || 0
-        const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
-        const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
-        
-        const hasInitialPayment = (sale.promise_initial_payment || 0) > 0
-        
-        if (hasInitialPayment) {
-          // This is completion (phase 2) - auto-fill with remaining amount
-          const initialPaymentPerPiece = (sale.promise_initial_payment || 0) / pieceCount
-          const remainingAmount = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
-          setReceivedAmount(remainingAmount.toFixed(2))
+        if (confirmingAllPieces && sale.land_pieces && sale.land_pieces.length > 1) {
+          // Calculate totals for all pieces
+          let totalPrice = 0
+          let totalReservation = 0
+          let totalCompanyFee = 0
+          
+          sale.land_pieces.forEach((piece: any) => {
+            const pieceCount = sale.land_piece_ids.length
+            let pricePerPiece = piece.selling_price_full || 0
+            if (pricePerPiece === 0) {
+              pricePerPiece = sale.total_selling_price / pieceCount
+            }
+            const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
+            const batch = (piece as any).land_batch
+            const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || (companyFeePercentage ? parseFloat(String(companyFeePercentage)) : 0) || 0
+            const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
+            
+            totalPrice += pricePerPiece
+            totalReservation += reservationPerPiece
+            totalCompanyFee += companyFeePerPiece
+          })
+          
+          const totalPayable = totalPrice + totalCompanyFee
+          const hasInitialPayment = (sale.promise_initial_payment || 0) > 0
+          
+          if (hasInitialPayment) {
+            // This is completion (phase 2) - auto-fill with remaining amount
+            const remainingAmount = totalPayable - totalReservation - (sale.promise_initial_payment || 0)
+            setReceivedAmount(remainingAmount.toFixed(2))
+          } else {
+            // This is initial payment (phase 1) - leave empty for user to enter
+            setReceivedAmount('')
+          }
         } else {
-          // This is initial payment (phase 1) - leave empty for user to enter
-          setReceivedAmount('')
+          // Single piece calculation
+          const pieceCount = sale.land_piece_ids.length
+          // Use actual piece price if available
+          let pricePerPiece = piece.selling_price_full || 0
+          if (pricePerPiece === 0) {
+            pricePerPiece = sale.total_selling_price / pieceCount
+          }
+          const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
+          
+          // Get company fee from batch
+          const batch = (piece as any).land_batch
+          const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || (companyFeePercentage ? parseFloat(String(companyFeePercentage)) : 0) || 0
+          const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
+          const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
+          
+          const hasInitialPayment = (sale.promise_initial_payment || 0) > 0
+          
+          if (hasInitialPayment) {
+            // This is completion (phase 2) - auto-fill with remaining amount
+            const initialPaymentPerPiece = (sale.promise_initial_payment || 0) / pieceCount
+            const remainingAmount = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
+            setReceivedAmount(remainingAmount.toFixed(2))
+          } else {
+            // This is initial payment (phase 1) - leave empty for user to enter
+            setReceivedAmount('')
+          }
         }
         
         // Set company fee percentage for display
@@ -997,22 +1299,50 @@ export function SaleConfirmation() {
         }
       } else {
         // For full payment, calculate remaining amount using company_fee_percentage_full from batch
-        const pieceCount = sale.land_piece_ids.length
-        // Use actual piece price if available
-        let pricePerPiece = piece.selling_price_full || 0
-        if (pricePerPiece === 0) {
-          pricePerPiece = sale.total_selling_price / pieceCount
+        if (confirmingAllPieces && sale.land_pieces && sale.land_pieces.length > 1) {
+          // Calculate totals for all pieces
+          let totalPrice = 0
+          let totalReservation = 0
+          let totalCompanyFee = 0
+          
+          sale.land_pieces.forEach((piece: any) => {
+            const pieceCount = sale.land_piece_ids.length
+            let pricePerPiece = piece.selling_price_full || 0
+            if (pricePerPiece === 0) {
+              pricePerPiece = sale.total_selling_price / pieceCount
+            }
+            const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
+            const batch = (piece as any).land_batch
+            const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || (companyFeePercentage ? parseFloat(String(companyFeePercentage)) : 0) || 0
+            const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
+            
+            totalPrice += pricePerPiece
+            totalReservation += reservationPerPiece
+            totalCompanyFee += companyFeePerPiece
+          })
+          
+          const totalPayable = totalPrice + totalCompanyFee
+          const remainingAmount = totalPayable - totalReservation
+          setReceivedAmount(remainingAmount.toFixed(2))
+        } else {
+          // Single piece calculation
+          const pieceCount = sale.land_piece_ids.length
+          // Use actual piece price if available
+          let pricePerPiece = piece.selling_price_full || 0
+          if (pricePerPiece === 0) {
+            pricePerPiece = sale.total_selling_price / pieceCount
+          }
+          const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
+          
+          // Get company fee from batch for full payment
+          const batch = (piece as any).land_batch
+          const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || (companyFeePercentage ? parseFloat(String(companyFeePercentage)) : 0) || 0
+          const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
+          const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
+          
+          const remainingAmount = totalPayablePerPiece - reservationPerPiece
+          setReceivedAmount(remainingAmount.toFixed(2))
         }
-        const reservationPerPiece = (sale.small_advance_amount || 0) / pieceCount
-        
-        // Get company fee from batch for full payment
-        const batch = (piece as any).land_batch
-        const feePercentage = batch?.company_fee_percentage_full || sale.company_fee_percentage || (companyFeePercentage ? parseFloat(String(companyFeePercentage)) : 0) || 0
-        const companyFeePerPiece = (pricePerPiece * feePercentage) / 100
-        const totalPayablePerPiece = pricePerPiece + companyFeePerPiece
-        
-        const remainingAmount = totalPayablePerPiece - reservationPerPiece
-        setReceivedAmount(remainingAmount.toFixed(2))
         
         // Set company fee percentage for display
         if (batch?.company_fee_percentage_full) {
@@ -1041,21 +1371,30 @@ export function SaleConfirmation() {
     // Get the offer to use - prioritize passed offer, then selectedOffer state, then sale's selected_offer
     const offerToUse = offer || selectedOffer || ((sale as any).selected_offer as PaymentOffer | null)
     
+    // PRIORITY: Always use the piece's stored price first (user-edited price takes precedence)
     // Use actual piece price instead of dividing total by count
     // This ensures correct calculation when pieces have different prices
     let pricePerPiece = 0
     if (sale.payment_type === 'Full' || sale.payment_type === 'PromiseOfSale') {
+      // For Full/PromiseOfSale, use piece's stored full price
       pricePerPiece = piece.selling_price_full || 0
     } else {
-      // For installment, use offer price if available, otherwise piece price
-      if (offerToUse && offerToUse.price_per_m2_installment) {
+      // For installment, PRIORITIZE piece's stored installment price over offer calculation
+      // If piece has a stored installment price, use it (this is the user-edited price)
+      if (piece.selling_price_installment && piece.selling_price_installment > 0) {
+        pricePerPiece = piece.selling_price_installment
+      } else if (piece.selling_price_full && piece.selling_price_full > 0) {
+        // Fallback to full price if installment price not set
+        pricePerPiece = piece.selling_price_full
+      } else if (offerToUse && offerToUse.price_per_m2_installment) {
+        // Only use offer calculation if piece doesn't have a stored price
         pricePerPiece = (piece.surface_area * offerToUse.price_per_m2_installment)
       } else {
-        pricePerPiece = piece.selling_price_installment || piece.selling_price_full || 0
+        pricePerPiece = 0
       }
     }
     
-    // If piece price is not available, fall back to dividing total
+    // If piece price is still 0, fall back to dividing total by piece count
     if (pricePerPiece === 0) {
       pricePerPiece = sale.total_selling_price / pieceCount
     }
@@ -1282,6 +1621,19 @@ export function SaleConfirmation() {
     }
   }
 
+  const handleConfirmAllPieces = async (sale: SaleWithDetails) => {
+    if (!sale || !sale.land_pieces || sale.land_pieces.length === 0) return
+    
+    // Open confirmation dialog for the first piece with isConfirmingAll=true
+    // The user will confirm all pieces using the same values
+    const firstPiece = sale.land_pieces[0] as LandPiece
+    const confirmationType = sale.payment_type === 'Full' || (sale.payment_type as any) === 'PromiseOfSale' 
+      ? 'full' 
+      : 'bigAdvance'
+    
+    await openConfirmDialog(sale, firstPiece, confirmationType, true)
+  }
+
   const handleConfirmation = async () => {
     if (!selectedSale || !selectedPiece) return
     
@@ -1320,8 +1672,45 @@ export function SaleConfirmation() {
       const pieceCount = selectedSale.land_piece_ids.length
       // Get the offer to use - prioritize selectedOffer state, then sale's selected_offer
       const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
-      const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
-      const received = parseFloat(receivedAmount) || 0
+      
+      // If confirming all pieces, calculate totals for all pieces first
+      let pricePerPiece = 0
+      let reservationPerPiece = 0
+      let companyFeePerPiece = 0
+      let totalPayablePerPiece = 0
+      let received = parseFloat(receivedAmount) || 0
+      
+      if (confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1) {
+        // Calculate totals for all pieces
+        let totalPrice = 0
+        let totalReservation = 0
+        let totalCompanyFee = 0
+        let totalPayable = 0
+        
+        selectedSale.land_pieces.forEach((piece: any) => {
+          const pieceValues = calculatePieceValues(selectedSale, piece, offerToUse)
+          totalPrice += pieceValues.pricePerPiece
+          totalReservation += pieceValues.reservationPerPiece
+          totalCompanyFee += pieceValues.companyFeePerPiece
+          totalPayable += pieceValues.totalPayablePerPiece
+        })
+        
+        pricePerPiece = totalPrice
+        reservationPerPiece = totalReservation
+        companyFeePerPiece = totalCompanyFee
+        totalPayablePerPiece = totalPayable
+        
+        // receivedAmount should already be the total for all pieces
+        received = parseFloat(receivedAmount) || 0
+      } else {
+        // Single piece calculation
+        const values = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
+        pricePerPiece = values.pricePerPiece
+        reservationPerPiece = values.reservationPerPiece
+        companyFeePerPiece = values.companyFeePerPiece
+        totalPayablePerPiece = values.totalPayablePerPiece
+        received = parseFloat(receivedAmount) || 0
+      }
       
       // For full payment, just ensure the amount is positive
       // The amount is auto-calculated by the system, so we don't need strict validation
@@ -1956,18 +2345,242 @@ export function SaleConfirmation() {
           .eq('id', selectedSale.id)
       }
 
-      // Show success message
-      const isPromiseCompletion = selectedSale.payment_type === 'PromiseOfSale' && confirmationType === 'full' && (selectedSale.promise_initial_payment || 0) > 0
-      showNotification(
-        confirmationType === 'full' 
-          ? (selectedSale.payment_type === 'PromiseOfSale' 
-              ? (isPromiseCompletion 
-                  ? 'تم استكمال الوعد بالبيع بنجاح' 
-                  : 'تم تأكيد الوعد بالبيع بنجاح - يمكنك الآن استكمال الدفع المتبقي')
-              : 'تم تأكيد البيع بنجاح (دفع كامل)')
-          : 'تم تأكيد التسبقة بنجاح',
-        'success'
-      )
+      // If confirming all pieces, confirm each remaining piece automatically
+      if (confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1) {
+        // We've already confirmed the first piece above
+        // Now confirm all remaining pieces
+        let currentSale = selectedSale
+        const allPieces = [...selectedSale.land_pieces]
+        const piecesToConfirm = allPieces.slice(1) // Skip first piece (already confirmed)
+        
+        // Calculate per-piece values from totals
+        const perPiecePrice = pricePerPiece / allPieces.length
+        const perPieceReservation = reservationPerPiece / allPieces.length
+        const perPieceCompanyFee = companyFeePerPiece / allPieces.length
+        const perPieceReceived = received / allPieces.length
+        
+        for (const piece of piecesToConfirm) {
+          // Fetch updated sale to get current state
+          const { data: updatedSale } = await supabase
+            .from('sales')
+            .select('*, client:clients(*), selected_offer:payment_offers!selected_offer_id(*)')
+            .eq('id', currentSale.id)
+            .single()
+          
+          if (!updatedSale || !(updatedSale as any).land_piece_ids || (updatedSale as any).land_piece_ids.length === 0) {
+            break // No more pieces to confirm
+          }
+          
+          currentSale = updatedSale as SaleWithDetails
+          const pieceToConfirm = piece as LandPiece
+          
+          // Calculate values for this piece
+          const pieceValues = calculatePieceValues(currentSale, pieceToConfirm, offerToUse)
+          const pieceCount = (currentSale as any).land_piece_ids.length
+          const costPerPiece = currentSale.total_purchase_cost / pieceCount
+          const profitPerPiece = currentSale.profit_margin / pieceCount
+          const { feePercentage: calculatedFeePercentage } = pieceValues
+          
+          // Create a new sale for this piece (same logic as single piece confirmation)
+          const newSaleData: any = {
+            client_id: currentSale.client_id,
+            land_piece_ids: [pieceToConfirm.id],
+            payment_type: currentSale.payment_type,
+            total_purchase_cost: costPerPiece,
+            total_selling_price: pieceValues.pricePerPiece,
+            profit_margin: profitPerPiece,
+            small_advance_amount: pieceValues.reservationPerPiece,
+            company_fee_percentage: calculatedFeePercentage !== null && calculatedFeePercentage !== undefined ? calculatedFeePercentage : null,
+            company_fee_amount: pieceValues.companyFeePerPiece !== null && pieceValues.companyFeePerPiece !== undefined ? parseFloat(pieceValues.companyFeePerPiece.toFixed(2)) : 0,
+            big_advance_amount: 0,
+            number_of_installments: null,
+            monthly_installment_amount: null,
+            status: 'Pending',
+            sale_date: currentSale.sale_date,
+            notes: `تأكيد قطعة من البيع #${currentSale.id.slice(0, 8)}`,
+            created_by: currentSale.created_by || user?.id || null,
+            contract_editor_id: selectedContractEditorId || null,
+          }
+          
+          if (confirmationType === 'full') {
+            if ((currentSale.payment_type as any) === 'PromiseOfSale') {
+              const { data: currentSaleData } = await supabase
+                .from('sales')
+                .select('promise_initial_payment, promise_completed')
+                .eq('id', currentSale.id)
+                .single()
+              
+              const hasInitialPayment = (currentSaleData?.promise_initial_payment || 0) > 0
+              if (hasInitialPayment) {
+                newSaleData.promise_completed = true
+                newSaleData.status = 'Completed'
+              } else {
+                newSaleData.promise_initial_payment = perPieceReceived
+                newSaleData.status = 'Pending'
+                newSaleData.promise_completed = false
+              }
+            } else {
+              newSaleData.status = 'Completed'
+            }
+            newSaleData.big_advance_amount = 0
+          } else if (confirmationType === 'bigAdvance') {
+            newSaleData.big_advance_amount = perPieceReceived
+            newSaleData.status = 'Pending'
+            
+            if (currentSale.payment_type === 'Installment') {
+              const advanceOnly = perPieceReceived - pieceValues.companyFeePerPiece
+              const remainingAfterAdvance = pieceValues.pricePerPiece - advanceOnly - pieceValues.companyFeePerPiece
+              
+              if (remainingAfterAdvance > 0) {
+                let installments = 0
+                let monthlyAmount = 0
+                
+                if (offerToUse && offerToUse.monthly_payment && offerToUse.monthly_payment > 0) {
+                  installments = Math.ceil(remainingAfterAdvance / offerToUse.monthly_payment)
+                  monthlyAmount = offerToUse.monthly_payment
+                } else if (offerToUse && offerToUse.number_of_months && offerToUse.number_of_months > 0) {
+                  installments = offerToUse.number_of_months
+                  monthlyAmount = remainingAfterAdvance / offerToUse.number_of_months
+                } else {
+                  installments = parseInt(numberOfInstallments) || currentSale.number_of_installments || 12
+                  monthlyAmount = remainingAfterAdvance / installments
+                }
+                
+                newSaleData.number_of_installments = installments
+                newSaleData.monthly_installment_amount = parseFloat(monthlyAmount.toFixed(2))
+                const startDateStr = installmentStartDate || new Date().toISOString().split('T')[0]
+                newSaleData.installment_start_date = startDateStr
+                const endDate = new Date(startDateStr)
+                endDate.setMonth(endDate.getMonth() + installments - 1)
+                newSaleData.installment_end_date = endDate.toISOString().split('T')[0]
+              }
+            }
+          }
+          
+          // Insert the new sale
+          const saleDataToInsert = { ...newSaleData }
+          delete (saleDataToInsert as any).company_fee_percentage
+          delete (saleDataToInsert as any).company_fee_amount
+          
+          const { data: newSaleDataArray, error: insertError } = await supabase
+            .from('sales')
+            .insert([saleDataToInsert] as any)
+            .select('*')
+          
+          if (insertError) {
+            console.error('Error inserting sale for piece:', pieceToConfirm.id, insertError)
+            continue // Skip this piece and continue with next
+          }
+          
+          const newSale = newSaleDataArray?.[0]
+          if (!newSale) continue
+          
+          // Update company fee if needed
+          if (pieceValues.companyFeePerPiece > 0) {
+            await supabase
+              .from('sales')
+              .update({
+                company_fee_percentage: parseFloat(companyFeePercentage) || null,
+                company_fee_amount: pieceValues.companyFeePerPiece
+              } as any)
+              .eq('id', newSale.id)
+          }
+          
+          // Create payment record
+          if (perPieceReceived > 0) {
+            let paymentType = confirmationType === 'full' ? 'Full' : 'BigAdvance'
+            if ((currentSale.payment_type as any) === 'PromiseOfSale' && confirmationType === 'full') {
+              const { data: currentSaleData } = await supabase
+                .from('sales')
+                .select('promise_initial_payment')
+                .eq('id', currentSale.id)
+                .single()
+              const hasInitialPayment = (currentSaleData?.promise_initial_payment || 0) > 0
+              paymentType = hasInitialPayment ? 'Full' : 'Partial'
+            }
+            
+            const today = new Date().toISOString().split('T')[0]
+            await supabase.from('payments').insert([{
+              client_id: currentSale.client_id,
+              sale_id: newSale.id,
+              amount_paid: perPieceReceived,
+              payment_type: paymentType,
+              payment_date: today,
+              notes: confirmationNotes || null,
+              recorded_by: user?.id || null,
+            }] as any)
+          }
+          
+          // Create installments if needed
+          if (confirmationType === 'bigAdvance' && currentSale.payment_type === 'Installment' && newSaleData.number_of_installments) {
+            const installmentsToCreate = []
+            const startDate = new Date(newSaleData.installment_start_date || new Date())
+            startDate.setHours(0, 0, 0, 0)
+            const monthlyAmount = newSaleData.monthly_installment_amount || 0
+            
+            for (let i = 0; i < newSaleData.number_of_installments; i++) {
+              const dueDate = new Date(startDate)
+              dueDate.setMonth(dueDate.getMonth() + i)
+              installmentsToCreate.push({
+                sale_id: newSale.id,
+                installment_number: i + 1,
+                amount_due: monthlyAmount,
+                amount_paid: 0,
+                stacked_amount: 0,
+                due_date: dueDate.toISOString().split('T')[0],
+                status: 'Unpaid',
+              })
+            }
+            
+            await supabase.from('installments').insert(installmentsToCreate as any)
+          }
+          
+          // Update piece status
+          await supabase
+            .from('land_pieces')
+            .update({ status: 'Sold' } as any)
+            .eq('id', pieceToConfirm.id)
+          
+          // Update original sale - remove this piece
+          const remainingPieces = (currentSale as any).land_piece_ids.filter((id: string) => id !== pieceToConfirm.id)
+          const remainingCount = remainingPieces.length
+          const remainingPrice = currentSale.total_selling_price - pieceValues.pricePerPiece
+          const remainingCost = currentSale.total_purchase_cost - costPerPiece
+          const remainingProfit = currentSale.profit_margin - profitPerPiece
+          const remainingReservation = (currentSale.small_advance_amount || 0) - pieceValues.reservationPerPiece
+          
+          await supabase
+            .from('sales')
+            .update({
+              land_piece_ids: remainingPieces,
+              total_selling_price: remainingPrice,
+              total_purchase_cost: remainingCost,
+              profit_margin: remainingProfit,
+              small_advance_amount: remainingReservation,
+              big_advance_amount: currentSale.big_advance_amount ? (currentSale.big_advance_amount * remainingCount / pieceCount) : 0,
+              monthly_installment_amount: currentSale.monthly_installment_amount ? (currentSale.monthly_installment_amount * remainingCount / pieceCount) : null,
+            } as any)
+            .eq('id', currentSale.id)
+        }
+        
+        // Reset the flag and show success
+        setConfirmingAllPieces(false)
+        showNotification(`تم تأكيد جميع القطع (${allPieces.length} قطع) بنجاح`, 'success')
+      } else {
+        // Show success message
+        const isPromiseCompletion = selectedSale.payment_type === 'PromiseOfSale' && confirmationType === 'full' && (selectedSale.promise_initial_payment || 0) > 0
+        showNotification(
+          confirmationType === 'full' 
+            ? (selectedSale.payment_type === 'PromiseOfSale' 
+                ? (isPromiseCompletion 
+                    ? 'تم استكمال الوعد بالبيع بنجاح' 
+                    : 'تم تأكيد الوعد بالبيع بنجاح - يمكنك الآن استكمال الدفع المتبقي')
+                : 'تم تأكيد البيع بنجاح (دفع كامل)')
+            : 'تم تأكيد التسبقة بنجاح',
+          'success'
+        )
+        setConfirmingAllPieces(false)
+      }
       
       setConfirmDialogOpen(false)
       // Reset form
@@ -2058,31 +2671,50 @@ export function SaleConfirmation() {
         </div>
       </div>
 
-      {/* Search */}
+      {/* Search and Filters */}
       <Card>
         <CardContent className="pt-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Input
-              placeholder="بحث (اسم العميل، رقم الهاتف، رقم البيع، رقم القطعة)..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="flex-1"
-            />
-            {searchTerm && (
-              <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                {filteredSales.length} نتيجة من {sales.length}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                  onClick={() => setSearchTerm('')}
-                className="text-xs"
-              >
-                  مسح
-              </Button>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Input
+                placeholder="بحث (اسم العميل، رقم الهاتف، رقم البيع، رقم القطعة)..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="flex-1"
+              />
+              {uniqueLocations.length > 0 && (
+                <select
+                  value={locationFilter}
+                  onChange={(e) => setLocationFilter(e.target.value)}
+                  className="flex h-10 w-full sm:w-[200px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="all">جميع المواقع</option>
+                  {uniqueLocations.map(location => (
+                    <option key={location} value={location}>{location}</option>
+                  ))}
+                </select>
+              )}
             </div>
-          )}
+            {(searchTerm || locationFilter !== 'all') && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  {filteredSales.length} نتيجة من {sales.length}
+                </span>
+                {(searchTerm || locationFilter !== 'all') && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSearchTerm('')
+                      setLocationFilter('all')
+                    }}
+                    className="text-xs"
+                  >
+                    مسح الفلاتر
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -2243,6 +2875,23 @@ export function SaleConfirmation() {
                         <Clock className="h-3 w-3" />
                         <span>{formatDateTime(sale.created_at || sale.sale_date)}</span>
                       </div>
+                      {/* Confirm All button - only show if sale has multiple pieces */}
+                      {pieces.length > 1 && sale.status === 'Pending' && (
+                        <Button
+                          onClick={() => handleConfirmAllPieces(sale)}
+                          className={`text-xs h-7 px-3 ${
+                            sale.payment_type === 'Full' 
+                              ? 'bg-green-600 hover:bg-green-700' 
+                              : sale.payment_type === 'Installment'
+                              ? 'bg-blue-600 hover:bg-blue-700'
+                              : 'bg-purple-600 hover:bg-purple-700'
+                          }`}
+                          size="sm"
+                        >
+                          <CheckCircle className="ml-1 h-3 w-3" />
+                          تأكيد الكل
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
@@ -2550,17 +3199,72 @@ export function SaleConfirmation() {
         <DialogContent className="w-[95vw] sm:w-full max-w-2xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {confirmationType === 'full' && (selectedSale?.payment_type === 'PromiseOfSale' 
-                ? ((selectedSale.promise_initial_payment || 0) > 0 ? 'استكمال الوعد بالبيع' : 'تأكيد الوعد بالبيع')
-                : 'تأكيد بالحاضر')}
-              {confirmationType === 'bigAdvance' && (selectedSale?.payment_type === 'Full' ? 'تأكيد بالحاضر' : 'تأكيد بالتقسيط')}
-              {selectedPiece && ` - #${selectedPiece.piece_number}`}
+              {(() => {
+                const isConfirmingAll = confirmingAllPieces && selectedSale?.land_pieces && selectedSale.land_pieces.length > 1
+                const allPiecesSuffix = isConfirmingAll ? ` - جميع القطع (${selectedSale.land_pieces.length} قطع)` : ''
+                const pieceSuffix = !isConfirmingAll && selectedPiece ? ` - #${selectedPiece.piece_number}` : ''
+                
+                if (confirmationType === 'full') {
+                  if (selectedSale?.payment_type === 'PromiseOfSale') {
+                    return ((selectedSale.promise_initial_payment || 0) > 0 
+                      ? 'استكمال الوعد بالبيع' 
+                      : 'تأكيد الوعد بالبيع') + allPiecesSuffix + pieceSuffix
+                  }
+                  return 'تأكيد بالحاضر' + allPiecesSuffix + pieceSuffix
+                } else if (confirmationType === 'bigAdvance') {
+                  if (selectedSale?.payment_type === 'Full') {
+                    return 'تأكيد بالحاضر' + allPiecesSuffix + pieceSuffix
+                  }
+                  return 'تأكيد بالتقسيط' + allPiecesSuffix + pieceSuffix
+                }
+                return 'تأكيد البيع' + allPiecesSuffix + pieceSuffix
+              })()}
             </DialogTitle>
           </DialogHeader>
           {selectedSale && selectedPiece && (() => {
                   // Get the offer to use - prioritize selectedOffer state, then sale's selected_offer
                   const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
-                  const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece, feePercentage, offer: calculatedOffer } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
+                  
+                  // If confirming all pieces, calculate totals for all pieces
+                  let pricePerPiece = 0
+                  let reservationPerPiece = 0
+                  let companyFeePerPiece = 0
+                  let totalPayablePerPiece = 0
+                  let feePercentage = 0
+                  let calculatedOffer = offerToUse
+                  
+                  if (confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1) {
+                    // Calculate totals for all pieces
+                    let totalPrice = 0
+                    let totalReservation = 0
+                    let totalCompanyFee = 0
+                    let totalPayable = 0
+                    let totalFeePercentage = 0
+                    
+                    selectedSale.land_pieces.forEach((piece: any) => {
+                      const pieceValues = calculatePieceValues(selectedSale, piece, offerToUse)
+                      totalPrice += pieceValues.pricePerPiece
+                      totalReservation += pieceValues.reservationPerPiece
+                      totalCompanyFee += pieceValues.companyFeePerPiece
+                      totalPayable += pieceValues.totalPayablePerPiece
+                      totalFeePercentage = pieceValues.feePercentage // Use the same percentage for all
+                    })
+                    
+                    pricePerPiece = totalPrice
+                    reservationPerPiece = totalReservation
+                    companyFeePerPiece = totalCompanyFee
+                    totalPayablePerPiece = totalPayable
+                    feePercentage = totalFeePercentage
+                  } else {
+                    // Single piece calculation
+                    const values = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
+                    pricePerPiece = values.pricePerPiece
+                    reservationPerPiece = values.reservationPerPiece
+                    companyFeePerPiece = values.companyFeePerPiece
+                    totalPayablePerPiece = values.totalPayablePerPiece
+                    feePercentage = values.feePercentage
+                    calculatedOffer = values.offer
+                  }
             
             // Check if reservation has been paid
             // By default, all reservations are paid unless small_advance_amount is 0
@@ -2580,17 +3284,25 @@ export function SaleConfirmation() {
             let advanceAmount = 0
             if (calculatedOffer && confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
               // Advance should be calculated from pricePerPiece (WITHOUT commission)
+              // For "confirm all", pricePerPiece is already the total for all pieces
               const fullAdvanceAmount = calculatedOffer.advance_is_percentage
                 ? (pricePerPiece * calculatedOffer.advance_amount) / 100
-                : calculatedOffer.advance_amount
+                : (confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1
+                    ? calculatedOffer.advance_amount * selectedSale.land_pieces.length
+                    : calculatedOffer.advance_amount)
               // التسبقة = Advance - Reservation (العربون is deducted from التسبقة)
               advanceAmount = Math.max(0, fullAdvanceAmount - reservationPerPiece)
             } else if (confirmationType === 'full') {
               if ((selectedSale.payment_type as any) === 'PromiseOfSale') {
                 // For PromiseOfSale, calculate remaining after initial payment
-                const pieceCount = selectedSale.land_piece_ids.length
+                const pieceCount = confirmingAllPieces && selectedSale.land_pieces 
+                  ? selectedSale.land_pieces.length 
+                  : selectedSale.land_piece_ids.length
                 const initialPaymentPerPiece = (selectedSale.promise_initial_payment || 0) / pieceCount
-                advanceAmount = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
+                const totalInitialPayment = confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1
+                  ? (selectedSale.promise_initial_payment || 0)
+                  : initialPaymentPerPiece
+                advanceAmount = totalPayablePerPiece - reservationPerPiece - totalInitialPayment
               } else {
               advanceAmount = totalPayablePerPiece - reservationPerPiece
             }
@@ -2611,7 +3323,10 @@ export function SaleConfirmation() {
             if (calculatedOffer && confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
               if (calculatedOffer.monthly_payment && calculatedOffer.monthly_payment > 0) {
                 // Offer has monthly_payment - calculate number of months
-                monthlyPaymentAmount = calculatedOffer.monthly_payment
+                // For "confirm all", multiply monthly payment by number of pieces
+                monthlyPaymentAmount = confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1
+                  ? calculatedOffer.monthly_payment * selectedSale.land_pieces.length
+                  : calculatedOffer.monthly_payment
                 calculatedMonths = remainingAfterAdvance > 0 ? Math.ceil(remainingAfterAdvance / monthlyPaymentAmount) : 0
               } else if (calculatedOffer.number_of_months && calculatedOffer.number_of_months > 0) {
                 // Offer has number_of_months - calculate monthly payment
@@ -2627,8 +3342,17 @@ export function SaleConfirmation() {
                   <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3">تفاصيل الحساب</h3>
                   
                   <div className="space-y-2">
+                    {confirmingAllPieces && selectedSale?.land_pieces && selectedSale.land_pieces.length > 1 && (
+                      <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                        <span className="font-medium">تأكيد جميع القطع ({selectedSale.land_pieces.length} قطع)</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
-                      <span className="text-sm sm:text-base text-gray-700">سعر القطعة:</span>
+                      <span className="text-sm sm:text-base text-gray-700">
+                        {confirmingAllPieces && selectedSale?.land_pieces && selectedSale.land_pieces.length > 1 
+                          ? 'سعر جميع القطع:' 
+                          : 'سعر القطعة:'}
+                      </span>
                       <span className="text-sm sm:text-base font-semibold text-gray-900">{formatCurrency(pricePerPiece)}</span>
                       </div>
                     
@@ -2659,7 +3383,11 @@ export function SaleConfirmation() {
                     )}
                     
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
-                      <span className="text-sm sm:text-base text-gray-700">عمولة الشركة:</span>
+                      <span className="text-sm sm:text-base text-gray-700">
+                        {confirmingAllPieces && selectedSale?.land_pieces && selectedSale.land_pieces.length > 1 
+                          ? 'عمولة الشركة (لجميع القطع):' 
+                          : 'عمولة الشركة:'}
+                      </span>
                       <span className="text-sm sm:text-base font-semibold text-blue-600">{formatCurrency(companyFeePerPiece)}</span>
                       </div>
                     
@@ -2669,7 +3397,11 @@ export function SaleConfirmation() {
                       </div>
                     
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">
-                      <span className="text-sm sm:text-base text-gray-700">المدفوع مسبقاً (العربون):</span>
+                      <span className="text-sm sm:text-base text-gray-700">
+                        {confirmingAllPieces && selectedSale?.land_pieces && selectedSale.land_pieces.length > 1 
+                          ? 'المدفوع مسبقاً (العربون - لجميع القطع):' 
+                          : 'المدفوع مسبقاً (العربون):'}
+                      </span>
                       <span className="text-sm sm:text-base font-semibold text-green-600">
                         {formatCurrency(reservationPaid ? reservationPerPiece : 0)}
                         {!reservationPaid && reservationPerPiece > 0 && (
@@ -2680,9 +3412,12 @@ export function SaleConfirmation() {
                     
                     {confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment' && calculatedOffer && (() => {
                       // Calculate full advance amount for display
+                      // For "confirm all", pricePerPiece is already the total for all pieces
                       const fullAdvanceAmount = calculatedOffer.advance_is_percentage
                         ? (pricePerPiece * calculatedOffer.advance_amount) / 100
-                        : calculatedOffer.advance_amount
+                        : (confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1
+                            ? calculatedOffer.advance_amount * selectedSale.land_pieces.length
+                            : calculatedOffer.advance_amount)
                       
                       return (
                         <>
@@ -3019,49 +3754,80 @@ export function SaleConfirmation() {
         description={
           selectedSale && selectedPiece && (() => {
             const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
-            const { pricePerPiece, reservationPerPiece, companyFeePerPiece, totalPayablePerPiece } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
+            
+            // If confirming all pieces, calculate totals for all pieces
+            let pricePerPiece = 0
+            let reservationPerPiece = 0
+            let companyFeePerPiece = 0
+            let totalPayablePerPiece = 0
+            
+            if (confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1) {
+              // Calculate totals for all pieces
+              let totalPrice = 0
+              let totalReservation = 0
+              let totalCompanyFee = 0
+              let totalPayable = 0
+              
+              selectedSale.land_pieces.forEach((piece: any) => {
+                const pieceValues = calculatePieceValues(selectedSale, piece, offerToUse)
+                totalPrice += pieceValues.pricePerPiece
+                totalReservation += pieceValues.reservationPerPiece
+                totalCompanyFee += pieceValues.companyFeePerPiece
+                totalPayable += pieceValues.totalPayablePerPiece
+              })
+              
+              pricePerPiece = totalPrice
+              reservationPerPiece = totalReservation
+              companyFeePerPiece = totalCompanyFee
+              totalPayablePerPiece = totalPayable
+            } else {
+              // Single piece calculation
+              const values = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
+              pricePerPiece = values.pricePerPiece
+              reservationPerPiece = values.reservationPerPiece
+              companyFeePerPiece = values.companyFeePerPiece
+              totalPayablePerPiece = values.totalPayablePerPiece
+            }
             
             // Check if reservation has been paid (same logic as main dialog)
             const totalReservationForSale = (selectedSale.small_advance_amount || 0)
             const reservationPaid = totalReservationForSale > 0
             
+            // Calculate amountToReceive the same way as the main dialog
+            // For installment: advanceAmount (after reservation) + companyFeePerPiece
+            // For full: totalPayablePerPiece - reservationPerPiece
             let amountToReceive = 0
-            if (pendingConfirmationType === 'full') {
-              if ((selectedSale.payment_type as any) === 'PromiseOfSale') {
-                if ((selectedSale.promise_initial_payment || 0) > 0) {
-                  // For PromiseOfSale completion (phase 2), calculate remaining amount
-                  const pieceCount = selectedSale.land_piece_ids.length
-                  const initialPaymentPerPiece = (selectedSale.promise_initial_payment || 0) / pieceCount
-                  amountToReceive = totalPayablePerPiece - reservationPerPiece - initialPaymentPerPiece
-                } else {
-                  // For PromiseOfSale initial payment (phase 1), use the amount entered by user
-                  amountToReceive = parseFloat(receivedAmount) || 0
-                  // If no amount entered yet, calculate remaining (but this shouldn't happen as field should be filled)
-                  if (amountToReceive === 0) {
-                    amountToReceive = totalPayablePerPiece - reservationPerPiece
-                  }
-                }
-              } else {
-                // For regular full payment
-                amountToReceive = totalPayablePerPiece - reservationPerPiece
-              }
-            } else if (pendingConfirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
+            
+            if (pendingConfirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
               const calculatedOffer = offerToUse
               if (calculatedOffer) {
-                // Advance is calculated from price (without commission)
-                // Commission is collected separately at confirmation
-                const advanceAmount = calculatedOffer.advance_is_percentage
+                // Calculate advance amount (same logic as main dialog)
+                const fullAdvanceAmount = calculatedOffer.advance_is_percentage
                   ? (pricePerPiece * calculatedOffer.advance_amount) / 100
-                  : calculatedOffer.advance_amount
-                // Total to receive = Advance + Commission - Reservation (if paid)
-                // Reservation is subtracted from total, not from التسبقة
-                amountToReceive = advanceAmount + companyFeePerPiece - (reservationPaid ? reservationPerPiece : 0)
+                  : (confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1
+                      ? calculatedOffer.advance_amount * selectedSale.land_pieces.length
+                      : calculatedOffer.advance_amount)
+                // Advance after reservation deduction
+                const advanceAmount = Math.max(0, fullAdvanceAmount - reservationPerPiece)
+                // Total to receive = advance (after reservation) + commission
+                amountToReceive = advanceAmount + companyFeePerPiece
+              } else {
+                // Fallback to receivedAmount if no offer
+                amountToReceive = parseFloat(receivedAmount) || 0
               }
+            } else if (pendingConfirmationType === 'full') {
+              amountToReceive = totalPayablePerPiece - reservationPerPiece
+            } else {
+              // Final fallback
+              amountToReceive = parseFloat(receivedAmount) || 0
             }
             
             // For installment sales (bigAdvance), show only the final amount (no breakdown)
             if (pendingConfirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
-              return `المستحق عند التأكيد (التسبقة + العمولة): ${formatCurrency(amountToReceive)}`
+              const allPiecesText = confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1
+                ? ` (${selectedSale.land_pieces.length} قطع)`
+                : ''
+              return `المستحق عند التأكيد (التسبقة + العمولة)${allPiecesText}: ${formatCurrency(amountToReceive)}`
             }
             
             // For other payment types, show the full confirmation message
@@ -3069,7 +3835,11 @@ export function SaleConfirmation() {
               ? ((selectedSale.promise_initial_payment || 0) > 0 ? 'استكمال الوعد بالبيع' : 'تأكيد الوعد بالبيع')
               : (pendingConfirmationType === 'full' ? 'البيع بالحاضر' : 'البيع بالتقسيط')
             
-            return `هل أنت متأكد أنك ستحصل على مبلغ ${formatCurrency(amountToReceive)} من العميل ${selectedSale.client?.name || 'غير معروف'} عند ${paymentTypeText}؟`
+            const allPiecesText = confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1
+              ? ` (${selectedSale.land_pieces.length} قطع)`
+              : ''
+            
+            return `هل أنت متأكد أنك ستحصل على مبلغ ${formatCurrency(amountToReceive)} من العميل ${selectedSale.client?.name || 'غير معروف'} عند ${paymentTypeText}${allPiecesText}؟`
           })() || ''
         }
         confirmText={confirming ? 'جاري التأكيد...' : 'نعم، متأكد'}
