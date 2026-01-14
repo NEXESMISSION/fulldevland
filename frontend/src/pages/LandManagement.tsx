@@ -1411,13 +1411,13 @@ export function LandManagement() {
         
         // Only insert if we have pieces to create offers for
         if (pieceOffersToCreate.length > 0) {
-          const { error: pieceOffersError } = await supabase
-            .from('payment_offers')
-            .insert(pieceOffersToCreate)
-          
-          if (pieceOffersError) {
-            console.error('Error syncing offers to pieces:', pieceOffersError)
-            // Don't throw - batch offer was saved successfully
+        const { error: pieceOffersError } = await supabase
+          .from('payment_offers')
+          .insert(pieceOffersToCreate)
+        
+        if (pieceOffersError) {
+          console.error('Error syncing offers to pieces:', pieceOffersError)
+          // Don't throw - batch offer was saved successfully
           }
         }
       }

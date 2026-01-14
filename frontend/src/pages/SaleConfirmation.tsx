@@ -78,6 +78,7 @@ export function SaleConfirmation() {
   const [contractEditors, setContractEditors] = useState<Array<{ id: string; type: string; name: string; place: string }>>([])
   const [selectedContractEditorId, setSelectedContractEditorId] = useState<string>('')
   const [confirmingAllPieces, setConfirmingAllPieces] = useState(false)
+  const [keepPiecesTogether, setKeepPiecesTogether] = useState(true) // Default to keeping pieces together
   
   // Client details dialog
   const [clientDetailsOpen, setClientDetailsOpen] = useState(false)
@@ -432,7 +433,7 @@ export function SaleConfirmation() {
         updates.promise_completion_date = editForm.promise_completion_date || null
       }
       
-      if (pieceCount === 1) {
+      if (pieceCount === 1 || (keepPiecesTogether && confirmingAllPieces && pieceCount > 1)) {
         // Single piece - update price directly
         const pieceCost = editingPiece.purchase_cost || 0
         const newTotalPrice = newPricePerPiece
@@ -1521,7 +1522,7 @@ export function SaleConfirmation() {
       const totalPaid = (paymentsData || []).reduce((sum, p) => sum + (parseFloat(p.amount_paid.toString()) || 0), 0)
       const paidPerPiece = totalPaid / pieceCount
       
-      if (pieceCount === 1) {
+      if (pieceCount === 1 || (keepPiecesTogether && confirmingAllPieces && pieceCount > 1)) {
         // Only one piece - cancel the entire sale
         const { error: cancelError } = await supabase
           .from('sales')
@@ -1766,7 +1767,7 @@ export function SaleConfirmation() {
           }
         }
 
-      if (pieceCount === 1) {
+      if (pieceCount === 1 || (keepPiecesTogether && confirmingAllPieces && pieceCount > 1)) {
         // Single piece - update the sale directly
         const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
         const { feePercentage } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
@@ -1989,8 +1990,8 @@ export function SaleConfirmation() {
                       typeof offer.is_default === 'boolean'
                   })
                   .map((offer: any) => ({
-                    land_batch_id: null, // Piece-specific offers don't reference batch
-                    land_piece_id: selectedPiece.id,
+                  land_batch_id: null, // Piece-specific offers don't reference batch
+                  land_piece_id: selectedPiece.id,
                     price_per_m2_installment: offer.price_per_m2_installment ?? null,
                     company_fee_percentage: offer.company_fee_percentage ?? 0,
                     advance_amount: offer.advance_amount ?? 0,
@@ -2000,18 +2001,18 @@ export function SaleConfirmation() {
                     offer_name: offer.offer_name ?? null,
                     notes: offer.notes ?? null,
                     is_default: offer.is_default ?? false,
-                    created_by: user?.id || null,
-                  }))
+                  created_by: user?.id || null,
+                }))
 
                 // Only insert if there are valid offers to create
                 if (pieceOffersToCreate.length > 0) {
-                  const { error: offersError } = await supabase
-                    .from('payment_offers')
-                    .insert(pieceOffersToCreate)
-                  
-                  if (offersError) {
-                    console.error('Error creating piece offers:', offersError)
-                    // Don't throw - piece status update was successful, offers are secondary
+                const { error: offersError } = await supabase
+                  .from('payment_offers')
+                  .insert(pieceOffersToCreate)
+                
+                if (offersError) {
+                  console.error('Error creating piece offers:', offersError)
+                  // Don't throw - piece status update was successful, offers are secondary
                   }
                 }
               }
@@ -2095,8 +2096,8 @@ export function SaleConfirmation() {
             .eq('id', selectedSale.id)
           if (retryError) throw retryError
         }
-      } else {
-        // Multiple pieces - split the sale
+      } else if (!keepPiecesTogether || !confirmingAllPieces) {
+        // Multiple pieces - split the sale (only if not keeping pieces together or not confirming all)
         const costPerPiece = selectedSale.total_purchase_cost / pieceCount
         const profitPerPiece = selectedSale.profit_margin / pieceCount
         const { feePercentage: calculatedFeePercentage } = calculatePieceValues(selectedSale, selectedPiece)
@@ -2471,9 +2472,9 @@ export function SaleConfirmation() {
         }
       }
 
-      // If confirming all pieces, confirm each remaining piece automatically
+      // If confirming all pieces and NOT keeping them together, confirm each remaining piece automatically
       // Use pieceCount to check, as it's more reliable than land_pieces array
-      if (confirmingAllPieces && pieceCount > 1) {
+      if (confirmingAllPieces && pieceCount > 1 && !keepPiecesTogether) {
         // Wait a moment for the first piece confirmation to complete and sale to be updated
         await new Promise(resolve => setTimeout(resolve, 200))
         console.log(`[CONFIRM ALL] Starting confirmation loop for ${pieceCount} pieces`)
@@ -3622,8 +3623,27 @@ export function SaleConfirmation() {
                   
                   <div className="space-y-2">
                     {confirmingAllPieces && selectedSale?.land_pieces && selectedSale.land_pieces.length > 1 && (
-                      <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                      <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded space-y-2">
+                        <div className="text-xs text-blue-800">
                         <span className="font-medium">تأكيد جميع القطع ({selectedSale.land_pieces.length} قطع)</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <input
+                            type="checkbox"
+                            id="keepPiecesTogether"
+                            checked={keepPiecesTogether}
+                            onChange={(e) => setKeepPiecesTogether(e.target.checked)}
+                            className="h-4 w-4 text-blue-600 rounded"
+                          />
+                          <label htmlFor="keepPiecesTogether" className="text-xs text-blue-800 cursor-pointer">
+                            الاحتفاظ بجميع القطع في صفقة واحدة (مثبت معاً)
+                          </label>
+                        </div>
+                        {!keepPiecesTogether && (
+                          <div className="text-xs text-orange-700 bg-orange-50 p-2 rounded mt-1">
+                            ⚠️ سيتم إنشاء صفقة منفصلة لكل قطعة
+                          </div>
+                        )}
                       </div>
                     )}
                     <div className="flex justify-between items-center py-1.5 border-b border-gray-200">

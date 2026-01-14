@@ -17,7 +17,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { showNotification } from '@/components/ui/notification'
-import { Phone, Plus, Calendar as CalendarIcon, CheckCircle2, XCircle, Clock, MapPin } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { Phone, Plus, Calendar as CalendarIcon, CheckCircle2, XCircle, Clock, MapPin, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import type { LandBatch } from '@/types/database'
 
@@ -38,8 +39,9 @@ interface PhoneCall {
 type DateFilter = 'today' | 'week' | 'all' | 'custom'
 
 export function PhoneCalls() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const { t, language } = useLanguage()
+  const isOwner = profile?.role === 'Owner'
   const [phoneCalls, setPhoneCalls] = useState<PhoneCall[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -58,11 +60,36 @@ export function PhoneCalls() {
 
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
   const [statusNote, setStatusNote] = useState('')
+  const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date())
+  const [deletingCallId, setDeletingCallId] = useState<string | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [callToDelete, setCallToDelete] = useState<PhoneCall | null>(null)
 
   useEffect(() => {
     fetchPhoneCalls()
     fetchBatches()
-  }, [dateFilter, selectedDate])
+    
+    // Set up realtime subscription for phone calls
+    const phoneCallsChannel = supabase
+      .channel('phone-calls-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'phone_calls',
+        },
+        () => {
+          // Refresh phone calls when any change occurs
+          fetchPhoneCalls()
+        }
+      )
+      .subscribe()
+    
+    return () => {
+      supabase.removeChannel(phoneCallsChannel)
+    }
+  }, [currentCalendarDate]) // Fetch when calendar month changes
 
   const fetchBatches = async () => {
     try {
@@ -81,39 +108,22 @@ export function PhoneCalls() {
   const fetchPhoneCalls = async () => {
     try {
       setLoading(true)
+      
+      // For calendar view, fetch all calls for the displayed month
+      const calendarYear = currentCalendarDate.getFullYear()
+      const calendarMonth = currentCalendarDate.getMonth()
+      const monthStart = new Date(calendarYear, calendarMonth, 1)
+      const monthEnd = new Date(calendarYear, calendarMonth + 1, 0, 23, 59, 59, 999)
+      
       let query = supabase
         .from('phone_calls')
         .select(`
           *,
           land_batch:land_batches(id, name)
         `)
+        .gte('rendezvous_time', monthStart.toISOString())
+        .lte('rendezvous_time', monthEnd.toISOString())
         .order('rendezvous_time', { ascending: true })
-
-      // Apply date filter
-      const now = new Date()
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      
-      if (dateFilter === 'today') {
-        const tomorrow = new Date(today)
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        query = query
-          .gte('rendezvous_time', today.toISOString())
-          .lt('rendezvous_time', tomorrow.toISOString())
-      } else if (dateFilter === 'week') {
-        const nextWeek = new Date(today)
-        nextWeek.setDate(nextWeek.getDate() + 7)
-        query = query
-          .gte('rendezvous_time', today.toISOString())
-          .lt('rendezvous_time', nextWeek.toISOString())
-      } else if (dateFilter === 'custom' && selectedDate) {
-        const startDate = new Date(selectedDate)
-        startDate.setHours(0, 0, 0, 0)
-        const endDate = new Date(selectedDate)
-        endDate.setHours(23, 59, 59, 999)
-        query = query
-          .gte('rendezvous_time', startDate.toISOString())
-          .lte('rendezvous_time', endDate.toISOString())
-      }
 
       const { data, error } = await query
 
@@ -190,6 +200,35 @@ export function PhoneCalls() {
     }
   }
 
+  const handleDeleteCall = (call: PhoneCall) => {
+    setCallToDelete(call)
+    setDeleteConfirmOpen(true)
+  }
+
+  const confirmDeleteCall = async () => {
+    if (!callToDelete) return
+
+    setDeletingCallId(callToDelete.id)
+    try {
+      const { error } = await supabase
+        .from('phone_calls')
+        .delete()
+        .eq('id', callToDelete.id)
+
+      if (error) throw error
+
+      showNotification('تم حذف الموعد بنجاح', 'success')
+      setDeleteConfirmOpen(false)
+      setCallToDelete(null)
+      fetchPhoneCalls()
+    } catch (err) {
+      console.error('Error deleting phone call:', err)
+      showNotification('حدث خطأ أثناء حذف الموعد', 'error')
+    } finally {
+      setDeletingCallId(null)
+    }
+  }
+
   // Group calls by date for calendar view
   const callsByDate = useMemo(() => {
     const grouped: Record<string, PhoneCall[]> = {}
@@ -246,6 +285,23 @@ export function PhoneCalls() {
     custom: t('phoneCalls.customDate'),
   }
 
+  const monthNames = [
+    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+  ]
+
+  const goToPreviousMonth = () => {
+    setCurrentCalendarDate(new Date(currentYear, currentMonth - 1, 1))
+  }
+
+  const goToNextMonth = () => {
+    setCurrentCalendarDate(new Date(currentYear, currentMonth + 1, 1))
+  }
+
+  const goToToday = () => {
+    setCurrentCalendarDate(new Date())
+  }
+
   return (
     <div className="space-y-6 p-4 sm:p-6">
       {/* Header */}
@@ -263,9 +319,40 @@ export function PhoneCalls() {
       {/* Calendar View */}
       <Card className="shadow-lg">
         <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
-          <div className="flex items-center justify-center gap-2">
-            <CalendarIcon className="h-5 w-5 text-primary" />
-            <CardTitle className="text-xl font-bold">{t('phoneCalls.calendar')}</CardTitle>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-center gap-2">
+              <CalendarIcon className="h-5 w-5 text-primary" />
+              <CardTitle className="text-xl font-bold">{t('phoneCalls.calendar')}</CardTitle>
+            </div>
+            <div className="flex items-center justify-center gap-2 sm:gap-3">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={goToToday}
+                className="text-xs sm:text-sm px-3 sm:px-4 h-9 sm:h-10 shrink-0 bg-white hover:bg-gray-50 shadow-sm"
+              >
+                اليوم
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={goToPreviousMonth}
+                className="h-9 w-9 sm:h-10 sm:w-10 p-0 flex items-center justify-center shrink-0 bg-white hover:bg-gray-50 shadow-sm"
+              >
+                <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+              </Button>
+              <span className="text-base sm:text-lg font-bold text-center px-3 sm:px-5 min-w-[140px] sm:min-w-[200px] bg-white rounded-lg py-2 shadow-sm">
+                {monthNames[currentMonth]} {currentYear}
+              </span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={goToNextMonth}
+                className="h-9 w-9 sm:h-10 sm:w-10 p-0 flex items-center justify-center shrink-0 bg-white hover:bg-gray-50 shadow-sm"
+              >
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-4 sm:p-6">
@@ -464,54 +551,68 @@ export function PhoneCalls() {
                             </p>
                           )}
                         </div>
-                        {call.status === 'pending' ? (
-                          <div className="flex gap-2 w-full sm:w-auto">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setStatusNote('')
-                                handleUpdateStatus(call.id, 'done')
-                              }}
-                              disabled={updatingStatus === call.id}
-                              className="flex-1 sm:flex-none bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-                            >
-                              <CheckCircle2 className="h-4 w-4 ml-1" />
-                              {t('phoneCalls.done')}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const note = prompt(t('phoneCalls.addNote'))
-                                if (note !== null) {
-                                  setStatusNote(note)
-                                  handleUpdateStatus(call.id, 'not_done')
-                                }
-                              }}
-                              disabled={updatingStatus === call.id}
-                              className="flex-1 sm:flex-none bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
-                            >
-                              <XCircle className="h-4 w-4 ml-1" />
-                              {t('phoneCalls.notDone')}
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            {call.status === 'done' && (
-                              <Badge variant="default" className="bg-green-100 text-green-700 border-green-200">
-                                <CheckCircle2 className="h-3 w-3 ml-1" />
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                          {call.status === 'pending' ? (
+                            <div className="flex gap-2 w-full sm:w-auto">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setStatusNote('')
+                                  handleUpdateStatus(call.id, 'done')
+                                }}
+                                disabled={updatingStatus === call.id}
+                                className="flex-1 sm:flex-none bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                              >
+                                <CheckCircle2 className="h-4 w-4 ml-1" />
                                 {t('phoneCalls.done')}
-                              </Badge>
-                            )}
-                            {call.status === 'not_done' && (
-                              <Badge variant="destructive" className="bg-red-100 text-red-700 border-red-200">
-                                <XCircle className="h-3 w-3 ml-1" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const note = prompt(t('phoneCalls.addNote'))
+                                  if (note !== null) {
+                                    setStatusNote(note)
+                                    handleUpdateStatus(call.id, 'not_done')
+                                  }
+                                }}
+                                disabled={updatingStatus === call.id}
+                                className="flex-1 sm:flex-none bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+                              >
+                                <XCircle className="h-4 w-4 ml-1" />
                                 {t('phoneCalls.notDone')}
-                              </Badge>
-                            )}
-                          </div>
-                        )}
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              {call.status === 'done' && (
+                                <Badge variant="default" className="bg-green-100 text-green-700 border-green-200">
+                                  <CheckCircle2 className="h-3 w-3 ml-1" />
+                                  {t('phoneCalls.done')}
+                                </Badge>
+                              )}
+                              {call.status === 'not_done' && (
+                                <Badge variant="destructive" className="bg-red-100 text-red-700 border-red-200">
+                                  <XCircle className="h-3 w-3 ml-1" />
+                                  {t('phoneCalls.notDone')}
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                          {isOwner && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteCall(call)}
+                              disabled={deletingCallId === call.id}
+                              className="w-full sm:w-auto"
+                            >
+                              <Trash2 className="h-4 w-4 ml-1" />
+                              {deletingCallId === call.id ? 'جاري الحذف...' : 'حذف'}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -531,6 +632,23 @@ export function PhoneCalls() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        onConfirm={confirmDeleteCall}
+        title="حذف الموعد"
+        description={
+          callToDelete
+            ? `هل أنت متأكد من حذف موعد ${callToDelete.name} (${callToDelete.phone_number})؟`
+            : ''
+        }
+        confirmText="نعم، حذف"
+        cancelText="إلغاء"
+        variant="destructive"
+        disabled={deletingCallId !== null}
+      />
     </div>
   )
 }

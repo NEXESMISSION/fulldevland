@@ -105,6 +105,7 @@ export function Calendar() {
     }
   }
 
+
   // Group rendezvous by date
   const rendezvousByDate = useMemo(() => {
     const grouped: Record<string, Rendezvous[]> = {}
