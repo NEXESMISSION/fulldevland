@@ -320,9 +320,9 @@ export function PhoneCalls() {
       <Card className="shadow-lg">
         <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
           <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-center gap-2">
-              <CalendarIcon className="h-5 w-5 text-primary" />
-              <CardTitle className="text-xl font-bold">{t('phoneCalls.calendar')}</CardTitle>
+          <div className="flex items-center justify-center gap-2">
+            <CalendarIcon className="h-5 w-5 text-primary" />
+            <CardTitle className="text-xl font-bold">{t('phoneCalls.calendar')}</CardTitle>
             </div>
             <div className="flex items-center justify-center gap-2 sm:gap-3">
               <Button 
@@ -552,54 +552,54 @@ export function PhoneCalls() {
                           )}
                         </div>
                         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                          {call.status === 'pending' ? (
-                            <div className="flex gap-2 w-full sm:w-auto">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  setStatusNote('')
-                                  handleUpdateStatus(call.id, 'done')
-                                }}
-                                disabled={updatingStatus === call.id}
-                                className="flex-1 sm:flex-none bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-                              >
-                                <CheckCircle2 className="h-4 w-4 ml-1" />
+                        {call.status === 'pending' ? (
+                          <div className="flex gap-2 w-full sm:w-auto">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setStatusNote('')
+                                handleUpdateStatus(call.id, 'done')
+                              }}
+                              disabled={updatingStatus === call.id}
+                              className="flex-1 sm:flex-none bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                            >
+                              <CheckCircle2 className="h-4 w-4 ml-1" />
+                              {t('phoneCalls.done')}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const note = prompt(t('phoneCalls.addNote'))
+                                if (note !== null) {
+                                  setStatusNote(note)
+                                  handleUpdateStatus(call.id, 'not_done')
+                                }
+                              }}
+                              disabled={updatingStatus === call.id}
+                              className="flex-1 sm:flex-none bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+                            >
+                              <XCircle className="h-4 w-4 ml-1" />
+                              {t('phoneCalls.notDone')}
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            {call.status === 'done' && (
+                              <Badge variant="default" className="bg-green-100 text-green-700 border-green-200">
+                                <CheckCircle2 className="h-3 w-3 ml-1" />
                                 {t('phoneCalls.done')}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  const note = prompt(t('phoneCalls.addNote'))
-                                  if (note !== null) {
-                                    setStatusNote(note)
-                                    handleUpdateStatus(call.id, 'not_done')
-                                  }
-                                }}
-                                disabled={updatingStatus === call.id}
-                                className="flex-1 sm:flex-none bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
-                              >
-                                <XCircle className="h-4 w-4 ml-1" />
+                              </Badge>
+                            )}
+                            {call.status === 'not_done' && (
+                              <Badge variant="destructive" className="bg-red-100 text-red-700 border-red-200">
+                                <XCircle className="h-3 w-3 ml-1" />
                                 {t('phoneCalls.notDone')}
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              {call.status === 'done' && (
-                                <Badge variant="default" className="bg-green-100 text-green-700 border-green-200">
-                                  <CheckCircle2 className="h-3 w-3 ml-1" />
-                                  {t('phoneCalls.done')}
-                                </Badge>
-                              )}
-                              {call.status === 'not_done' && (
-                                <Badge variant="destructive" className="bg-red-100 text-red-700 border-red-200">
-                                  <XCircle className="h-3 w-3 ml-1" />
-                                  {t('phoneCalls.notDone')}
-                                </Badge>
-                              )}
-                            </div>
-                          )}
+                              </Badge>
+                            )}
+                          </div>
+                        )}
                           {isOwner && (
                             <Button
                               variant="destructive"

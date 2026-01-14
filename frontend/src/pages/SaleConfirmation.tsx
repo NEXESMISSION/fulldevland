@@ -1856,44 +1856,27 @@ export function SaleConfirmation() {
             endDate.setMonth(endDate.getMonth() + installments - 1)
             updates.installment_end_date = endDate.toISOString().split('T')[0]
             
-            // First, check if installments already exist and delete them
+            // Get existing installments to see what we're working with
             const { data: existingInstallments } = await supabase
               .from('installments')
-              .select('id')
+              .select('id, installment_number')
               .eq('sale_id', selectedSale.id)
             
+            // Try to delete existing installments (non-blocking - if it fails, we'll use UPSERT)
             if (existingInstallments && existingInstallments.length > 0) {
-              // Delete existing installments
+              // Try to delete, but don't fail if it doesn't work
               const { error: deleteError } = await supabase
                 .from('installments')
                 .delete()
                 .eq('sale_id', selectedSale.id)
               
               if (deleteError) {
-                console.warn('Error deleting existing installments:', deleteError)
-                // If delete fails due to foreign key, we'll try to continue anyway
-                if (deleteError.code !== '23503') {
-                  // Not a foreign key error, might be a real problem
-                  console.error('Cannot delete installments:', deleteError)
-                }
-              }
-              
-              // Wait for delete to complete
-              await new Promise(resolve => setTimeout(resolve, 300))
-              
-              // Verify deletion
-              const { data: verifyDelete } = await supabase
-                .from('installments')
-                .select('id')
-                .eq('sale_id', selectedSale.id)
-              
-              if (verifyDelete && verifyDelete.length > 0) {
-                // Still exists, try one more time with longer wait
-                await supabase
-                  .from('installments')
-                  .delete()
-                  .eq('sale_id', selectedSale.id)
+                console.warn('Could not delete existing installments, will use UPSERT instead:', deleteError.message)
+                // Wait a bit in case deletion is still processing
                 await new Promise(resolve => setTimeout(resolve, 500))
+              } else {
+                // Wait for delete to propagate
+                await new Promise(resolve => setTimeout(resolve, 300))
               }
             }
             
@@ -1916,27 +1899,118 @@ export function SaleConfirmation() {
               })
             }
             
-            // Insert installments
-            const { error: installmentsError } = await supabase.from('installments').insert(installmentsToCreate as any)
-            if (installmentsError) {
-              // If it's still a duplicate key error, try one more delete and retry
-              if (installmentsError.code === '23505' || installmentsError.message?.includes('duplicate') || installmentsError.message?.includes('unique')) {
-                console.warn('Duplicate installments still detected after delete, attempting final cleanup')
-                // Final attempt: delete all and wait longer
-                await supabase
-                  .from('installments')
-                  .delete()
-                  .eq('sale_id', selectedSale.id)
-                await new Promise(resolve => setTimeout(resolve, 500))
-                
-                const { error: finalRetryError } = await supabase.from('installments').insert(installmentsToCreate as any)
-                if (finalRetryError) {
-                  console.error('Final retry failed:', finalRetryError)
-                  throw new Error(`فشل في إنشاء الأقساط: ${finalRetryError.message || 'خطأ في قاعدة البيانات'}`)
-                }
-              } else {
-                throw installmentsError
+            // Insert or update installments - optimized batch processing
+            // Fetch all existing installments for this sale in one query
+            const { data: allExistingInstallments } = await supabase
+              .from('installments')
+              .select('id, installment_number, amount_paid, stacked_amount')
+              .eq('sale_id', selectedSale.id)
+            
+            // Create a map of existing installments by installment_number for fast lookup
+            const existingMap = new Map<number, { id: string; amount_paid: number; stacked_amount: number }>()
+            if (allExistingInstallments) {
+              for (const existing of allExistingInstallments) {
+                existingMap.set(existing.installment_number, {
+                  id: existing.id,
+                  amount_paid: existing.amount_paid ?? 0,
+                  stacked_amount: existing.stacked_amount ?? 0,
+                })
               }
+            }
+            
+            // Separate installments into updates and inserts
+            const toUpdate: Array<{ id: string; data: any }> = []
+            const toInsert: any[] = []
+            
+            for (const installment of installmentsToCreate) {
+              const existing = existingMap.get(installment.installment_number)
+              if (existing) {
+                // Add to update list
+                toUpdate.push({
+                  id: existing.id,
+                  data: {
+                    amount_due: installment.amount_due,
+                    due_date: installment.due_date,
+                    status: installment.status,
+                    amount_paid: existing.amount_paid,
+                    stacked_amount: existing.stacked_amount,
+                  }
+                })
+              } else {
+                // Add to insert list
+                toInsert.push(installment)
+              }
+            }
+            
+            // Batch update existing installments
+            if (toUpdate.length > 0) {
+              // Update each installment (Supabase doesn't support batch update by different IDs easily)
+              for (const item of toUpdate) {
+                const { error: updateError } = await supabase
+                  .from('installments')
+                  .update(item.data)
+                  .eq('id', item.id)
+                
+                if (updateError) {
+                  throw new Error(`فشل في تحديث الأقساط: ${updateError.message || 'خطأ في قاعدة البيانات'}`)
+                }
+              }
+            }
+            
+            // Batch insert new installments
+            if (toInsert.length > 0) {
+              const { error: insertError } = await supabase
+                .from('installments')
+                .insert(toInsert)
+              
+              if (insertError) {
+                // If batch insert fails, try individual inserts with conflict handling
+                for (const installment of toInsert) {
+                  const { error: singleInsertError } = await supabase
+                    .from('installments')
+                    .insert([installment])
+                  
+                  if (singleInsertError) {
+                    // Check if it exists now (race condition)
+                    const { data: retryExisting } = await supabase
+                      .from('installments')
+                      .select('id, amount_paid, stacked_amount')
+                      .eq('sale_id', installment.sale_id)
+                      .eq('installment_number', installment.installment_number)
+                      .maybeSingle()
+                    
+                    if (retryExisting) {
+                      // Update it
+                      const { error: retryUpdateError } = await supabase
+                        .from('installments')
+                        .update({
+                          amount_due: installment.amount_due,
+                          due_date: installment.due_date,
+                          status: installment.status,
+                          amount_paid: retryExisting.amount_paid ?? 0,
+                          stacked_amount: retryExisting.stacked_amount ?? 0,
+                        })
+                        .eq('id', retryExisting.id)
+                      
+                      if (retryUpdateError) {
+                        throw new Error(`فشل في إنشاء/تحديث القسط ${installment.installment_number}: ${retryUpdateError.message || 'خطأ في قاعدة البيانات'}`)
+                      }
+                    } else {
+                      throw new Error(`فشل في إنشاء القسط ${installment.installment_number}: ${singleInsertError.message || 'خطأ في قاعدة البيانات'}`)
+                    }
+                  }
+                }
+              }
+            }
+            
+            // Clean up any extra installments that shouldn't exist (if number of installments decreased)
+            if (existingInstallments && existingInstallments.length > installments) {
+              // Delete installments with numbers greater than the new count
+              await supabase
+                .from('installments')
+                .delete()
+                .eq('sale_id', selectedSale.id)
+                .gt('installment_number', installments)
             }
           }
         }
@@ -2330,43 +2404,27 @@ export function SaleConfirmation() {
 
         // Create installments schedule if needed (for bigAdvance with installments)
         if (confirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment' && newSaleData.number_of_installments) {
-          // First, check if installments already exist and delete them
-          const { data: existingInstallments, error: checkError } = await supabase
+          // Get existing installments to see what we're working with
+          const { data: existingInstallments } = await supabase
             .from('installments')
-            .select('id')
+            .select('id, installment_number')
             .eq('sale_id', newSale.id)
           
+          // Try to delete existing installments (non-blocking - if it fails, we'll use UPSERT)
           if (existingInstallments && existingInstallments.length > 0) {
-            // Delete existing installments
+            // Try to delete, but don't fail if it doesn't work
             const { error: deleteError } = await supabase
               .from('installments')
               .delete()
               .eq('sale_id', newSale.id)
             
             if (deleteError) {
-              console.error('Error deleting existing installments:', deleteError)
-              // If delete fails due to foreign key, we'll try to update instead
-              if (deleteError.code !== '23503') {
-                throw new Error(`فشل في حذف الأقساط الموجودة: ${deleteError.message}`)
-              }
-            }
-            
-            // Wait for delete to complete
-            await new Promise(resolve => setTimeout(resolve, 300))
-            
-            // Verify deletion
-            const { data: verifyDelete } = await supabase
-              .from('installments')
-              .select('id')
-              .eq('sale_id', newSale.id)
-            
-            if (verifyDelete && verifyDelete.length > 0) {
-              // Still exists, try one more time with longer wait
-              await supabase
-                .from('installments')
-                .delete()
-                .eq('sale_id', newSale.id)
+              console.warn('Could not delete existing installments, will use UPSERT instead:', deleteError.message)
+              // Wait a bit in case deletion is still processing
               await new Promise(resolve => setTimeout(resolve, 500))
+            } else {
+              // Wait for delete to propagate
+              await new Promise(resolve => setTimeout(resolve, 300))
             }
           }
           
@@ -2390,27 +2448,118 @@ export function SaleConfirmation() {
             })
           }
           
-          // Insert installments
-          const { error: installmentsError } = await supabase.from('installments').insert(installmentsToCreate as any)
-          if (installmentsError) {
-            // If it's still a duplicate key error, try one more delete and retry
-            if (installmentsError.code === '23505' || installmentsError.message?.includes('duplicate') || installmentsError.message?.includes('unique')) {
-              console.warn('Duplicate installments still detected after delete, attempting final cleanup')
-              // Final attempt: delete all and wait longer
-              await supabase
-                .from('installments')
-                .delete()
-                .eq('sale_id', newSale.id)
-              await new Promise(resolve => setTimeout(resolve, 500))
-              
-              const { error: finalRetryError } = await supabase.from('installments').insert(installmentsToCreate as any)
-              if (finalRetryError) {
-                console.error('Final retry failed:', finalRetryError)
-                throw new Error(`فشل في إنشاء الأقساط: ${finalRetryError.message || 'خطأ في قاعدة البيانات'}`)
-              }
-            } else {
-              throw installmentsError
+          // Insert or update installments - optimized batch processing
+          // Fetch all existing installments for this sale in one query
+          const { data: allExistingInstallments } = await supabase
+            .from('installments')
+            .select('id, installment_number, amount_paid, stacked_amount')
+            .eq('sale_id', newSale.id)
+          
+          // Create a map of existing installments by installment_number for fast lookup
+          const existingMap = new Map<number, { id: string; amount_paid: number; stacked_amount: number }>()
+          if (allExistingInstallments) {
+            for (const existing of allExistingInstallments) {
+              existingMap.set(existing.installment_number, {
+                id: existing.id,
+                amount_paid: existing.amount_paid ?? 0,
+                stacked_amount: existing.stacked_amount ?? 0,
+              })
             }
+          }
+          
+          // Separate installments into updates and inserts
+          const toUpdate: Array<{ id: string; data: any }> = []
+          const toInsert: any[] = []
+          
+          for (const installment of installmentsToCreate) {
+            const existing = existingMap.get(installment.installment_number)
+            if (existing) {
+              // Add to update list
+              toUpdate.push({
+                id: existing.id,
+                data: {
+                  amount_due: installment.amount_due,
+                  due_date: installment.due_date,
+                  status: installment.status,
+                  amount_paid: existing.amount_paid,
+                  stacked_amount: existing.stacked_amount,
+                }
+              })
+            } else {
+              // Add to insert list
+              toInsert.push(installment)
+            }
+          }
+          
+          // Batch update existing installments
+          if (toUpdate.length > 0) {
+            // Update each installment (Supabase doesn't support batch update by different IDs easily)
+            for (const item of toUpdate) {
+              const { error: updateError } = await supabase
+                .from('installments')
+                .update(item.data)
+                .eq('id', item.id)
+              
+              if (updateError) {
+                throw new Error(`فشل في تحديث الأقساط: ${updateError.message || 'خطأ في قاعدة البيانات'}`)
+              }
+            }
+          }
+          
+          // Batch insert new installments
+          if (toInsert.length > 0) {
+            const { error: insertError } = await supabase
+              .from('installments')
+              .insert(toInsert)
+            
+            if (insertError) {
+              // If batch insert fails, try individual inserts with conflict handling
+              for (const installment of toInsert) {
+                const { error: singleInsertError } = await supabase
+                  .from('installments')
+                  .insert([installment])
+                
+                if (singleInsertError) {
+                  // Check if it exists now (race condition)
+                  const { data: retryExisting } = await supabase
+                    .from('installments')
+                    .select('id, amount_paid, stacked_amount')
+                    .eq('sale_id', installment.sale_id)
+                    .eq('installment_number', installment.installment_number)
+                    .maybeSingle()
+                  
+                  if (retryExisting) {
+                    // Update it
+                    const { error: retryUpdateError } = await supabase
+                      .from('installments')
+                      .update({
+                        amount_due: installment.amount_due,
+                        due_date: installment.due_date,
+                        status: installment.status,
+                        amount_paid: retryExisting.amount_paid ?? 0,
+                        stacked_amount: retryExisting.stacked_amount ?? 0,
+                      })
+                      .eq('id', retryExisting.id)
+                    
+                    if (retryUpdateError) {
+                      throw new Error(`فشل في إنشاء/تحديث القسط ${installment.installment_number}: ${retryUpdateError.message || 'خطأ في قاعدة البيانات'}`)
+                    }
+                  } else {
+                    throw new Error(`فشل في إنشاء القسط ${installment.installment_number}: ${singleInsertError.message || 'خطأ في قاعدة البيانات'}`)
+                  }
+                }
+              }
+            }
+          }
+          
+          // Clean up any extra installments that shouldn't exist (if number of installments decreased)
+          if (existingInstallments && existingInstallments.length > newSaleData.number_of_installments) {
+            // Delete installments with numbers greater than the new count
+            await supabase
+              .from('installments')
+              .delete()
+              .eq('sale_id', newSale.id)
+              .gt('installment_number', newSaleData.number_of_installments)
           }
         }
 
