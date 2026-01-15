@@ -1612,43 +1612,80 @@ export function Financial() {
       
       const pieceIds = payment.sale?.land_piece_ids || sale.land_piece_ids || []
       const pieces = landPieces.filter(p => pieceIds.includes(p.id))
-      if (pieces.length === 0) return
-      
-      // Get location from pieces
-      const location = pieces[0]?.land_batch?.location || null
-      const place = location || 'غير محدد'
-      
-      const pieceCount = pieces.length
-      const amountPerPiece = payment.amount_paid / pieceCount
-      
-      // Add payment amount based on type
-      switch (payment.payment_type) {
-        case 'Installment':
-          addToPlace(place, payment.amount_paid, 'installment')
-          break
-        case 'SmallAdvance':
-          // Always add SmallAdvance payments (for both confirmed and unconfirmed sales)
-          // Only skip if already counted from sales table
-          if (!(sale.small_advance_amount && sale.small_advance_amount > 0)) {
-            addToPlace(place, payment.amount_paid, 'smallAdvance')
-          }
-          break
-        case 'BigAdvance':
-          // Only add if not already counted from sales table
-          if (!(sale.big_advance_amount && sale.big_advance_amount > 0)) {
-            addToPlace(place, payment.amount_paid, 'bigAdvance')
-          }
-          break
-        case 'Full':
-          addToPlace(place, payment.amount_paid, 'full')
-          break
-        case 'InitialPayment':
-        case 'Partial':
-          if ((sale as any).payment_type === 'PromiseOfSale') {
-            addToPlace(place, payment.amount_paid, 'promiseOfSale')
-          }
-          break
+      if (pieces.length === 0) {
+        // If pieces not found, add to "غير محدد" place
+        const place = 'غير محدد'
+        switch (payment.payment_type) {
+          case 'Installment':
+            addToPlace(place, payment.amount_paid, 'installment')
+            break
+          case 'SmallAdvance':
+            if (!(sale.small_advance_amount && sale.small_advance_amount > 0)) {
+              addToPlace(place, payment.amount_paid, 'smallAdvance')
+            }
+            break
+          case 'BigAdvance':
+            if (!(sale.big_advance_amount && sale.big_advance_amount > 0)) {
+              addToPlace(place, payment.amount_paid, 'bigAdvance')
+            }
+            break
+          case 'Full':
+            addToPlace(place, payment.amount_paid, 'full')
+            break
+          case 'InitialPayment':
+          case 'Partial':
+            if ((sale as any).payment_type === 'PromiseOfSale') {
+              addToPlace(place, payment.amount_paid, 'promiseOfSale')
+            }
+            break
+        }
+        return
       }
+      
+      // Group pieces by location to distribute payments across multiple locations
+      const locationGroups = new Map<string, number>() // location -> piece count
+      pieces.forEach(piece => {
+        const location = piece.land_batch?.location || null
+        const place = location || 'غير محدد'
+        locationGroups.set(place, (locationGroups.get(place) || 0) + 1)
+      })
+      
+      const totalPieceCount = pieces.length
+      
+      // Distribute payment across locations by piece count
+      locationGroups.forEach((pieceCountInLocation, place) => {
+        const ratio = pieceCountInLocation / totalPieceCount
+        const amountForLocation = payment.amount_paid * ratio
+        
+        // Add payment amount based on type
+        switch (payment.payment_type) {
+          case 'Installment':
+            addToPlace(place, amountForLocation, 'installment')
+            break
+          case 'SmallAdvance':
+            // Always add SmallAdvance payments (for both confirmed and unconfirmed sales)
+            // Only skip if already counted from sales table
+            if (!(sale.small_advance_amount && sale.small_advance_amount > 0)) {
+              addToPlace(place, amountForLocation, 'smallAdvance')
+            }
+            break
+          case 'BigAdvance':
+            // Only add if not already counted from sales table
+            if (!(sale.big_advance_amount && sale.big_advance_amount > 0)) {
+              addToPlace(place, amountForLocation, 'bigAdvance')
+            }
+            break
+          case 'Full':
+            addToPlace(place, amountForLocation, 'full')
+            break
+          case 'InitialPayment':
+          case 'Partial':
+            if ((sale as any).payment_type === 'PromiseOfSale') {
+              addToPlace(place, amountForLocation, 'promiseOfSale')
+            }
+            break
+        }
+      })
     })
 
     // Calculate total for each place AFTER all amounts are added
