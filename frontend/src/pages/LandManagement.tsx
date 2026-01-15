@@ -317,6 +317,7 @@ export function LandManagement() {
   const [selectedOffer, setSelectedOffer] = useState<PaymentOffer | null>(null)
   const [savingClient, setSavingClient] = useState(false)
   const [creatingSale, setCreatingSale] = useState(false)
+  const [createSaleConfirmOpen, setCreateSaleConfirmOpen] = useState(false)
   const [searchingClient, setSearchingClient] = useState(false)
   const [foundClient, setFoundClient] = useState<Client | null>(null)
   
@@ -6062,6 +6063,25 @@ export function LandManagement() {
         cancelText="إلغاء"
       />
 
+      {/* Create Sale Confirmation Dialog */}
+      <ConfirmDialog
+        open={createSaleConfirmOpen}
+        onOpenChange={setCreateSaleConfirmOpen}
+        onConfirm={() => {
+          setCreateSaleConfirmOpen(false)
+          handleCreateSale()
+        }}
+        disabled={creatingSale}
+        title="تأكيد إنشاء البيع"
+        description={
+          newClient && selectedPieces.size > 0
+            ? `هل أنت متأكد أنك تريد إنشاء البيع للعميل ${newClient.name} (${selectedPieces.size} ${selectedPieces.size === 1 ? 'قطعة' : 'قطع'})؟`
+            : 'هل أنت متأكد أنك تريد إنشاء البيع؟'
+        }
+        confirmText={creatingSale ? 'جاري الإنشاء...' : 'نعم، متأكد'}
+        cancelText="إلغاء"
+      />
+
       {/* New Client Dialog */}
       <Dialog open={clientDialogOpen} onOpenChange={(open) => {
         console.log('[ClientDialog] onOpenChange called with:', open)
@@ -6978,7 +6998,7 @@ export function LandManagement() {
             <Button 
               onClick={(e) => {
                 e.stopPropagation()
-                handleCreateSale()
+                setCreateSaleConfirmOpen(true)
               }}
               disabled={creatingSale || !saleForm.reservation_amount}
             >
