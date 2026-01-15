@@ -354,7 +354,7 @@ export function LandManagement() {
     companies: 0,
   })
 
-  // Debounced CIN search - searches by CIN only after 2 characters
+  // Debounced CIN search - starts searching after 2 characters
   const debouncedCINSearch = useCallback(
     debounce(async (cin: string) => {
       if (!cin || cin.trim().length < 2) {

@@ -176,9 +176,45 @@ export function Financial() {
         console.error('Error fetching installments:', installmentsRes.error)
       }
 
-      setSales((salesRes.data as SaleWithClient[]) || [])
-      setPayments((paymentsRes.data as PaymentWithDetails[]) || [])
-      setLandPieces((piecesRes.data as Array<LandPiece & { land_batch?: LandBatch }>) || [])
+      const salesData = (salesRes.data as SaleWithClient[]) || []
+      const paymentsData = (paymentsRes.data as PaymentWithDetails[]) || []
+      let allPieces = (piecesRes.data as Array<LandPiece & { land_batch?: LandBatch }>) || []
+      
+      // Ensure we have all pieces referenced in sales - fetch missing ones
+      const allReferencedPieceIds = new Set<string>()
+      salesData.forEach(sale => {
+        if (sale.land_piece_ids) {
+          sale.land_piece_ids.forEach(id => allReferencedPieceIds.add(id))
+        }
+      })
+      paymentsData.forEach(payment => {
+        if (payment.sale?.land_piece_ids) {
+          payment.sale.land_piece_ids.forEach(id => allReferencedPieceIds.add(id))
+        }
+      })
+      
+      // Check if we're missing any pieces and fetch them
+      const existingPieceIds = new Set(allPieces.map(p => p.id))
+      const missingPieceIds = Array.from(allReferencedPieceIds).filter(id => !existingPieceIds.has(id))
+      
+      if (missingPieceIds.length > 0) {
+        try {
+          const { data: missingPieces, error: missingError } = await supabase
+            .from('land_pieces')
+            .select('*, land_batch:land_batches(name, location)')
+            .in('id', missingPieceIds)
+          
+          if (!missingError && missingPieces) {
+            allPieces = [...allPieces, ...(missingPieces as Array<LandPiece & { land_batch?: LandBatch }>)]
+          }
+        } catch (err) {
+          console.warn('Error fetching missing pieces:', err)
+        }
+      }
+
+      setSales(salesData)
+      setPayments(paymentsData)
+      setLandPieces(allPieces)
       setInstallments((installmentsRes.data as any[]) || [])
     } catch (error) {
       const err = error as Error
@@ -681,11 +717,32 @@ export function Financial() {
         if (pieceIds.length > 0) {
           const advancePerPiece = (sale.small_advance_amount || 0) / pieceIds.length
           pieceIds.forEach((pieceId, idx) => {
+            // Try to find the actual piece from landPieces to get correct piece number
+            // First try exact ID match
+            let actualPiece = landPieces.find(p => p.id === pieceId)
+            
+            // If not found, try to find it in payments that reference this piece
+            if (!actualPiece) {
+              const paymentWithPiece = filteredData.payments.find(p => 
+                p.sale_id === sale.id && 
+                p.sale?.land_piece_ids?.includes(pieceId)
+              )
+              if (paymentWithPiece?.land_pieces && paymentWithPiece.land_pieces.length > 0) {
+                actualPiece = paymentWithPiece.land_pieces.find(p => p.id === pieceId) as any
+              }
+            }
+            
+            // Use actual piece number if found - if not found, pieces should be in landPieces array
+            // If still not found after fetching missing pieces, this indicates a data issue
+            const pieceNumber = actualPiece?.piece_number || ''
+            const actualBatchName = actualPiece?.land_batch?.name || batchName
+            const actualLocation = actualPiece?.land_batch?.location || location
+            
             const virtualPiece = {
               pieceId,
-              pieceNumber: `#${idx + 1}`,
-              landBatchName: batchName,
-              location,
+              pieceNumber,
+              landBatchName: actualBatchName,
+              location: actualLocation,
               totalAmount: advancePerPiece,
               installmentCount: 0,
               payments: [] as PaymentWithDetails[],
@@ -1763,10 +1820,15 @@ export function Financial() {
               </div>
               {isExpanded && (
                 <div className="p-1.5 bg-white space-y-1">
-                  {landGroup.pieces.map((piece, pIdx) => (
+                  {landGroup.pieces.map((piece, pIdx) => {
+                    // Get actual piece number from landPieces to ensure accuracy
+                    const actualPiece = landPieces.find(lp => lp.id === piece.pieceId)
+                    const pieceNum = actualPiece?.piece_number || piece.pieceNumber?.replace(/^#/, '') || piece.pieceNumber
+                    const displayPieceNumber = pieceNum ? (pieceNum.startsWith('#') ? pieceNum : `#${pieceNum}`) : piece.pieceNumber
+                    return (
                     <div key={pIdx} className={`border ${colorConfig.border} rounded p-1.5 ${colorConfig.bg}/50`}>
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className={`font-medium text-xs ${colorConfig.text}`}>#{piece.pieceNumber}</span>
+                        <span className={`font-medium text-xs ${colorConfig.text}`}>{displayPieceNumber}</span>
                         <div className="text-right">
                           <span className={`text-xs font-bold ${colorConfig.textBold}`}>{formatCurrency(piece.totalAmount)}</span>
                           {piece.installmentCount > 0 && (
@@ -1802,7 +1864,8 @@ export function Financial() {
                         </div>
                       )}
                     </div>
-                  ))}
+                  )
+                  })}
                 </div>
               )}
             </div>
@@ -2134,7 +2197,12 @@ export function Financial() {
                         ...data.map((group, idx) => {
                         // Get unique clients and piece numbers for this group
                         const uniqueClients = new Set<string>()
-                        const pieceNumbers = group.pieces.map(p => p.pieceNumber).join(', ')
+                        // Get actual piece numbers from landPieces to ensure accuracy
+                        const pieceNumbers = group.pieces.map(p => {
+                          const actualPiece = landPieces.find(lp => lp.id === p.pieceId)
+                          const pieceNum = actualPiece?.piece_number || p.pieceNumber?.replace(/^#/, '') || ''
+                          return pieceNum ? `#${pieceNum}` : p.pieceNumber
+                        }).filter(Boolean).join(', ')
                         group.payments.forEach(p => {
                           const clientName = (p.client as any)?.name
                           if (clientName) uniqueClients.add(clientName)
@@ -2146,7 +2214,7 @@ export function Financial() {
                           <TableCell className="text-right">
                             <div className="font-medium">{group.landBatchName}</div>
                             {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                            {pieceNumbers && <div className="text-xs text-blue-600 mt-1">#{pieceNumbers}</div>}
+                            {pieceNumbers && <div className="text-xs text-blue-600 mt-1">{pieceNumbers}</div>}
                             {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
                           </TableCell>
                           <TableCell className="text-center">{group.pieces.length}</TableCell>
@@ -2233,7 +2301,12 @@ export function Financial() {
                         ...data.map((group, idx) => {
                         // Get unique clients and piece numbers for this group
                         const uniqueClients = new Set<string>()
-                        const pieceNumbers = group.pieces.map(p => p.pieceNumber).join(', ')
+                        // Get actual piece numbers from landPieces to ensure accuracy
+                        const pieceNumbers = group.pieces.map(p => {
+                          const actualPiece = landPieces.find(lp => lp.id === p.pieceId)
+                          const pieceNum = actualPiece?.piece_number || p.pieceNumber?.replace(/^#/, '') || ''
+                          return pieceNum ? `#${pieceNum}` : p.pieceNumber
+                        }).filter(Boolean).join(', ')
                         group.payments.forEach(p => {
                           const clientName = (p.client as any)?.name
                           if (clientName) uniqueClients.add(clientName)
@@ -2245,7 +2318,7 @@ export function Financial() {
                           <TableCell className="text-right">
                             <div className="font-medium">{group.landBatchName}</div>
                             {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                            {pieceNumbers && <div className="text-xs text-orange-600 mt-1">#{pieceNumbers}</div>}
+                            {pieceNumbers && <div className="text-xs text-orange-600 mt-1">{pieceNumbers}</div>}
                             {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
                           </TableCell>
                           <TableCell className="text-center">{group.pieces.length}</TableCell>
@@ -2418,7 +2491,12 @@ export function Financial() {
                         ...data.map((group, idx) => {
                         // Get unique clients and piece numbers for this group
                         const uniqueClients = new Set<string>()
-                        const pieceNumbers = group.pieces.map(p => p.pieceNumber).join(', ')
+                        // Get actual piece numbers from landPieces to ensure accuracy
+                        const pieceNumbers = group.pieces.map(p => {
+                          const actualPiece = landPieces.find(lp => lp.id === p.pieceId)
+                          const pieceNum = actualPiece?.piece_number || p.pieceNumber?.replace(/^#/, '') || ''
+                          return pieceNum ? `#${pieceNum}` : p.pieceNumber
+                        }).filter(Boolean).join(', ')
                         group.payments.forEach(p => {
                           const clientName = (p.client as any)?.name
                           if (clientName) uniqueClients.add(clientName)
@@ -2430,7 +2508,7 @@ export function Financial() {
                           <TableCell className="text-right">
                             <div className="font-medium">{group.landBatchName}</div>
                             {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                            {pieceNumbers && <div className="text-xs text-purple-600 mt-1">#{pieceNumbers}</div>}
+                            {pieceNumbers && <div className="text-xs text-purple-600 mt-1">{pieceNumbers}</div>}
                             {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
                           </TableCell>
                           <TableCell className="text-center">{group.pieces.length}</TableCell>
@@ -2528,7 +2606,12 @@ export function Financial() {
                       ...data.map((group, idx) => {
                         // Get unique clients and piece numbers for this group
                         const uniqueClients = new Set<string>()
-                        const pieceNumbers = group.pieces.map(p => p.pieceNumber).join(', ')
+                        // Get actual piece numbers from landPieces to ensure accuracy
+                        const pieceNumbers = group.pieces.map(p => {
+                          const actualPiece = landPieces.find(lp => lp.id === p.pieceId)
+                          const pieceNum = actualPiece?.piece_number || p.pieceNumber?.replace(/^#/, '') || ''
+                          return pieceNum ? `#${pieceNum}` : p.pieceNumber
+                        }).filter(Boolean).join(', ')
                         group.payments.forEach(p => {
                           const clientName = (p.client as any)?.name
                           if (clientName) uniqueClients.add(clientName)
@@ -2540,7 +2623,7 @@ export function Financial() {
                           <TableCell className="text-right">
                             <div className="font-medium">{group.landBatchName}</div>
                             {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                            {pieceNumbers && <div className="text-xs text-pink-600 mt-1">#{pieceNumbers}</div>}
+                            {pieceNumbers && <div className="text-xs text-pink-600 mt-1">{pieceNumbers}</div>}
                             {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
                           </TableCell>
                           <TableCell className="text-center">{group.pieces.length}</TableCell>
@@ -2766,7 +2849,7 @@ export function Financial() {
         })()}
       </div>
 
-        {/* Mobile: Card View for all 5 categories */}
+        {/* Mobile: Card View for all 6 categories - Matching Desktop Structure */}
         <div className="md:hidden grid grid-cols-1 gap-3">
           {/* الأقساط */}
           <Card 
@@ -2779,13 +2862,24 @@ export function Financial() {
                   <h3 className="font-bold text-sm text-blue-700">الأقساط</h3>
                   {(() => {
                     const data = getPaymentsByLand('Installment')
-                    if (data.length > 0) {
-                      return <p className="text-xs text-blue-600">{data[0].landBatchName} {data[0].location && `- ${data[0].location}`}</p>
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.installment, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.installmentPaymentsTotal
+                    const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
+                    const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
+                    if (data.length > 0 || totalAmount > 0) {
+                      return (
+                        <div className="text-xs text-blue-600 mt-1">
+                          {totalPieces > 0 && <span>{totalPieces} قطعة</span>}
+                          {totalPieces > 0 && totalPayments > 0 && <span> • </span>}
+                          {totalPayments > 0 && <span>{totalPayments} عملية</span>}
+                        </div>
+                      )
                     }
                     return null
                   })()}
-              </div>
-                        <div className="flex items-center gap-2">
+                </div>
+                <div className="flex items-center gap-2">
                   <span className="text-lg font-bold text-blue-600">
                     {(() => {
                       const placeTotals = getTotalsByPlace()
@@ -2794,7 +2888,7 @@ export function Financial() {
                     })()}
                   </span>
                   <ChevronDown className="h-4 w-4 text-blue-600" />
-                        </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -2807,16 +2901,27 @@ export function Financial() {
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-sm text-orange-700">العربون (مبلغ الحجز)</h3>
+                  <h3 className="font-bold text-sm text-orange-700">العربون</h3>
                   {(() => {
                     const data = getPaymentsByLand('SmallAdvance')
-                    if (data.length > 0) {
-                      return <p className="text-xs text-orange-600">{data[0].landBatchName} {data[0].location && `- ${data[0].location}`}</p>
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.smallAdvance, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.smallAdvanceTotal
+                    const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
+                    const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
+                    if (data.length > 0 || totalAmount > 0) {
+                      return (
+                        <div className="text-xs text-orange-600 mt-1">
+                          {totalPieces > 0 && <span>{totalPieces} قطعة</span>}
+                          {totalPieces > 0 && totalPayments > 0 && <span> • </span>}
+                          {totalPayments > 0 && <span>{totalPayments} عملية</span>}
+                        </div>
+                      )
                     }
                     return null
                   })()}
-              </div>
-                      <div className="flex items-center gap-2">
+                </div>
+                <div className="flex items-center gap-2">
                   <span className="text-lg font-bold text-orange-600">
                     {(() => {
                       const placeTotals = getTotalsByPlace()
@@ -2825,8 +2930,8 @@ export function Financial() {
                     })()}
                   </span>
                   <ChevronDown className="h-4 w-4 text-orange-600" />
-                      </div>
-                    </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -2841,13 +2946,24 @@ export function Financial() {
                   <h3 className="font-bold text-sm text-green-700">بالحاضر</h3>
                   {(() => {
                     const data = getPaymentsByLand('Full')
-                    if (data.length > 0) {
-                      return <p className="text-xs text-green-600">{data[0].landBatchName} {data[0].location && `- ${data[0].location}`}</p>
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.full, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.fullPaymentsTotal
+                    const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
+                    const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
+                    if (data.length > 0 || totalAmount > 0) {
+                      return (
+                        <div className="text-xs text-green-600 mt-1">
+                          {totalPieces > 0 && <span>{totalPieces} قطعة</span>}
+                          {totalPieces > 0 && totalPayments > 0 && <span> • </span>}
+                          {totalPayments > 0 && <span>{totalPayments} عملية</span>}
+                        </div>
+                      )
                     }
                     return null
                   })()}
-                  </div>
-                        <div className="flex items-center gap-2">
+                </div>
+                <div className="flex items-center gap-2">
                   <span className="text-lg font-bold text-green-600">
                     {(() => {
                       const placeTotals = getTotalsByPlace()
@@ -2856,8 +2972,8 @@ export function Financial() {
                     })()}
                   </span>
                   <ChevronDown className="h-4 w-4 text-green-600" />
-                        </div>
-            </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -2872,13 +2988,24 @@ export function Financial() {
                   <h3 className="font-bold text-sm text-purple-700">التسبقة</h3>
                   {(() => {
                     const data = getPaymentsByLand('BigAdvance')
-                    if (data.length > 0) {
-                      return <p className="text-xs text-purple-600">{data[0].landBatchName} {data[0].location && `- ${data[0].location}`}</p>
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.bigAdvance, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.bigAdvanceTotal
+                    const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
+                    const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
+                    if (data.length > 0 || totalAmount > 0) {
+                      return (
+                        <div className="text-xs text-purple-600 mt-1">
+                          {totalPieces > 0 && <span>{totalPieces} قطعة</span>}
+                          {totalPieces > 0 && totalPayments > 0 && <span> • </span>}
+                          {totalPayments > 0 && <span>{totalPayments} عملية</span>}
+                        </div>
+                      )
                     }
                     return null
                   })()}
-              </div>
-                        <div className="flex items-center gap-2">
+                </div>
+                <div className="flex items-center gap-2">
                   <span className="text-lg font-bold text-purple-600">
                     {(() => {
                       const placeTotals = getTotalsByPlace()
@@ -2887,7 +3014,7 @@ export function Financial() {
                     })()}
                   </span>
                   <ChevronDown className="h-4 w-4 text-purple-600" />
-                        </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -2903,13 +3030,24 @@ export function Financial() {
                   <h3 className="font-bold text-sm text-pink-700">وعد بالبيع</h3>
                   {(() => {
                     const data = getPaymentsByLand('InitialPayment')
-                    if (data.length > 0) {
-                      return <p className="text-xs text-pink-600">{data[0].landBatchName} {data[0].location && `- ${data[0].location}`}</p>
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.promiseOfSale, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.promiseOfSalePaymentsTotal
+                    const totalPieces = data.reduce((sum, g) => sum + g.pieces.length, 0)
+                    const totalPayments = data.reduce((sum, g) => sum + g.paymentCount, 0)
+                    if (data.length > 0 || totalAmount > 0) {
+                      return (
+                        <div className="text-xs text-pink-600 mt-1">
+                          {totalPieces > 0 && <span>{totalPieces} قطعة</span>}
+                          {totalPieces > 0 && totalPayments > 0 && <span> • </span>}
+                          {totalPayments > 0 && <span>{totalPayments} عملية</span>}
+                        </div>
+                      )
                     }
                     return null
                   })()}
-              </div>
-                        <div className="flex items-center gap-2">
+                </div>
+                <div className="flex items-center gap-2">
                   <span className="text-lg font-bold text-pink-600">
                     {(() => {
                       const placeTotals = getTotalsByPlace()
@@ -2918,7 +3056,7 @@ export function Financial() {
                     })()}
                   </span>
                   <ChevronDown className="h-4 w-4 text-pink-600" />
-                        </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -2934,13 +3072,24 @@ export function Financial() {
                   <h3 className="font-bold text-sm text-indigo-700">العمولة</h3>
                   {(() => {
                     const data = filteredData.companyFeesByLand
-                    if (data.length > 0) {
-                      return <p className="text-xs text-indigo-600">{data[0].landBatchName} {data[0].location && `- ${data[0].location}`}</p>
+                    const placeTotals = getTotalsByPlace()
+                    const totalFromPlaces = placeTotals.reduce((sum, p) => sum + p.companyFee, 0)
+                    const totalAmount = totalFromPlaces > 0 ? totalFromPlaces : filteredData.companyFeesTotal
+                    const totalPieces = data.reduce((sum, g) => sum + g.piecesCount, 0)
+                    const totalSales = data.reduce((sum, g) => sum + g.salesCount, 0)
+                    if (data.length > 0 || totalAmount > 0) {
+                      return (
+                        <div className="text-xs text-indigo-600 mt-1">
+                          {totalPieces > 0 && <span>{totalPieces} قطعة</span>}
+                          {totalPieces > 0 && totalSales > 0 && <span> • </span>}
+                          {totalSales > 0 && <span>{totalSales} عملية</span>}
+                        </div>
+                      )
                     }
                     return null
                   })()}
-              </div>
-                        <div className="flex items-center gap-2">
+                </div>
+                <div className="flex items-center gap-2">
                   <span className="text-lg font-bold text-indigo-600">
                     {(() => {
                       const placeTotals = getTotalsByPlace()
@@ -2949,7 +3098,7 @@ export function Financial() {
                     })()}
                   </span>
                   <ChevronDown className="h-4 w-4 text-indigo-600" />
-                        </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -3200,6 +3349,10 @@ export function Financial() {
                                   paymentsByDate.get(dateKey)!.push(payment)
                                 })
                                 
+                                // Get actual piece number from landPieces to ensure accuracy
+                                const actualPiece = landPieces.find(lp => lp.id === piece.pieceId)
+                                const pieceNum = actualPiece?.piece_number || piece.pieceNumber?.replace(/^#/, '') || piece.pieceNumber
+                                const displayPieceNumber = pieceNum ? (pieceNum.startsWith('#') ? pieceNum : `#${pieceNum}`) : '-'
                                 return (
                                     <Card key={piece.pieceId} className="hover:shadow-md transition-shadow">
                                       <CardContent className="p-3">
@@ -3210,7 +3363,7 @@ export function Financial() {
                                                 {formatCurrency(piece.totalAmount)}
                                               </div>
                                               <div className="text-xs text-muted-foreground mt-1">
-                                                #{piece.pieceNumber}
+                                                {displayPieceNumber}
                                               </div>
                                             </div>
                                         {piece.installmentCount > 0 && (
@@ -3332,6 +3485,10 @@ export function Financial() {
                                     
                                     return piece.payments.map((payment, idx) => {
                                       const client = payment.client as any
+                                      // Get actual piece number from landPieces to ensure accuracy
+                                      const actualPiece = landPieces.find(lp => lp.id === piece.pieceId)
+                                      const pieceNum = actualPiece?.piece_number || piece.pieceNumber?.replace(/^#/, '') || piece.pieceNumber
+                                      const displayPieceNumber = pieceNum ? (pieceNum.startsWith('#') ? pieceNum : `#${pieceNum}`) : '-'
                                       return (
                                         <TableRow key={`${piece.pieceId}-${payment.id}-${idx}`} className="bg-white">
                                           <TableCell className="text-right">{formatDate(payment.payment_date)}</TableCell>
@@ -3341,9 +3498,9 @@ export function Financial() {
                                               {client?.phone && <span className="text-xs text-muted-foreground">({client.phone})</span>}
                                             </div>
                                           </TableCell>
-                                          <TableCell className="text-right text-muted-foreground">{group.landBatchName}</TableCell>
-                                          <TableCell className="text-right text-muted-foreground">{group.location || '-'}</TableCell>
-                                          <TableCell className="text-right font-medium">#{piece.pieceNumber}</TableCell>
+                                          <TableCell className="text-right text-muted-foreground">{actualPiece?.land_batch?.name || group.landBatchName}</TableCell>
+                                          <TableCell className="text-right text-muted-foreground">{actualPiece?.land_batch?.location || group.location || '-'}</TableCell>
+                                          <TableCell className="text-right font-medium">{displayPieceNumber}</TableCell>
                                           <TableCell className="text-center">{piece.installmentCount > 0 ? piece.installmentCount : '-'}</TableCell>
                                           <TableCell className={`text-right font-bold ${colors.text}`}>
                                             {formatCurrency(payment.amount_paid)}
@@ -4112,12 +4269,18 @@ export function Financial() {
                             return details?.name || name
                           }).join(', ') || 'غير معروف'
                           
+                          // Get actual piece number and batch info from landPieces to ensure accuracy
+                          const actualPiece = landPieces.find(lp => lp.id === piece.pieceId)
+                          const pieceNum = actualPiece?.piece_number || piece.pieceNumber?.replace(/^#/, '') || piece.pieceNumber
+                          const displayPieceNumber = pieceNum ? (pieceNum.startsWith('#') ? pieceNum : `#${pieceNum}`) : '-'
+                          const batchName = actualPiece?.land_batch?.name || piece.landBatchName
+                          const location = actualPiece?.land_batch?.location || piece.location
                           return (
                             <TableRow key={idx} className="hover:bg-gray-50">
-                              <TableCell className="text-right font-medium">#{piece.pieceNumber}</TableCell>
+                              <TableCell className="text-right font-medium">{displayPieceNumber}</TableCell>
                               <TableCell className="text-right">
-                                <div>{piece.landBatchName !== 'غير محدد' ? piece.landBatchName : '-'}</div>
-                                {piece.location && <div className="text-xs text-muted-foreground">{piece.location}</div>}
+                                <div>{batchName !== 'غير محدد' ? batchName : '-'}</div>
+                                {location && <div className="text-xs text-muted-foreground">{location}</div>}
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="font-medium">{clientNames}</div>
