@@ -4328,6 +4328,8 @@ export function LandManagement() {
 
       setSuccessMessage('تم إنشاء البيع بنجاح')
       setSuccessDialogOpen(true)
+      // Auto-dismiss after 3 seconds
+      setTimeout(() => setSuccessDialogOpen(false), 3000)
       setSaleDialogOpen(false)
       setNewClient(null)
       setSelectedPieces(new Set())
@@ -6146,7 +6148,20 @@ export function LandManagement() {
           preventClose={false}
           className="confirm-dialog-high-z bg-white border-2 border-[#10b981] rounded-[16px] p-[22px_26px] max-w-[440px] shadow-[0_24px_48px_rgba(0,0,0,0.45)]"
         >
-          <DialogFooter className="flex justify-center gap-[10px] mb-4 pb-4 border-b">
+          <DialogHeader className="text-center">
+            <div className="flex justify-center mb-3">
+              <div className="h-16 w-16 rounded-full bg-[#10b981]/10 flex items-center justify-center">
+                <CheckCircle className="h-8 w-8 text-[#10b981]" />
+              </div>
+            </div>
+            <DialogTitle className="text-[18px] font-semibold text-[#020617] mb-2">
+              تم بنجاح
+            </DialogTitle>
+            <DialogDescription className="text-[15px] text-[#334155] mb-4">
+              {successMessage || 'تم تنفيذ العملية بنجاح'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex justify-center gap-[10px] mt-2">
             <Button
               type="button"
               onClick={(e) => {
@@ -6164,14 +6179,6 @@ export function LandManagement() {
               موافق
             </Button>
           </DialogFooter>
-          <DialogHeader>
-            <DialogTitle className="text-[16px] font-semibold text-[#020617] mb-2 text-center">
-              تم بنجاح
-            </DialogTitle>
-            <DialogDescription className="text-[14px] text-[#334155] mb-4 text-center">
-              {successMessage || 'تم تنفيذ العملية بنجاح'}
-            </DialogDescription>
-          </DialogHeader>
         </DialogContent>
       </Dialog>
 
