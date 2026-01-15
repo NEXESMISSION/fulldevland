@@ -4217,103 +4217,16 @@ export function SaleConfirmation() {
           }
         }}
         disabled={confirming}
-        title={
-          pendingConfirmationType === 'full' 
-            ? ((selectedSale?.payment_type as any) === 'PromiseOfSale'
-                ? ((selectedSale.promise_initial_payment || 0) > 0 ? 'استكمال الوعد بالبيع' : 'تأكيد الوعد بالبيع')
-                : 'تأكيد البيع بالحاضر')
-            : 'تأكيد البيع بالتقسيط'
-        }
+        title="تأكيد البيع"
         description={
           selectedSale && selectedPiece && (() => {
-            const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
+            const clientName = selectedSale.client?.name || 'غير معروف'
+            const pieceInfo = confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1
+              ? `${selectedSale.land_pieces.length} قطع`
+              : `#${selectedPiece.piece_number}`
             
-            // If confirming all pieces, calculate totals for all pieces
-            let pricePerPiece = 0
-            let reservationPerPiece = 0
-            let companyFeePerPiece = 0
-            let totalPayablePerPiece = 0
-            
-            if (confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1) {
-              // Calculate totals for all pieces
-              let totalPrice = 0
-              let totalReservation = 0
-              let totalCompanyFee = 0
-              let totalPayable = 0
-              
-              selectedSale.land_pieces.forEach((piece: any) => {
-                const pieceValues = calculatePieceValues(selectedSale, piece, offerToUse)
-                totalPrice += pieceValues.pricePerPiece
-                totalReservation += pieceValues.reservationPerPiece
-                totalCompanyFee += pieceValues.companyFeePerPiece
-                totalPayable += pieceValues.totalPayablePerPiece
-              })
-              
-              pricePerPiece = totalPrice
-              reservationPerPiece = totalReservation
-              companyFeePerPiece = totalCompanyFee
-              totalPayablePerPiece = totalPayable
-            } else {
-              // Single piece calculation
-              const values = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
-              pricePerPiece = values.pricePerPiece
-              reservationPerPiece = values.reservationPerPiece
-              companyFeePerPiece = values.companyFeePerPiece
-              totalPayablePerPiece = values.totalPayablePerPiece
-            }
-            
-            // Check if reservation has been paid (same logic as main dialog)
-            const totalReservationForSale = (selectedSale.small_advance_amount || 0)
-            const reservationPaid = totalReservationForSale > 0
-            
-            // Calculate amountToReceive the same way as the main dialog
-            // For installment: advanceAmount (after reservation) + companyFeePerPiece
-            // For full: totalPayablePerPiece - reservationPerPiece
-            let amountToReceive = 0
-            
-            if (pendingConfirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
-              const calculatedOffer = offerToUse
-              if (calculatedOffer) {
-                // Calculate advance amount (same logic as main dialog)
-                const fullAdvanceAmount = calculatedOffer.advance_is_percentage
-                  ? (pricePerPiece * calculatedOffer.advance_amount) / 100
-                  : (confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1
-                      ? calculatedOffer.advance_amount * selectedSale.land_pieces.length
-                      : calculatedOffer.advance_amount)
-                // Advance after reservation deduction
-                const advanceAmount = Math.max(0, fullAdvanceAmount - reservationPerPiece)
-                // Total to receive = advance (after reservation) + commission
-                amountToReceive = advanceAmount + companyFeePerPiece
-              } else {
-                // Fallback to receivedAmount if no offer
-                amountToReceive = parseFloat(receivedAmount) || 0
-              }
-            } else if (pendingConfirmationType === 'full') {
-              amountToReceive = totalPayablePerPiece - reservationPerPiece
-            } else {
-              // Final fallback
-              amountToReceive = parseFloat(receivedAmount) || 0
-            }
-            
-            // For installment sales (bigAdvance), show only the final amount (no breakdown)
-            if (pendingConfirmationType === 'bigAdvance' && selectedSale.payment_type === 'Installment') {
-              const allPiecesText = confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1
-                ? ` (${selectedSale.land_pieces.length} قطع)`
-                : ''
-              return `المستحق عند التأكيد (التسبقة + العمولة)${allPiecesText}: ${formatCurrency(amountToReceive)}`
-            }
-            
-            // For other payment types, show the full confirmation message
-            const paymentTypeText = (selectedSale.payment_type as any) === 'PromiseOfSale'
-              ? ((selectedSale.promise_initial_payment || 0) > 0 ? 'استكمال الوعد بالبيع' : 'تأكيد الوعد بالبيع')
-              : (pendingConfirmationType === 'full' ? 'البيع بالحاضر' : 'البيع بالتقسيط')
-            
-            const allPiecesText = confirmingAllPieces && selectedSale.land_pieces && selectedSale.land_pieces.length > 1
-              ? ` (${selectedSale.land_pieces.length} قطع)`
-              : ''
-            
-            return `هل أنت متأكد أنك ستحصل على مبلغ ${formatCurrency(amountToReceive)} من العميل ${selectedSale.client?.name || 'غير معروف'} عند ${paymentTypeText}${allPiecesText}؟`
-          })() || ''
+            return `هل أنت متأكد أنك تريد إتمام البيع للعميل ${clientName} (${pieceInfo})؟`
+          })() || 'هل أنت متأكد أنك تريد إتمام البيع؟'
         }
         confirmText={confirming ? 'جاري التأكيد...' : 'نعم، متأكد'}
         cancelText="إلغاء"
