@@ -351,17 +351,10 @@ export function LandManagement() {
     companies: 0,
   })
 
-  // Debounced CIN search - starts searching after 2 characters
-  const debouncedCINSearch = useCallback(
-    debounce(async (cin: string) => {
-      if (!cin || cin.trim().length < 2) {
-        setFoundClient(null)
-        setClientSearchStatus('idle')
-        return
-      }
-
-      const sanitizedCIN = sanitizeCIN(cin)
-      if (!sanitizedCIN || sanitizedCIN.length < 2) {
+  // Debounced client search - searches by CIN or name after 2 characters
+  const debouncedClientSearch = useCallback(
+    debounce(async (searchValue: string, searchType: 'cin' | 'name') => {
+      if (!searchValue || searchValue.trim().length < 2) {
         setFoundClient(null)
         setClientSearchStatus('idle')
         return
@@ -370,30 +363,85 @@ export function LandManagement() {
       setSearchingClient(true)
       setClientSearchStatus('searching')
       try {
-        const { data, error } = await supabase
-          .from('clients')
-          .select('*')
-          .eq('cin', sanitizedCIN)
-          .maybeSingle()
+        let data: any = null
+        let error: any = null
+        
+        if (searchType === 'cin') {
+          const sanitizedCIN = sanitizeCIN(searchValue)
+          if (!sanitizedCIN || sanitizedCIN.length < 2) {
+            setFoundClient(null)
+            setClientSearchStatus('idle')
+            setSearchingClient(false)
+            return
+          }
+          const result = await supabase
+            .from('clients')
+            .select('*')
+            .eq('cin', sanitizedCIN)
+            .maybeSingle()
+          data = result.data
+          error = result.error
+        } else {
+          // Search by name using ilike for case-insensitive partial match
+          const result = await supabase
+            .from('clients')
+            .select('*')
+            .ilike('name', `%${searchValue.trim()}%`)
+            .limit(10)
+          data = result.data
+          error = result.error
+        }
 
         if (!error && data) {
-          setFoundClient(data)
-          setClientSearchStatus('found')
-          // Auto-fill form with found client data
-          setClientForm({
-            name: data.name,
-            cin: data.cin,
-            phone: data.phone || '',
-            email: data.email || '',
-            address: data.address || '',
-            client_type: data.client_type,
-            notes: data.notes || '',
-          })
-          setNewClient(data) // Set as selected client
+          // If multiple results, take the first one (exact match or first in list)
+          const client = Array.isArray(data) ? data[0] : data
+          
+          if (client) {
+            setFoundClient(client)
+            setClientSearchStatus('found')
+            // Auto-fill form with found client data
+            setClientForm({
+              name: client.name,
+              cin: client.cin,
+              phone: client.phone || '',
+              email: client.email || '',
+              address: client.address || '',
+              client_type: client.client_type,
+              notes: client.notes || '',
+            })
+            setNewClient(client) // Set as selected client
+          } else {
+            setFoundClient(null)
+            setNewClient(null)
+            setClientSearchStatus(searchValue.trim().length >= 2 ? 'not_found' : 'idle')
+          }
         } else {
           setFoundClient(null)
           setNewClient(null) // Clear selected client
-          // Clear form fields (keep CIN as user typed it)
+          // Only clear form fields if searching by CIN (keep name if searching by name)
+          if (searchType === 'cin') {
+            setClientForm(prev => ({
+              ...prev,
+              name: '',
+              phone: '',
+              email: '',
+              address: '',
+              client_type: 'Individual',
+              notes: '',
+            }))
+          }
+          // Only show "not found" if search value is long enough
+          if (searchValue.trim().length >= 2) {
+            setClientSearchStatus('not_found')
+          } else {
+            setClientSearchStatus('idle')
+          }
+        }
+      } catch (error) {
+        setFoundClient(null)
+        setNewClient(null) // Clear selected client
+        // Only clear form fields if searching by CIN
+        if (searchType === 'cin') {
           setClientForm(prev => ({
             ...prev,
             name: '',
@@ -403,27 +451,8 @@ export function LandManagement() {
             client_type: 'Individual',
             notes: '',
           }))
-          // Only show "not found" if CIN is long enough to be valid
-          if (sanitizedCIN.length >= 4) {
-            setClientSearchStatus('not_found')
-          } else {
-            setClientSearchStatus('idle')
-          }
         }
-      } catch (error) {
-        setFoundClient(null)
-        setNewClient(null) // Clear selected client
-        // Clear form fields (keep CIN as user typed it)
-        setClientForm(prev => ({
-          ...prev,
-          name: '',
-          phone: '',
-          email: '',
-          address: '',
-          client_type: 'Individual',
-          notes: '',
-        }))
-        if (sanitizedCIN.length >= 4) {
+        if (searchValue.trim().length >= 2) {
           setClientSearchStatus('not_found')
         } else {
           setClientSearchStatus('idle')
@@ -434,6 +463,15 @@ export function LandManagement() {
     }, 400), // Reduced delay for faster response
     []
   )
+
+  // Wrapper functions for CIN and name search
+  const debouncedCINSearch = (cin: string) => {
+    debouncedClientSearch(cin, 'cin')
+  }
+
+  const debouncedNameSearch = (name: string) => {
+    debouncedClientSearch(name, 'name')
+  }
 
   // Debounced CIN search for sale form
   const debouncedSaleCINSearch = useCallback(
@@ -6136,13 +6174,17 @@ export function LandManagement() {
                   onChange={(e) => {
                     const newCIN = e.target.value
                     setClientForm({ ...clientForm, cin: newCIN })
-                    // Clear found client if CIN changes
+                    // Clear found client if CIN changes and doesn't match
                     if (foundClient && newCIN !== foundClient.cin) {
                       setFoundClient(null)
                       setNewClient(null)
                       setClientSearchStatus('idle')
+                      // Also clear name if it was auto-filled from search
+                      if (foundClient.name && clientForm.name === foundClient.name) {
+                        setClientForm(prev => ({ ...prev, name: '' }))
+                      }
                     }
-                    // Trigger search
+                    // Trigger search by CIN
                     debouncedCINSearch(newCIN)
                   }}
                   placeholder="رقم الهوية"
@@ -6191,13 +6233,45 @@ export function LandManagement() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="clientName" className="text-sm">الاسم *</Label>
-              <Input
-                id="clientName"
-                value={clientForm.name}
-                onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })}
-                placeholder="اسم العميل"
-                className="h-9"
-              />
+              <div className="relative">
+                <Input
+                  id="clientName"
+                  value={clientForm.name}
+                  onChange={(e) => {
+                    const newName = e.target.value
+                    setClientForm({ ...clientForm, name: newName })
+                    // Clear found client if name changes and doesn't match
+                    if (foundClient && newName !== foundClient.name) {
+                      setFoundClient(null)
+                      setNewClient(null)
+                      setClientSearchStatus('idle')
+                      // Also clear CIN if it was auto-filled from search
+                      if (foundClient.cin && clientForm.cin === foundClient.cin) {
+                        setClientForm(prev => ({ ...prev, cin: '' }))
+                      }
+                    }
+                    // Trigger search by name
+                    debouncedNameSearch(newName)
+                  }}
+                  placeholder="اسم العميل"
+                  className={`h-9 ${searchingClient ? 'pr-10' : ''} ${clientSearchStatus === 'found' ? 'border-green-500' : clientSearchStatus === 'not_found' ? 'border-blue-300' : ''}`}
+                />
+                {searchingClient && (
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                    <div className="h-4 w-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
+                  </div>
+                )}
+                {!searchingClient && clientForm.name && clientForm.name.trim().length >= 2 && (
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                    {clientSearchStatus === 'found' && (
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                    )}
+                    {clientSearchStatus === 'not_found' && (
+                      <XCircle className="h-4 w-4 text-blue-500" />
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="clientPhone" className="text-sm">رقم الهاتف *</Label>
