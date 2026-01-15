@@ -196,7 +196,8 @@ export function SaleConfirmation() {
         .select(`
           *,
           client:clients(*),
-          contract_editor:contract_editors(*)
+          contract_editor:contract_editors(*),
+          created_by_user:users!sales_created_by_fkey(id, name)
         `)
         .eq('id', sale.id)
         .single()
@@ -878,7 +879,8 @@ export function SaleConfirmation() {
           .select(`
             *,
             client:clients(*),
-            selected_offer:payment_offers!selected_offer_id(*)
+            selected_offer:payment_offers!selected_offer_id(*),
+            created_by_user:users!sales_created_by_fkey(id, name)
           `)
           .eq('status', 'Pending')
           .order('sale_date', { ascending: false })
@@ -1777,6 +1779,9 @@ export function SaleConfirmation() {
           company_fee_percentage: feePercentage !== null && feePercentage !== undefined ? feePercentage : null,
           company_fee_amount: companyFeePerPiece !== null && companyFeePerPiece !== undefined ? parseFloat(companyFeePerPiece.toFixed(2)) : 0,
           contract_editor_id: selectedContractEditorId || null,
+          confirmed_by: user?.id || null,
+          is_confirmed: true,
+          big_advance_confirmed: true,
         }
 
         if (confirmationType === 'full') {
@@ -2195,6 +2200,9 @@ export function SaleConfirmation() {
           sale_date: selectedSale.sale_date,
           notes: `تأكيد قطعة من البيع #${selectedSale.id.slice(0, 8)}`,
           created_by: selectedSale.created_by || user?.id || null, // Keep original creator
+          confirmed_by: user?.id || null,
+          is_confirmed: true,
+          big_advance_confirmed: true,
           contract_editor_id: selectedContractEditorId || null,
         }
 
@@ -2761,6 +2769,9 @@ export function SaleConfirmation() {
                   sale_date: currentSale.sale_date,
                   notes: `تأكيد قطعة من البيع #${currentSale.id.slice(0, 8)}`,
                   created_by: currentSale.created_by || user?.id || null,
+                  confirmed_by: user?.id || null,
+                  is_confirmed: true,
+                  big_advance_confirmed: true,
                   contract_editor_id: selectedContractEditorId || null,
                 }
                 
@@ -3321,6 +3332,12 @@ export function SaleConfirmation() {
                         <Clock className="h-3 w-3" />
                         <span>{formatDateTime(sale.created_at || sale.sale_date)}</span>
                       </div>
+                      {(sale as any).created_by_user && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                          <span className="text-gray-500">باعه:</span>
+                          <span className="font-medium">{(sale as any).created_by_user.name}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
@@ -3981,6 +3998,14 @@ export function SaleConfirmation() {
                       {calculatedOffer.notes && (
                         <p className="text-xs text-gray-600 mt-1">{calculatedOffer.notes}</p>
                       )}
+                    </div>
+                  )}
+                  {(selectedSale as any)?.created_by_user && (
+                    <div className="mt-3 pt-3 border-t border-gray-300">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-700">باعه:</span>
+                        <span className="text-sm font-semibold text-gray-900">{(selectedSale as any).created_by_user.name}</span>
+                      </div>
                     </div>
                   )}
                 </div>

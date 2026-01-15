@@ -27,7 +27,7 @@ import {
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { sanitizeNotes } from '@/lib/sanitize'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { User, ChevronDown, ChevronUp, RefreshCw, AlertTriangle, X } from 'lucide-react'
+import { User, ChevronDown, ChevronUp, RefreshCw, AlertTriangle, X, Merge } from 'lucide-react'
 import type { Installment, Sale, Client, InstallmentStatus } from '@/types/database'
 
 interface ContractEditor {
@@ -242,6 +242,9 @@ export function Installments() {
     totalUnpaid: number
     landPieces: string
     contractEditor?: { type: string; name: string; place: string } | null
+    createdByUser?: { id: string; name: string } | null
+    confirmedByUser?: { id: string; name: string } | null
+    isConfirmed?: boolean
   } | null>(null)
   
   // Debounced search
@@ -256,6 +259,23 @@ export function Installments() {
   const [paymentAmount, setPaymentAmount] = useState('')
   const [monthsToPayCount, setMonthsToPayCount] = useState(1)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  
+  // Merge installments dialog
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false)
+  const [mergingSales, setMergingSales] = useState(false)
+  const [mergeableGroups, setMergeableGroups] = useState<Array<{
+    clientId: string
+    clientName: string
+    sales: Array<{
+      saleId: string
+      saleDate: string
+      landPieces: string
+      totalUnpaid: number
+      remainingInstallments: number
+      monthlyAmount: number
+      selectedOfferId?: string
+    }>
+  }>>([])
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [paymentConfirmOpen, setPaymentConfirmOpen] = useState(false)
   
@@ -408,6 +428,13 @@ export function Installments() {
             newPaidCount: newCount
           })
           
+          const firstInst = freshInstallments[0]
+          const sale = firstInst?.sale as any
+          const isConfirmed = sale?.confirmed_by !== null || 
+                              sale?.is_confirmed === true || 
+                              sale?.big_advance_confirmed === true ||
+                              freshInstallments.length > 0
+          
           setSelectedSaleForDetails({
             saleId: selectedSaleForDetails.saleId,
             clientName: selectedSaleForDetails.clientName,
@@ -418,7 +445,11 @@ export function Installments() {
             totalDue,
             totalPaid,
             totalUnpaid,
-            landPieces: pieceNumbers || selectedSaleForDetails.landPieces
+            landPieces: pieceNumbers || selectedSaleForDetails.landPieces,
+            contractEditor: selectedSaleForDetails.contractEditor,
+            createdByUser: selectedSaleForDetails.createdByUser,
+            confirmedByUser: selectedSaleForDetails.confirmedByUser,
+            isConfirmed: isConfirmed || selectedSaleForDetails.isConfirmed || false
           })
         }
       }
@@ -559,7 +590,10 @@ export function Installments() {
             contract_editor:contract_editors (*),
             land_piece_ids,
             is_confirmed,
-            big_advance_confirmed
+            big_advance_confirmed,
+            confirmed_by,
+            created_by_user:users!sales_created_by_fkey(id, name),
+            confirmed_by_user:users!sales_confirmed_by_fkey(id, name)
           )
         `)
         .order('due_date', { ascending: true })
@@ -1054,7 +1088,9 @@ export function Installments() {
                 *,
                 client:clients (*),
                 contract_editor:contract_editors (*),
-                land_piece_ids
+                land_piece_ids,
+                created_by_user:users!sales_created_by_fkey(id, name),
+                confirmed_by_user:users!sales_confirmed_by_fkey(id, name)
               )
             `)
             .eq('sale_id', paidSaleId)
@@ -1098,6 +1134,30 @@ export function Installments() {
               paidInstallments: freshInstallments.filter(i => i.status === 'Paid').length
             })
             
+            const sale = firstInst.sale as any
+            const isConfirmed = sale?.confirmed_by !== null || 
+                                sale?.is_confirmed === true || 
+                                sale?.big_advance_confirmed === true ||
+                                freshInstallments.length > 0
+            
+            // If confirmed_by exists but confirmed_by_user is not loaded, fetch it
+            let confirmedByUser = sale?.confirmed_by_user || selectedSaleForDetails?.confirmedByUser || null
+            if (!confirmedByUser && sale?.confirmed_by) {
+              try {
+                const { data: userData } = await supabase
+                  .from('users')
+                  .select('id, name')
+                  .eq('id', sale.confirmed_by)
+                  .single()
+                
+                if (userData) {
+                  confirmedByUser = { id: userData.id, name: userData.name }
+                }
+              } catch (err) {
+                console.error('Error fetching confirmed_by user:', err)
+              }
+            }
+            
             setSelectedSaleForDetails({
               saleId: paidSaleId,
               clientName: firstInst.sale?.client?.name || selectedSaleForDetails?.clientName || '',
@@ -1108,7 +1168,10 @@ export function Installments() {
               totalPaid,
               totalUnpaid,
               landPieces: pieceNumbers,
-              contractEditor: firstInst.sale?.contract_editor || selectedSaleForDetails?.contractEditor || null
+              contractEditor: firstInst.sale?.contract_editor || selectedSaleForDetails?.contractEditor || null,
+              createdByUser: sale?.created_by_user || selectedSaleForDetails?.createdByUser || null,
+              confirmedByUser,
+              isConfirmed
             })
           } else {
             console.warn('[recordPayment] No fresh installments data found for sale:', paidSaleId)
@@ -1419,6 +1482,8 @@ export function Installments() {
       overdueAmount: number
       installments: InstallmentWithRelations[]
       contractEditor?: { type: string; name: string; place: string } | null
+      createdByUser?: { id: string; name: string } | null
+      confirmedByUser?: { id: string; name: string } | null
     }> = []
     
     clientGroups.forEach(group => {
@@ -1466,6 +1531,8 @@ export function Installments() {
         
         // Get contract editor from first installment's sale
         const contractEditor = sale.installments[0]?.sale?.contract_editor || null
+        const createdByUser = sale.installments[0]?.sale?.created_by_user || null
+        const confirmedByUser = sale.installments[0]?.sale?.confirmed_by_user || null
         
         deals.push({
           saleId: sale.saleId,
@@ -1486,7 +1553,9 @@ export function Installments() {
           isOverdue,
           overdueAmount,
           installments: saleInstallments,
-          contractEditor // Add contract editor to deal
+          contractEditor, // Add contract editor to deal
+          createdByUser,
+          confirmedByUser
         })
       })
     })
@@ -1581,9 +1650,53 @@ export function Installments() {
     return filtered
   }, [clientGroups, debouncedSearchTerm, filterOverdue, filterDueThisMonth, filterMinRemaining, filterProgress, filterStatus, refreshKey, getRemainingAmount])
   
-  const openSaleDetails = (deal: typeof dealsTableData[0]) => {
+  const openSaleDetails = async (deal: typeof dealsTableData[0]) => {
     // Get contract editor from deal or first installment's sale
     const contractEditor = deal.contractEditor || deal.installments[0]?.sale?.contract_editor || null
+    const firstSale = deal.installments[0]?.sale as any
+    
+    // If sale has installments, it's confirmed - fetch fresh sale data to get confirmed_by
+    let confirmedByUser = deal.confirmedByUser || firstSale?.confirmed_by_user || null
+    let isConfirmed = firstSale?.confirmed_by !== null || 
+                      firstSale?.is_confirmed === true || 
+                      firstSale?.big_advance_confirmed === true ||
+                      deal.installments.length > 0
+    
+    // If sale is confirmed (has installments) but confirmed_by_user is not loaded, fetch it
+    if (isConfirmed && !confirmedByUser) {
+      try {
+        // Always fetch fresh sale data to get confirmed_by_user
+        const { data: saleData, error: saleError } = await supabase
+          .from('sales')
+          .select('confirmed_by, confirmed_by_user:users!sales_confirmed_by_fkey(id, name)')
+          .eq('id', deal.saleId)
+          .single()
+        
+        if (saleError) {
+          console.error('Error fetching sale data:', saleError)
+        } else if (saleData) {
+          const sale = saleData as any
+          if (sale.confirmed_by_user) {
+            confirmedByUser = sale.confirmed_by_user
+          } else if (sale.confirmed_by) {
+            // If confirmed_by exists but confirmed_by_user is null, fetch user directly
+            const { data: userData, error: userError } = await supabase
+              .from('users')
+              .select('id, name')
+              .eq('id', sale.confirmed_by)
+              .single()
+            
+            if (userError) {
+              console.error('Error fetching user data:', userError)
+            } else if (userData) {
+              confirmedByUser = { id: userData.id, name: userData.name }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching confirmed_by user:', err)
+      }
+    }
     
     setSelectedSaleForDetails({
       saleId: deal.saleId,
@@ -1596,9 +1709,428 @@ export function Installments() {
       totalPaid: deal.totalPaid,
       totalUnpaid: deal.totalUnpaid,
       landPieces: deal.landPieces,
-      contractEditor
+      contractEditor,
+      createdByUser: deal.createdByUser || firstSale?.created_by_user || null,
+      confirmedByUser,
+      isConfirmed
     })
     setDetailsDrawerOpen(true)
+  }
+
+  // Find mergeable sales for the same client
+  const findMergeableSales = () => {
+    const groups = new Map<string, Array<typeof dealsTableData[0]>>()
+    
+    // Group sales by client
+    dealsTableData.forEach(deal => {
+      if (!groups.has(deal.clientId)) {
+        groups.set(deal.clientId, [])
+      }
+      groups.get(deal.clientId)!.push(deal)
+    })
+    
+    const mergeable: typeof mergeableGroups = []
+    
+    // Check each client group
+    groups.forEach((sales, clientId) => {
+      // Need at least 2 sales to merge
+      if (sales.length < 2) return
+      
+      // Group sales by similar characteristics
+      const salesByKey = new Map<string, typeof sales>()
+      
+      sales.forEach(sale => {
+        // Get unpaid installments
+        const unpaidInsts = sale.installments.filter(i => getRemainingAmount(i) > 0.01)
+        if (unpaidInsts.length === 0) return
+        
+        // Calculate monthly amount (should be same for all installments)
+        // Use average monthly amount to handle slight variations
+        const monthlyAmounts = unpaidInsts.map(i => i.amount_due)
+        const avgMonthlyAmount = monthlyAmounts.reduce((sum, amt) => sum + amt, 0) / monthlyAmounts.length
+        const remainingCount = unpaidInsts.length
+        
+        // Create key: clientId + remainingCount + rounded monthlyAmount (more flexible)
+        // Round to nearest 0.01 to handle floating point precision issues
+        const roundedMonthlyAmount = Math.round(avgMonthlyAmount * 100) / 100
+        const key = `${clientId}-${remainingCount}-${roundedMonthlyAmount.toFixed(2)}`
+        
+        if (!salesByKey.has(key)) {
+          salesByKey.set(key, [])
+        }
+        salesByKey.get(key)!.push(sale)
+      })
+      
+      // Check each group for mergeable sales
+      salesByKey.forEach((groupSales, key) => {
+        if (groupSales.length >= 2) {
+          // Verify they have same remaining amount (within 1 DT tolerance for rounding)
+          const firstUnpaid = groupSales[0].totalUnpaid
+          const allSameRemaining = groupSales.every(s => 
+            Math.abs(s.totalUnpaid - firstUnpaid) < 1.0
+          )
+          
+          // Also verify same remaining installments count
+          const firstRemainingCount = groupSales[0].installments.filter(i => getRemainingAmount(i) > 0.01).length
+          const allSameRemainingCount = groupSales.every(s => {
+            const count = s.installments.filter(i => getRemainingAmount(i) > 0.01).length
+            return count === firstRemainingCount
+          })
+          
+          if (allSameRemaining && allSameRemainingCount) {
+            const firstSale = groupSales[0]
+            const unpaidInsts = firstSale.installments.filter(i => getRemainingAmount(i) > 0.01)
+            // Calculate average monthly amount
+            const monthlyAmounts = unpaidInsts.map(i => i.amount_due)
+            const monthlyAmount = monthlyAmounts.length > 0 
+              ? Math.round((monthlyAmounts.reduce((sum, amt) => sum + amt, 0) / monthlyAmounts.length) * 100) / 100
+              : 0
+            
+            mergeable.push({
+              clientId: firstSale.clientId,
+              clientName: firstSale.clientName,
+              sales: groupSales.map(sale => {
+                const landPieces = (sale.installments[0]?.sale as any)?._landPieces || []
+                const pieceNumbers = landPieces.map((p: any) => p?.piece_number).filter(Boolean).join('، ')
+                const saleData = sale.installments[0]?.sale as any
+                
+                return {
+                  saleId: sale.saleId,
+                  saleDate: sale.saleDate,
+                  landPieces: pieceNumbers || '-',
+                  totalUnpaid: sale.totalUnpaid,
+                  remainingInstallments: sale.installments.filter(i => getRemainingAmount(i) > 0.01).length,
+                  monthlyAmount,
+                  selectedOfferId: saleData?.selected_offer_id
+                }
+              })
+            })
+          }
+        }
+      })
+    })
+    
+    setMergeableGroups(mergeable)
+    setMergeDialogOpen(true)
+  }
+
+  // Merge sales installments
+  const mergeSalesInstallments = async (group: typeof mergeableGroups[0]) => {
+    if (group.sales.length < 2) return
+    
+    setMergingSales(true)
+    setErrorMessage(null)
+    
+    try {
+      // Get all sales data
+      const salesData = await Promise.all(
+        group.sales.map(async (saleInfo) => {
+          const { data: saleData } = await supabase
+            .from('sales')
+            .select('*, selected_offer:payment_offers!selected_offer_id(*)')
+            .eq('id', saleInfo.saleId)
+            .single()
+          
+          const { data: installmentsData } = await supabase
+            .from('installments')
+            .select('*')
+            .eq('sale_id', saleInfo.saleId)
+            .order('installment_number', { ascending: true })
+          
+          const { data: paymentsData } = await supabase
+            .from('payments')
+            .select('*')
+            .eq('sale_id', saleInfo.saleId)
+          
+          return {
+            sale: saleData,
+            installments: installmentsData || [],
+            payments: paymentsData || []
+          }
+        })
+      )
+      
+      // Use first sale as the base sale to merge into
+      const baseSale = salesData[0].sale
+      const otherSales = salesData.slice(1)
+      
+      // Collect all piece IDs
+      const allPieceIds = new Set<string>(baseSale.land_piece_ids || [])
+      otherSales.forEach(({ sale }) => {
+        (sale.land_piece_ids || []).forEach((id: string) => allPieceIds.add(id))
+      })
+      
+      // Calculate totals
+      const totalSellingPrice = salesData.reduce((sum, { sale }) => sum + (sale.total_selling_price || 0), 0)
+      const totalPurchaseCost = salesData.reduce((sum, { sale }) => sum + (sale.total_purchase_cost || 0), 0)
+      const totalProfitMargin = totalSellingPrice - totalPurchaseCost
+      const totalSmallAdvance = salesData.reduce((sum, { sale }) => sum + (sale.small_advance_amount || 0), 0)
+      const totalBigAdvance = salesData.reduce((sum, { sale }) => sum + (sale.big_advance_amount || 0), 0)
+      const totalCompanyFee = salesData.reduce((sum, { sale }) => sum + (sale.company_fee_amount || 0), 0)
+      
+      // Get installment details from first sale
+      const firstSaleInsts = salesData[0].installments.filter(i => {
+        const remaining = i.amount_due + (i.stacked_amount || 0) - i.amount_paid
+        return remaining > 0.01
+      })
+      
+      if (firstSaleInsts.length === 0) {
+        throw new Error('لا توجد أقساط متبقية للدمج')
+      }
+      
+      const monthlyAmount = firstSaleInsts[0].amount_due
+      const numberOfInstallments = firstSaleInsts.length
+      const installmentStartDate = firstSaleInsts[0].due_date
+      
+      // Calculate end date
+      const startDate = new Date(installmentStartDate)
+      const endDate = new Date(startDate)
+      endDate.setMonth(endDate.getMonth() + numberOfInstallments - 1)
+      
+      // Update base sale with merged data
+      const { error: updateError } = await supabase
+        .from('sales')
+        .update({
+          land_piece_ids: Array.from(allPieceIds),
+          total_selling_price: totalSellingPrice,
+          total_purchase_cost: totalPurchaseCost,
+          profit_margin: totalProfitMargin,
+          small_advance_amount: totalSmallAdvance,
+          big_advance_amount: totalBigAdvance,
+          company_fee_amount: totalCompanyFee,
+          number_of_installments: numberOfInstallments,
+          monthly_installment_amount: monthlyAmount,
+          installment_start_date: installmentStartDate,
+          installment_end_date: endDate.toISOString().split('T')[0],
+        })
+        .eq('id', baseSale.id)
+      
+      if (updateError) throw updateError
+      
+      // Transfer all payments from other sales to base sale
+      for (const { payments } of otherSales) {
+        for (const payment of payments) {
+          const { error: paymentError } = await supabase
+            .from('payments')
+            .update({ sale_id: baseSale.id })
+            .eq('id', payment.id)
+          
+          if (paymentError) {
+            console.warn('Error transferring payment:', paymentError)
+          }
+        }
+      }
+      
+      // Calculate total paid from installments BEFORE deleting them
+      // This is the most accurate way to preserve payment information
+      const totalPaidFromInstallments = salesData.reduce((sum, { installments }) => {
+        return sum + installments.reduce((instSum, inst) => {
+          return instSum + (inst.amount_paid || 0)
+        }, 0)
+      }, 0)
+      
+      // Delete ALL old installments from ALL sales (base + others) before creating new ones
+      const allSaleIds = [baseSale.id, ...otherSales.map(({ sale }) => sale.id)]
+      
+      // Delete all installments with retry logic
+      let allDeleted = false
+      let deleteAttempts = 0
+      const maxDeleteAttempts = 10
+      
+      while (!allDeleted && deleteAttempts < maxDeleteAttempts) {
+        // Delete from all sales
+        for (const saleId of allSaleIds) {
+          await supabase
+            .from('installments')
+            .delete()
+            .eq('sale_id', saleId)
+        }
+        
+        // Wait for deletions to complete
+        await new Promise(resolve => setTimeout(resolve, 1000 * (deleteAttempts + 1)))
+        
+        // Verify all installments are deleted
+        const { data: remainingInstallments } = await supabase
+          .from('installments')
+          .select('id, sale_id')
+          .in('sale_id', allSaleIds)
+        
+        if (!remainingInstallments || remainingInstallments.length === 0) {
+          allDeleted = true
+          break
+        }
+        
+        // If still exists, try to delete by ID
+        if (remainingInstallments.length > 0) {
+          await supabase
+            .from('installments')
+            .delete()
+            .in('id', remainingInstallments.map(i => i.id))
+        }
+        
+        deleteAttempts++
+      }
+      
+      if (!allDeleted) {
+        throw new Error(`فشل في حذف الأقساط القديمة بعد ${maxDeleteAttempts} محاولات. يرجى استخدام SQL script لإصلاح المشكلة.`)
+      }
+      
+      // Wait additional time to ensure database consistency
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Use the calculated total paid
+      const totalPaid = totalPaidFromInstallments
+      
+      // Create new installments for merged sale
+      const installmentsToCreate = []
+      for (let i = 0; i < numberOfInstallments; i++) {
+        const dueDate = new Date(startDate)
+        dueDate.setMonth(dueDate.getMonth() + i)
+        
+        installmentsToCreate.push({
+          sale_id: baseSale.id,
+          installment_number: i + 1,
+          amount_due: monthlyAmount,
+          amount_paid: 0,
+          stacked_amount: 0,
+          due_date: dueDate.toISOString().split('T')[0],
+          status: 'Unpaid',
+        })
+      }
+      
+      // Distribute payments across installments
+      let remainingPaid = totalPaid
+      for (let i = 0; i < installmentsToCreate.length && remainingPaid > 0.01; i++) {
+        const inst = installmentsToCreate[i]
+        if (remainingPaid >= monthlyAmount) {
+          inst.amount_paid = monthlyAmount
+          inst.status = 'Paid'
+          remainingPaid -= monthlyAmount
+        } else {
+          inst.amount_paid = remainingPaid
+          inst.status = remainingPaid > 0.01 ? 'Partial' : 'Unpaid'
+          remainingPaid = 0
+        }
+      }
+      
+      // Final verification - ensure NO installments exist for base sale
+      const { data: finalCheck } = await supabase
+        .from('installments')
+        .select('id')
+        .eq('sale_id', baseSale.id)
+      
+      if (finalCheck && finalCheck.length > 0) {
+        // Force delete any remaining
+        await supabase
+          .from('installments')
+          .delete()
+          .in('id', finalCheck.map(i => i.id))
+        
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+      
+      // Now insert new installments - use optimized batch approach
+      // Insert all at once, but if it fails, do one by one
+      const { error: batchInsertError } = await supabase
+        .from('installments')
+        .insert(installmentsToCreate)
+      
+      if (batchInsertError) {
+        // Batch insert failed, try one by one
+        for (const installment of installmentsToCreate) {
+          // Check if exists
+          const { data: existing } = await supabase
+            .from('installments')
+            .select('id')
+            .eq('sale_id', installment.sale_id)
+            .eq('installment_number', installment.installment_number)
+            .maybeSingle()
+          
+          if (existing) {
+            // Update existing
+            const { error: updateError } = await supabase
+              .from('installments')
+              .update({
+                amount_due: installment.amount_due,
+                amount_paid: installment.amount_paid,
+                stacked_amount: installment.stacked_amount,
+                due_date: installment.due_date,
+                status: installment.status,
+              })
+              .eq('id', existing.id)
+            
+            if (updateError) {
+              throw new Error(`فشل في تحديث القسط ${installment.installment_number}: ${updateError.message}`)
+            }
+          } else {
+            // Insert new
+            const { error: insertError } = await supabase
+              .from('installments')
+              .insert([installment])
+            
+            if (insertError) {
+              // If duplicate, try update
+              if (insertError.code === '23505' || insertError.message?.includes('duplicate')) {
+                const { data: retryExisting } = await supabase
+                  .from('installments')
+                  .select('id')
+                  .eq('sale_id', installment.sale_id)
+                  .eq('installment_number', installment.installment_number)
+                  .maybeSingle()
+                
+                if (retryExisting) {
+                  const { error: retryUpdateError } = await supabase
+                    .from('installments')
+                    .update({
+                      amount_due: installment.amount_due,
+                      amount_paid: installment.amount_paid,
+                      stacked_amount: installment.stacked_amount,
+                      due_date: installment.due_date,
+                      status: installment.status,
+                    })
+                    .eq('id', retryExisting.id)
+                  
+                  if (retryUpdateError) {
+                    throw new Error(`فشل في إنشاء/تحديث القسط ${installment.installment_number}: ${retryUpdateError.message}`)
+                  }
+                } else {
+                  throw new Error(`فشل في إنشاء القسط ${installment.installment_number}: ${insertError.message}`)
+                }
+              } else {
+                throw new Error(`فشل في إنشاء القسط ${installment.installment_number}: ${insertError.message}`)
+              }
+            }
+          }
+        }
+      }
+      
+      // Delete other sales
+      for (const { sale } of otherSales) {
+        await supabase
+          .from('sales')
+          .delete()
+          .eq('id', sale.id)
+      }
+      
+      // Update land pieces status
+      const allPieceIdsArray = Array.from(allPieceIds)
+      await supabase
+        .from('land_pieces')
+        .update({ status: 'Sold' })
+        .in('id', allPieceIdsArray)
+      
+      setSuccessMessage(`تم دمج ${group.sales.length} صفقة بنجاح`)
+      setMergeDialogOpen(false)
+      setRefreshKey(prev => prev + 1)
+      fetchInstallments()
+      
+      setTimeout(() => setSuccessMessage(null), 5000)
+    } catch (error: any) {
+      console.error('Error merging sales:', error)
+      setErrorMessage(error?.message || 'حدث خطأ أثناء دمج الأقساط')
+    } finally {
+      setMergingSales(false)
+    }
   }
 
   if (loading) {
@@ -1614,6 +2146,16 @@ export function Installments() {
       {/* Compact Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-2xl sm:text-3xl font-bold">الأقساط</h1>
+        {hasPermission('manage_sales') && (
+          <Button
+            onClick={findMergeableSales}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <Merge className="h-4 w-4" />
+            دمج الأقساط
+          </Button>
+        )}
       </div>
 
       {/* Search and Advanced Filters */}
@@ -2847,6 +3389,66 @@ export function Installments() {
         cancelText="إلغاء"
       />
 
+      {/* Merge Installments Dialog */}
+      <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
+        <DialogContent className="w-[95vw] sm:w-full max-w-3xl max-h-[95vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>دمج الأقساط</DialogTitle>
+          </DialogHeader>
+          {mergeableGroups.length === 0 ? (
+            <div className="p-6 text-center">
+              <p className="text-muted-foreground">لا توجد صفقات قابلة للدمج</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                يجب أن تكون الصفقات لنفس العميل مع نفس المتبقي ونفس عدد الأقساط المتبقية ونفس العرض
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {mergeableGroups.map((group, groupIdx) => (
+                <Card key={groupIdx} className="border-2">
+                  <CardHeader>
+                    <CardTitle className="text-lg">{group.clientName}</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      {group.sales.length} صفقة قابلة للدمج
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {group.sales.map((sale, saleIdx) => (
+                        <div key={saleIdx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex-1">
+                            <p className="font-medium">تاريخ: {formatDate(sale.saleDate)}</p>
+                            <p className="text-sm text-muted-foreground">القطع: {sale.landPieces}</p>
+                            <p className="text-sm text-muted-foreground">
+                              المتبقي: {formatCurrency(sale.totalUnpaid)} • {sale.remainingInstallments} قسط متبقي
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="pt-3 border-t">
+                        <Button
+                          onClick={() => mergeSalesInstallments(group)}
+                          disabled={mergingSales}
+                          className="w-full"
+                          variant="default"
+                        >
+                          {mergingSales ? 'جاري الدمج...' : `دمج ${group.sales.length} صفقة`}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMergeDialogOpen(false)}>
+              إلغاء
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Error Message - Use notification system instead of fixed card */}
       {errorMessage && (
         <div className="fixed top-16 left-4 right-4 z-[10001] md:top-4 pointer-events-none">
@@ -3053,7 +3655,9 @@ export function Installments() {
                             *,
                             client:clients (*),
                             contract_editor:contract_editors (*),
-                            land_piece_ids
+                            land_piece_ids,
+                            created_by_user:users!sales_created_by_fkey(id, name),
+                            confirmed_by_user:users!sales_confirmed_by_fkey(id, name)
                           )
                         `)
                         .eq('sale_id', selectedSaleForDetails.saleId)
@@ -3085,6 +3689,30 @@ export function Installments() {
                           return sum + Math.max(0, remaining)
                         }, 0)
                         
+                        const sale = firstInst.sale as any
+                        const isConfirmed = sale?.confirmed_by !== null || 
+                                            sale?.is_confirmed === true || 
+                                            sale?.big_advance_confirmed === true ||
+                                            freshInstallments.length > 0
+                        
+                        // If confirmed_by exists but confirmed_by_user is not loaded, fetch it
+                        let confirmedByUser = sale?.confirmed_by_user || selectedSaleForDetails.confirmedByUser || null
+                        if (!confirmedByUser && sale?.confirmed_by) {
+                          try {
+                            const { data: userData } = await supabase
+                              .from('users')
+                              .select('id, name')
+                              .eq('id', sale.confirmed_by)
+                              .single()
+                            
+                            if (userData) {
+                              confirmedByUser = { id: userData.id, name: userData.name }
+                            }
+                          } catch (err) {
+                            console.error('Error fetching confirmed_by user:', err)
+                          }
+                        }
+                        
                         setSelectedSaleForDetails({
                           saleId: selectedSaleForDetails.saleId,
                           clientName: firstInst.sale?.client?.name || selectedSaleForDetails.clientName,
@@ -3096,7 +3724,10 @@ export function Installments() {
                           totalPaid,
                           totalUnpaid,
                           landPieces: pieceNumbers,
-                          contractEditor: firstInst.sale?.contract_editor || null
+                          contractEditor: firstInst.sale?.contract_editor || null,
+                          createdByUser: sale?.created_by_user || selectedSaleForDetails.createdByUser || null,
+                          confirmedByUser,
+                          isConfirmed
                         })
                       }
                     } catch (err) {
@@ -3153,6 +3784,22 @@ export function Installments() {
                       </p>
                     </div>
                   )}
+                  <div>
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-1">باعه</p>
+                    <p className="font-semibold text-sm sm:text-base">
+                      {selectedSaleForDetails.createdByUser ? selectedSaleForDetails.createdByUser.name : '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-1">أكده</p>
+                    <p className="font-semibold text-sm sm:text-base">
+                      {selectedSaleForDetails.confirmedByUser 
+                        ? selectedSaleForDetails.confirmedByUser.name 
+                        : (selectedSaleForDetails.isConfirmed 
+                            ? 'مؤكد (مستخدم غير معروف)' 
+                            : 'لم يتم التأكيد بعد')}
+                    </p>
+                  </div>
                 </div>
                 <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
                   <div className="flex items-center justify-between text-xs sm:text-sm">
@@ -3185,7 +3832,7 @@ export function Installments() {
                       if (selectedSaleForDetails) {
                         const { data: freshData } = await supabase
                           .from('installments')
-                          .select(`*, sale:sales (*, client:clients (*), contract_editor:contract_editors (*), land_piece_ids)`)
+                          .select(`*, sale:sales (*, client:clients (*), contract_editor:contract_editors (*), land_piece_ids, created_by_user:users!sales_created_by_fkey(id, name), confirmed_by_user:users!sales_confirmed_by_fkey(id, name))`)
                           .eq('sale_id', selectedSaleForDetails.saleId)
                           .order('installment_number', { ascending: true })
                         
@@ -3201,13 +3848,40 @@ export function Installments() {
                             return sum + Math.max(0, remaining)
                           }, 0)
                           
+                          const sale = firstInst?.sale as any
+                          const isConfirmed = sale?.confirmed_by !== null || 
+                                              sale?.is_confirmed === true || 
+                                              sale?.big_advance_confirmed === true ||
+                                              freshInstallments.length > 0
+                          
+                          // If confirmed_by exists but confirmed_by_user is not loaded, fetch it
+                          let confirmedByUser = sale?.confirmed_by_user || selectedSaleForDetails.confirmedByUser || null
+                          if (!confirmedByUser && sale?.confirmed_by) {
+                            try {
+                              const { data: userData } = await supabase
+                                .from('users')
+                                .select('id, name')
+                                .eq('id', sale.confirmed_by)
+                                .single()
+                              
+                              if (userData) {
+                                confirmedByUser = { id: userData.id, name: userData.name }
+                              }
+                            } catch (err) {
+                              console.error('Error fetching confirmed_by user:', err)
+                            }
+                          }
+                          
                           setSelectedSaleForDetails({
                             ...selectedSaleForDetails,
                             installments: freshInstallments,
                             totalDue,
                             totalPaid,
                             totalUnpaid,
-                            contractEditor: freshInstallments[0]?.sale?.contract_editor || selectedSaleForDetails.contractEditor || null
+                            contractEditor: firstInst?.sale?.contract_editor || selectedSaleForDetails.contractEditor || null,
+                            createdByUser: sale?.created_by_user || selectedSaleForDetails.createdByUser || null,
+                            confirmedByUser,
+                            isConfirmed
                           })
                         }
                       }

@@ -33,7 +33,9 @@ interface PhoneCall {
   notes: string | null
   created_at: string
   updated_at: string
+  created_by: string | null
   land_batch?: LandBatch | null
+  created_by_user?: { id: string; name: string } | null
 }
 
 type DateFilter = 'today' | 'week' | 'all' | 'custom'
@@ -119,7 +121,8 @@ export function PhoneCalls() {
         .from('phone_calls')
         .select(`
           *,
-          land_batch:land_batches(id, name)
+          land_batch:land_batches(id, name),
+          created_by_user:users!phone_calls_created_by_fkey(id, name)
         `)
         .gte('rendezvous_time', monthStart.toISOString())
         .lte('rendezvous_time', monthEnd.toISOString())
@@ -544,6 +547,12 @@ export function PhoneCalls() {
                             <Badge variant="outline">
                               {call.motorized === 'motorisé' ? t('phoneCalls.motorizedOption') : t('phoneCalls.nonMotorizedOption')}
                             </Badge>
+                            {call.created_by_user && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-gray-500">أضافه:</span>
+                                <span className="text-xs font-medium">{call.created_by_user.name}</span>
+                              </div>
+                            )}
                           </div>
                           {call.notes && (
                             <p className="text-sm text-muted-foreground mt-2 p-2 bg-gray-50 rounded">

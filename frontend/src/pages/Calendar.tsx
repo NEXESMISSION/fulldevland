@@ -86,7 +86,9 @@ export function Calendar() {
           sale:sales(
             *,
             client:clients(*),
-            selected_offer:payment_offers!sales_selected_offer_id_fkey(*)
+            selected_offer:payment_offers!sales_selected_offer_id_fkey(*),
+            created_by_user:users!sales_created_by_fkey(id, name),
+            confirmed_by_user:users!sales_confirmed_by_fkey(id, name)
           )
         `)
         .gte('rendezvous_date', startDate)
@@ -1041,6 +1043,29 @@ export function Calendar() {
                         <p>لا توجد تفاصيل متاحة للقطع</p>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Sale User Info */}
+                {sale && (
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                    <h3 className="font-semibold mb-2">معلومات البيع</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                      {sale.created_by_user && (
+                        <div>
+                          <span className="font-medium">باعه:</span> {sale.created_by_user.name}
+                        </div>
+                      )}
+                      <div>
+                        <span className="font-medium">أكده:</span> {
+                          sale.confirmed_by_user 
+                            ? sale.confirmed_by_user.name 
+                            : ((sale as any).is_confirmed === true || (sale as any).big_advance_confirmed === true || sale.confirmed_by !== null
+                                ? 'مؤكد (مستخدم غير معروف)'
+                                : 'لم يتم التأكيد بعد')
+                        }
+                      </div>
+                    </div>
                   </div>
                 )}
 

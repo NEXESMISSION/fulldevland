@@ -658,7 +658,9 @@ export function LandManagement() {
         .select(`
           *,
           client:clients(*),
-          contract_editor:contract_editors(*)
+          contract_editor:contract_editors(*),
+          created_by_user:users!sales_created_by_fkey(id, name),
+          confirmed_by_user:users!sales_confirmed_by_fkey(id, name)
         `)
         .contains('land_piece_ids', [piece.id])
         .not('status', 'eq', 'Cancelled')
@@ -7459,6 +7461,18 @@ export function LandManagement() {
                       </p>
                     </div>
                   )}
+                  <div className="col-span-2">
+                    <span className="text-gray-500">باعه:</span>
+                    <p className="font-medium">
+                      {saleDetailsData.created_by_user ? saleDetailsData.created_by_user.name : '-'}
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-gray-500">أكده:</span>
+                    <p className="font-medium">
+                      {saleDetailsData.confirmed_by_user ? saleDetailsData.confirmed_by_user.name : 'لم يتم التأكيد بعد'}
+                    </p>
+                  </div>
                 </div>
               </div>
 
