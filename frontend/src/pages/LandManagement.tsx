@@ -21,6 +21,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -318,6 +319,8 @@ export function LandManagement() {
   const [savingClient, setSavingClient] = useState(false)
   const [creatingSale, setCreatingSale] = useState(false)
   const [createSaleConfirmOpen, setCreateSaleConfirmOpen] = useState(false)
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false)
+  const [successMessage, setSuccessMessage] = useState('')
   const [searchingClient, setSearchingClient] = useState(false)
   const [foundClient, setFoundClient] = useState<Client | null>(null)
   
@@ -4323,7 +4326,8 @@ export function LandManagement() {
           .eq('id', pieceId)
       }
 
-      showNotification('تم إنشاء البيع بنجاح', 'success')
+      setSuccessMessage('تم إنشاء البيع بنجاح')
+      setSuccessDialogOpen(true)
       setSaleDialogOpen(false)
       setNewClient(null)
       setSelectedPieces(new Set())
@@ -6135,6 +6139,41 @@ export function LandManagement() {
         confirmText={creatingSale ? 'جاري الإنشاء...' : 'نعم، متأكد'}
         cancelText="إلغاء"
       />
+
+      {/* Success Dialog - Matches ConfirmDialog design */}
+      <Dialog open={successDialogOpen} onOpenChange={setSuccessDialogOpen}>
+        <DialogContent 
+          preventClose={false}
+          className="confirm-dialog-high-z bg-white border-2 border-[#10b981] rounded-[16px] p-[22px_26px] max-w-[440px] shadow-[0_24px_48px_rgba(0,0,0,0.45)]"
+        >
+          <DialogFooter className="flex justify-center gap-[10px] mb-4 pb-4 border-b">
+            <Button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setSuccessDialogOpen(false)
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setSuccessDialogOpen(false)
+              }}
+              className="px-[14px] py-[8px] rounded-[10px] text-[14px] font-medium border-none bg-[#10b981] text-white hover:bg-[#059669]"
+            >
+              موافق
+            </Button>
+          </DialogFooter>
+          <DialogHeader>
+            <DialogTitle className="text-[16px] font-semibold text-[#020617] mb-2 text-center">
+              تم بنجاح
+            </DialogTitle>
+            <DialogDescription className="text-[14px] text-[#334155] mb-4 text-center">
+              {successMessage || 'تم تنفيذ العملية بنجاح'}
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
 
       {/* New Client Dialog */}
       <Dialog open={clientDialogOpen} onOpenChange={(open) => {

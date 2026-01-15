@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -61,6 +62,8 @@ export function SaleConfirmation() {
   const confirmingRef = useRef(false) // Use ref to prevent race conditions
   const [confirmBeforeConfirmOpen, setConfirmBeforeConfirmOpen] = useState(false)
   const [pendingConfirmationType, setPendingConfirmationType] = useState<'full' | 'bigAdvance' | null>(null)
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false)
+  const [successMessage, setSuccessMessage] = useState('')
   
   // Search state
   const [searchTerm, setSearchTerm] = useState('')
@@ -3056,20 +3059,20 @@ export function SaleConfirmation() {
         
         // Reset the flag and show success
         setConfirmingAllPieces(false)
-        showNotification(`تم تأكيد جميع القطع (${allPieces.length} قطع) بنجاح`, 'success')
+        setSuccessMessage(`تم تأكيد جميع القطع (${allPieces.length} قطع) بنجاح`)
+        setSuccessDialogOpen(true)
       } else {
         // Show success message
         const isPromiseCompletion = selectedSale.payment_type === 'PromiseOfSale' && confirmationType === 'full' && (selectedSale.promise_initial_payment || 0) > 0
-        showNotification(
-          confirmationType === 'full' 
-            ? (selectedSale.payment_type === 'PromiseOfSale' 
-                ? (isPromiseCompletion 
-                    ? 'تم استكمال الوعد بالبيع بنجاح' 
-                    : 'تم تأكيد الوعد بالبيع بنجاح - يمكنك الآن استكمال الدفع المتبقي')
-                : 'تم تأكيد البيع بنجاح (دفع كامل)')
-            : 'تم تأكيد التسبقة بنجاح',
-          'success'
-        )
+        const message = confirmationType === 'full' 
+          ? (selectedSale.payment_type === 'PromiseOfSale' 
+              ? (isPromiseCompletion 
+                  ? 'تم استكمال الوعد بالبيع بنجاح' 
+                  : 'تم تأكيد الوعد بالبيع بنجاح - يمكنك الآن استكمال الدفع المتبقي')
+              : 'تم تأكيد البيع بنجاح')
+          : 'تم تأكيد التسبقة بنجاح'
+        setSuccessMessage(message)
+        setSuccessDialogOpen(true)
         setConfirmingAllPieces(false)
       }
       
@@ -4265,6 +4268,41 @@ export function SaleConfirmation() {
         confirmText={confirming ? 'جاري التأكيد...' : 'نعم، متأكد'}
         cancelText="إلغاء"
       />
+
+      {/* Success Dialog - Matches ConfirmDialog design */}
+      <Dialog open={successDialogOpen} onOpenChange={setSuccessDialogOpen}>
+        <DialogContent 
+          preventClose={false}
+          className="confirm-dialog-high-z bg-white border-2 border-[#10b981] rounded-[16px] p-[22px_26px] max-w-[440px] shadow-[0_24px_48px_rgba(0,0,0,0.45)]"
+        >
+          <DialogFooter className="flex justify-center gap-[10px] mb-4 pb-4 border-b">
+            <Button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setSuccessDialogOpen(false)
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setSuccessDialogOpen(false)
+              }}
+              className="px-[14px] py-[8px] rounded-[10px] text-[14px] font-medium border-none bg-[#10b981] text-white hover:bg-[#059669]"
+            >
+              موافق
+            </Button>
+          </DialogFooter>
+          <DialogHeader>
+            <DialogTitle className="text-[16px] font-semibold text-[#020617] mb-2 text-center">
+              تم بنجاح
+            </DialogTitle>
+            <DialogDescription className="text-[14px] text-[#334155] mb-4 text-center">
+              {successMessage || 'تم تنفيذ العملية بنجاح'}
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
 
       {/* Rendez-vous Dialog */}
       <Dialog open={rendezvousDialogOpen} onOpenChange={setRendezvousDialogOpen}>
