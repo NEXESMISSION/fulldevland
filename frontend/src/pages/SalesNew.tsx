@@ -310,18 +310,26 @@ export function SalesNew() {
       const saleInstallments = installments.filter(i => i.sale_id === sale.id)
       const salePayments = payments.filter(p => p.sale_id === sale.id)
       
-      // Calculate total paid for this sale (exclude refunds)
-      const totalPaid = salePayments
-        .filter(p => p.payment_type !== 'Refund')
-        .reduce((sum, p) => sum + (p.amount_paid || 0), 0)
+      // Check if sale is reset (has been reset back to confirmation page)
+      // Reset sales have: status = 'Pending', big_advance_amount = 0/null, company_fee_amount = null/0, small_advance_amount = 0/null
+      const isReset = sale.status === 'Pending' &&
+                     (sale.big_advance_amount === 0 || sale.big_advance_amount === null) &&
+                     (!sale.company_fee_amount || sale.company_fee_amount === 0) &&
+                     (!sale.small_advance_amount || sale.small_advance_amount === 0)
+      
+      // Filter out payments for reset sales - reset sales should show no payments
+      const validPayments = isReset ? [] : salePayments.filter(p => p.payment_type !== 'Refund')
+      
+      // Calculate total paid for this sale (exclude refunds and reset sales)
+      const totalPaid = validPayments.reduce((sum, p) => sum + (p.amount_paid || 0), 0)
       
       // Calculate big advance paid (BigAdvance payment type only)
-      const bigAdvancePaid = salePayments
+      const bigAdvancePaid = validPayments
         .filter(p => p.payment_type === 'BigAdvance')
         .reduce((sum, p) => sum + (p.amount_paid || 0), 0)
       
       // Calculate reservation paid (SmallAdvance payment type only)
-      const reservationPaid = salePayments
+      const reservationPaid = validPayments
         .filter(p => p.payment_type === 'SmallAdvance')
         .reduce((sum, p) => sum + (p.amount_paid || 0), 0)
       
@@ -1979,27 +1987,37 @@ export function SalesNew() {
             // Calculate payments per piece (divide by number of pieces)
             const pieceCount = saleData?.land_piece_ids?.length || 1
             
+            // Check if sale is reset (has been reset back to confirmation page)
+            // Reset sales have: status = 'Pending', big_advance_amount = 0/null, company_fee_amount = null/0, small_advance_amount = 0/null
+            const isReset = saleData.status === 'Pending' &&
+                           (saleData.big_advance_amount === 0 || saleData.big_advance_amount === null) &&
+                           (!saleData.company_fee_amount || saleData.company_fee_amount === 0) &&
+                           (!saleData.small_advance_amount || saleData.small_advance_amount === 0)
+            
+            // Filter out payments for reset sales - reset sales should show no payments
+            const validPayments = isReset ? [] : salePayments
+            
             // Calculate total payments for the entire sale (not per piece)
-            const totalReservationPaid = salePayments
+            const totalReservationPaid = validPayments
               .filter(p => p.payment_type === 'SmallAdvance')
               .reduce((sum, p) => sum + (p.amount_paid || 0), 0)
             
-            const totalBigAdvancePaid = salePayments
+            const totalBigAdvancePaid = validPayments
               .filter(p => p.payment_type === 'BigAdvance')
               .reduce((sum, p) => sum + (p.amount_paid || 0), 0)
             
             // Calculate full payment (Full payment type)
-            const totalFullPaymentPaid = salePayments
+            const totalFullPaymentPaid = validPayments
               .filter(p => p.payment_type === 'Full')
               .reduce((sum, p) => sum + (p.amount_paid || 0), 0)
             
             // Calculate partial payments (Partial payment type)
-            const totalPartialPaymentPaid = salePayments
+            const totalPartialPaymentPaid = validPayments
               .filter(p => p.payment_type === 'Partial')
               .reduce((sum, p) => sum + (p.amount_paid || 0), 0)
             
             // Calculate initial payment for Promise of Sale (InitialPayment type) from payments table
-            const totalInitialPaymentPaidFromPayments = salePayments
+            const totalInitialPaymentPaidFromPayments = validPayments
               .filter(p => p.payment_type === 'InitialPayment')
               .reduce((sum, p) => sum + (p.amount_paid || 0), 0)
             

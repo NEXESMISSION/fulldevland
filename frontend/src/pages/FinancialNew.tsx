@@ -1466,8 +1466,8 @@ export function Financial() {
     return result.sort((a, b) => b.totalAmount - a.totalAmount)
   }
 
-  // Calculate totals by place (location)
-  // NOTE: For place totals, we use ALL sales (not filtered by date) to show all places with their amounts
+  // Calculate totals by land batch name (instead of location)
+  // NOTE: For batch totals, we use ALL sales (not filtered by date) to show all batches with their amounts
   // This ensures all batches are represented even if their sales are outside the selected date range
   const getTotalsByPlace = () => {
     const placeTotals = new Map<string, {
@@ -1481,9 +1481,9 @@ export function Financial() {
       total: number
     }>()
 
-    // Helper to add to place total
-    const addToPlace = (location: string | null, amount: number, type: 'installment' | 'smallAdvance' | 'full' | 'bigAdvance' | 'promiseOfSale' | 'companyFee') => {
-      const place = location || 'غير محدد'
+    // Helper to add to batch total (using land batch name instead of location)
+    const addToPlace = (batchName: string | null, amount: number, type: 'installment' | 'smallAdvance' | 'full' | 'bigAdvance' | 'promiseOfSale' | 'companyFee') => {
+      const place = batchName || 'غير محدد'
       if (!placeTotals.has(place)) {
         placeTotals.set(place, {
           place,
@@ -1500,7 +1500,7 @@ export function Financial() {
       placeData[type] += amount
     }
 
-    // First, collect all unique places from all sales (including pending ones) to ensure all places are shown
+    // First, collect all unique land batch names from all sales (including pending ones) to ensure all batches are shown
     const allPlaces = new Set<string>()
     filteredData.sales.forEach(sale => {
       if (sale.status === 'Cancelled') return
@@ -1512,21 +1512,21 @@ export function Financial() {
         allPlaces.add('غير محدد')
       } else {
         pieces.forEach(piece => {
-          const location = piece.land_batch?.location || null
-          const place = location || 'غير محدد'
+          const batchName = piece.land_batch?.name || null
+          const place = batchName || 'غير محدد'
           allPlaces.add(place)
         })
       }
     })
     
-    // Also collect places from all land pieces to ensure we don't miss any batches
+    // Also collect batch names from all land pieces to ensure we don't miss any batches
     landPieces.forEach(piece => {
-      const location = piece.land_batch?.location || null
-      const place = location || 'غير محدد'
+      const batchName = piece.land_batch?.name || null
+      const place = batchName || 'غير محدد'
       allPlaces.add(place)
     })
 
-    // Initialize all places with 0 amounts
+    // Initialize all batches with 0 amounts
     allPlaces.forEach(place => {
       if (!placeTotals.has(place)) {
         placeTotals.set(place, {
@@ -1567,16 +1567,16 @@ export function Financial() {
       const pieces = landPieces.filter(p => pieceIds.includes(p.id))
       if (pieces.length === 0) return
       
-      // Get locations from pieces - handle multiple batches in one sale
-      const batchLocations = new Map<string, number>() // location -> piece count
+      // Get land batch names from pieces - handle multiple batches in one sale
+      const batchNames = new Map<string, number>() // batch name -> piece count
       pieces.forEach(piece => {
-        const location = piece.land_batch?.location || null
-        const place = location || 'غير محدد'
-        batchLocations.set(place, (batchLocations.get(place) || 0) + 1)
+        const batchName = piece.land_batch?.name || null
+        const place = batchName || 'غير محدد'
+        batchNames.set(place, (batchNames.get(place) || 0) + 1)
       })
       
       // Distribute sale amounts across batches by piece count
-      batchLocations.forEach((pieceCountInBatch, place) => {
+      batchNames.forEach((pieceCountInBatch, place) => {
         const totalPieceCount = pieces.length
         const ratio = pieceCountInBatch / totalPieceCount
         
@@ -1623,7 +1623,15 @@ export function Financial() {
         }
         
         // For Full payment type, only if sale is confirmed/completed
+        // IMPORTANT: Exclude reset sales (status = 'Pending', big_advance_amount = 0, company_fee_amount = null, small_advance_amount = 0)
         if (isConfirmed && sale.payment_type === 'Full' && !hasFullPayment) {
+          // Double check this is not a reset sale - reset sales should not show in finance
+          const isResetSale = sale.status === 'Pending' && 
+                              sale.big_advance_amount === 0 && 
+                              !sale.company_fee_amount &&
+                              (!sale.small_advance_amount || sale.small_advance_amount === 0)
+          if (isResetSale) return // Skip reset sales completely
+          
           const pricePerPiece = sale.total_selling_price / totalPieceCount
           const amountForBatch = pricePerPiece * pieceCountInBatch
           addToPlace(place, amountForBatch, 'full')
@@ -1671,7 +1679,7 @@ export function Financial() {
       const pieces = landPieces.filter(p => pieceIds.includes(p.id))
       
       if (pieces.length === 0) {
-        // If no pieces found, add to "غير محدد" place
+        // If no pieces found, add to "غير محدد" batch
         const place = 'غير محدد'
         switch (payment.payment_type) {
           case 'Installment':
@@ -1703,46 +1711,46 @@ export function Financial() {
         return
       }
       
-      // Group pieces by location to distribute payments across multiple locations
-      const locationGroups = new Map<string, number>() // location -> piece count
+      // Group pieces by land batch name to distribute payments across multiple batches
+      const batchNameGroups = new Map<string, number>() // batch name -> piece count
       pieces.forEach(piece => {
-        const location = piece.land_batch?.location || null
-        const place = location || 'غير محدد'
-        locationGroups.set(place, (locationGroups.get(place) || 0) + 1)
+        const batchName = piece.land_batch?.name || null
+        const place = batchName || 'غير محدد'
+        batchNameGroups.set(place, (batchNameGroups.get(place) || 0) + 1)
       })
       
       const totalPieceCount = pieces.length
       
-      // Distribute payment across locations by piece count
-      locationGroups.forEach((pieceCountInLocation, place) => {
-        const ratio = pieceCountInLocation / totalPieceCount
-        const amountForLocation = payment.amount_paid * ratio
+      // Distribute payment across batches by piece count
+      batchNameGroups.forEach((pieceCountInBatch, place) => {
+        const ratio = pieceCountInBatch / totalPieceCount
+        const amountForBatch = payment.amount_paid * ratio
         
         // Add payment amount based on type
         switch (payment.payment_type) {
           case 'Installment':
-            addToPlace(place, amountForLocation, 'installment')
+            addToPlace(place, amountForBatch, 'installment')
             break
           case 'SmallAdvance':
             // Always add SmallAdvance payments (for both confirmed and unconfirmed sales)
             // Only skip if already counted from sales table
             if (!(sale.small_advance_amount && sale.small_advance_amount > 0)) {
-              addToPlace(place, amountForLocation, 'smallAdvance')
+              addToPlace(place, amountForBatch, 'smallAdvance')
             }
             break
           case 'BigAdvance':
             // Only add if not already counted from sales table
             if (!(sale.big_advance_amount && sale.big_advance_amount > 0)) {
-              addToPlace(place, amountForLocation, 'bigAdvance')
+              addToPlace(place, amountForBatch, 'bigAdvance')
             }
             break
           case 'Full':
-            addToPlace(place, amountForLocation, 'full')
+            addToPlace(place, amountForBatch, 'full')
             break
           case 'InitialPayment':
           case 'Partial':
             if ((sale as any).payment_type === 'PromiseOfSale') {
-              addToPlace(place, amountForLocation, 'promiseOfSale')
+              addToPlace(place, amountForBatch, 'promiseOfSale')
             }
             break
         }
@@ -1808,7 +1816,6 @@ export function Financial() {
               >
                 <div className="flex-1 min-w-0">
                   <div className={`font-semibold text-xs ${colorConfig.text} truncate`}>{landGroup.landBatchName}</div>
-                  {landGroup.location && <div className={`text-xs ${colorConfig.textLight} truncate`}>{landGroup.location}</div>}
                 </div>
                 <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
                   <div className="text-right">
@@ -2161,7 +2168,7 @@ export function Financial() {
                 <TableHeader>
                   <TableRow className="bg-gray-50">
                     <TableHead className="font-bold text-right">النوع</TableHead>
-                    <TableHead className="font-bold text-right">المكان</TableHead>
+                    <TableHead className="font-bold text-right">الدفعة</TableHead>
                     <TableHead className="font-bold text-center">القطع</TableHead>
                     <TableHead className="font-bold text-center">العمليات</TableHead>
                     <TableHead className="font-bold text-right">المبلغ</TableHead>
@@ -2213,7 +2220,6 @@ export function Financial() {
                           <TableCell className="font-bold text-blue-700 text-right">{idx === 0 ? 'الأقساط' : ''}</TableCell>
                           <TableCell className="text-right">
                             <div className="font-medium">{group.landBatchName}</div>
-                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
                             {pieceNumbers && <div className="text-xs text-blue-600 mt-1">{pieceNumbers}</div>}
                             {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
                           </TableCell>
@@ -2317,7 +2323,6 @@ export function Financial() {
                           <TableCell className="font-bold text-orange-700 text-right">{idx === 0 ? 'العربون' : ''}</TableCell>
                           <TableCell className="text-right">
                             <div className="font-medium">{group.landBatchName}</div>
-                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
                             {pieceNumbers && <div className="text-xs text-orange-600 mt-1">{pieceNumbers}</div>}
                             {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
                           </TableCell>
@@ -2405,10 +2410,9 @@ export function Financial() {
                         ...data.map((group, idx) => (
                       <TableRow key={`full-${idx}`} className="bg-green-50/50 hover:bg-green-100/50">
                         <TableCell className="font-bold text-green-700 text-right">{idx === 0 ? 'بالحاضر' : ''}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-medium">{group.landBatchName}</div>
-                          {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
-                        </TableCell>
+                          <TableCell className="text-right">
+                            <div className="font-medium">{group.landBatchName}</div>
+                          </TableCell>
                         <TableCell className="text-center">{group.pieces.length}</TableCell>
                         <TableCell className="text-center">{group.paymentCount}</TableCell>
                         <TableCell className="text-right font-bold text-green-600">{formatCurrency(group.totalAmount)}</TableCell>
@@ -2507,7 +2511,6 @@ export function Financial() {
                           <TableCell className="font-bold text-purple-700 text-right">{idx === 0 ? 'التسبقة' : ''}</TableCell>
                           <TableCell className="text-right">
                             <div className="font-medium">{group.landBatchName}</div>
-                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
                             {pieceNumbers && <div className="text-xs text-purple-600 mt-1">{pieceNumbers}</div>}
                             {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
                           </TableCell>
@@ -2622,7 +2625,6 @@ export function Financial() {
                           <TableCell className="font-bold text-pink-700 text-right">{idx === 0 ? 'وعد بالبيع' : ''}</TableCell>
                           <TableCell className="text-right">
                             <div className="font-medium">{group.landBatchName}</div>
-                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
                             {pieceNumbers && <div className="text-xs text-pink-600 mt-1">{pieceNumbers}</div>}
                             {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
                           </TableCell>
@@ -2715,7 +2717,6 @@ export function Financial() {
                           <TableCell className="font-bold text-indigo-700">{idx === 0 ? 'العمولة' : ''}</TableCell>
                           <TableCell>
                             <div className="font-medium">{group.landBatchName}</div>
-                            {group.location && <div className="text-xs text-muted-foreground">{group.location}</div>}
                             {pieceNumbers.length > 0 && <div className="text-xs text-indigo-600 mt-1">#{pieceNumbers.slice(0, 5).join(', ')}{pieceNumbers.length > 5 ? '...' : ''}</div>}
                             {uniqueClients.size > 0 && <div className="text-xs text-muted-foreground mt-1">{Array.from(uniqueClients).slice(0, 2).join(', ')}{uniqueClients.size > 2 ? '...' : ''}</div>}
                           </TableCell>
@@ -2783,16 +2784,16 @@ export function Financial() {
           return (
             <Card className="mt-4">
               <CardHeader>
-                <CardTitle className="text-lg font-bold">الإجمالي حسب المكان</CardTitle>
+                <CardTitle className="text-lg font-bold">الإجمالي حسب الدفعة</CardTitle>
               </CardHeader>
               <CardContent>
                 {placeTotals.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-4">لا توجد بيانات حسب المكان</p>
+                  <p className="text-center text-muted-foreground py-4">لا توجد بيانات حسب الدفعة</p>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-gray-50">
-                        <TableHead className="font-bold text-right">المكان</TableHead>
+                        <TableHead className="font-bold text-right">الدفعة</TableHead>
                         <TableHead className="font-bold text-right">الأقساط</TableHead>
                         <TableHead className="font-bold text-right">العربون</TableHead>
                         <TableHead className="font-bold text-right">بالحاضر</TableHead>
@@ -3140,7 +3141,7 @@ export function Financial() {
             
             return (
               <div className="space-y-3 mt-4">
-                <h3 className="font-bold text-base text-gray-800 mb-3">الإجمالي حسب المكان</h3>
+                <h3 className="font-bold text-base text-gray-800 mb-3">الإجمالي حسب الدفعة</h3>
                 {placeTotals.map((placeData, idx) => (
                   <Card key={idx} className="border-2 border-gray-300 bg-gradient-to-br from-gray-50 to-gray-100">
                     <CardContent className="p-4">
@@ -3309,7 +3310,6 @@ export function Financial() {
                                     <div className="space-y-3">
                                       <div>
                                         <h4 className="font-bold text-base mb-1">{group.landBatchName}</h4>
-                                        {group.location && <p className="text-xs text-muted-foreground">{group.location}</p>}
           </div>
                                       <div className="grid grid-cols-2 gap-3 text-xs">
                                         <div>
@@ -3383,12 +3383,6 @@ export function Financial() {
                                                 <span className="text-muted-foreground">الدفعة:</span>
                                                 <div className="font-medium">{group.landBatchName}</div>
                                               </div>
-                                              {group.location && (
-                                                <div>
-                                                  <span className="text-muted-foreground">الموقع:</span>
-                                                  <div className="font-medium">{group.location}</div>
-                                                </div>
-                                              )}
                                         {soldByUsers.length > 0 && (
                                                 <div>
                                                   <span className="text-muted-foreground">باع:</span>
@@ -3456,7 +3450,6 @@ export function Financial() {
                                 <TableHead className="text-right">التاريخ</TableHead>
                                 <TableHead className="text-right">العميل</TableHead>
                                 <TableHead className="text-right">اسم الدفعة</TableHead>
-                                <TableHead className="text-right">الموقع</TableHead>
                                 <TableHead className="text-right">رقم القطعة</TableHead>
                                 <TableHead className="text-center">عدد الأقساط</TableHead>
                                 <TableHead className="text-right">المبلغ</TableHead>
@@ -3468,8 +3461,8 @@ export function Financial() {
                               {paymentsByLand.flatMap((group, groupIndex) => {
                                 return [
                                   <TableRow key={`summary-${groupIndex}`} className="bg-gray-50 font-bold">
-                                    <TableCell colSpan={5} className="font-bold text-right">
-                                      {group.landBatchName} {group.location && `- ${group.location}`}
+                                    <TableCell colSpan={4} className="font-bold text-right">
+                                      {group.landBatchName}
                                     </TableCell>
                                     <TableCell className="text-center">{group.paymentCount} دفعة</TableCell>
                                     <TableCell className={`text-right font-bold text-lg ${colors.text}`}>
@@ -3499,7 +3492,6 @@ export function Financial() {
                                             </div>
                                           </TableCell>
                                           <TableCell className="text-right text-muted-foreground">{actualPiece?.land_batch?.name || group.landBatchName}</TableCell>
-                                          <TableCell className="text-right text-muted-foreground">{actualPiece?.land_batch?.location || group.location || '-'}</TableCell>
                                           <TableCell className="text-right font-medium">{displayPieceNumber}</TableCell>
                                           <TableCell className="text-center">{piece.installmentCount > 0 ? piece.installmentCount : '-'}</TableCell>
                                           <TableCell className={`text-right font-bold ${colors.text}`}>
@@ -3524,7 +3516,7 @@ export function Financial() {
                                 ]
                               })}
                               <TableRow className="bg-primary/10 font-bold border-t-2">
-                                <TableCell colSpan={5} className="font-bold text-right">الإجمالي:</TableCell>
+                                <TableCell colSpan={4} className="font-bold text-right">الإجمالي:</TableCell>
                                 <TableCell className="text-center">-</TableCell>
                                 <TableCell className={`text-right font-bold text-lg ${colors.text}`}>
                                   {formatCurrency(totalAmount)}
@@ -3671,7 +3663,6 @@ export function Financial() {
                               <div className="space-y-3">
                                 <div>
                                   <h4 className="font-bold text-base mb-1">{group.landBatchName}</h4>
-                                  {group.location && <p className="text-xs text-muted-foreground">{group.location}</p>}
                                 </div>
                                 <div className="grid grid-cols-2 gap-3 text-xs">
                                   <div>
@@ -3736,12 +3727,6 @@ export function Financial() {
                                           <span className="text-muted-foreground">الدفعة:</span>
                                           <div className="font-medium">{batchName}</div>
                                         </div>
-                                        {location && (
-                                          <div>
-                                            <span className="text-muted-foreground">الموقع:</span>
-                                            <div className="font-medium">{location}</div>
-                                          </div>
-                                        )}
                                         <div>
                                           <span className="text-muted-foreground">القطع:</span>
                                           <div className="font-medium">{pieces.length} {pieceNumbers !== '-' && `(${pieceNumbers})`}</div>
@@ -3782,7 +3767,6 @@ export function Financial() {
                         <TableHead className="text-right">التاريخ</TableHead>
                         <TableHead className="text-right">العميل</TableHead>
                         <TableHead className="text-right">اسم الدفعة</TableHead>
-                        <TableHead className="text-right">الموقع</TableHead>
                         <TableHead className="text-center">عدد القطع</TableHead>
                         <TableHead className="text-right">نوع البيع</TableHead>
                         <TableHead className="text-right">سعر البيع</TableHead>
@@ -3795,10 +3779,10 @@ export function Financial() {
                             const totalGroupAmount = group.totalAmount
                             
                             return [
-                              <TableRow key={`summary-${groupIndex}`} className="bg-gray-50 font-bold">
-                                <TableCell colSpan={4} className="font-bold text-right">
-                                  {group.landBatchName} {group.location && `- ${group.location}`}
-                                </TableCell>
+                                  <TableRow key={`summary-${groupIndex}`} className="bg-gray-50 font-bold">
+                                    <TableCell colSpan={3} className="font-bold text-right">
+                                      {group.landBatchName}
+                                    </TableCell>
                                 <TableCell className="text-center">
                                   {group.sales.reduce((sum, s) => sum + (s.land_piece_ids?.length || 0), 0)}
                                 </TableCell>
@@ -3829,7 +3813,6 @@ export function Financial() {
                                       </div>
                                     </TableCell>
                                     <TableCell className="text-right text-muted-foreground">{batchName}</TableCell>
-                                    <TableCell className="text-right text-muted-foreground">{location || '-'}</TableCell>
                                     <TableCell className="text-center">
                                       <div className="flex flex-col">
                                         <span>{pieces.length}</span>
@@ -4192,7 +4175,7 @@ export function Financial() {
                 <CardContent>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     <div>
-                      <p className="text-sm text-muted-foreground">المكان</p>
+                      <p className="text-sm text-muted-foreground">الدفعة</p>
                       <p className="font-semibold">{selectedGroupForDetails.landBatchName}</p>
                       {selectedGroupForDetails.location && (
                         <p className="text-xs text-muted-foreground">{selectedGroupForDetails.location}</p>

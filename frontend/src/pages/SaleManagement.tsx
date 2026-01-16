@@ -145,6 +145,23 @@ export function SaleManagement() {
     }
   }
 
+  // Helper function to check if a sale is reset (has been reset back to confirmation page)
+  // Reset sales have: status = 'Pending', big_advance_amount = 0/null, company_fee_amount = null/0, small_advance_amount = 0/null
+  const isSaleReset = (sale: SaleWithDetails): boolean => {
+    return sale.status === 'Pending' &&
+           (sale.big_advance_amount === 0 || sale.big_advance_amount === null) &&
+           (!sale.company_fee_amount || sale.company_fee_amount === 0) &&
+           (!sale.small_advance_amount || sale.small_advance_amount === 0)
+  }
+
+  // Helper function to filter out payments for reset sales
+  const getValidPayments = (sale: SaleWithDetails): Payment[] => {
+    if (isSaleReset(sale)) {
+      return [] // Reset sales should show no payments
+    }
+    return sale.payments || []
+  }
+
   const filterSales = () => {
     let filtered = [...sales]
 
@@ -476,7 +493,8 @@ export function SaleManagement() {
                 </TableRow>
                 ) : (
                   filteredSales.map((sale) => {
-                    const totalPaid = sale.payments.reduce((sum, p) => sum + (p.amount_paid || 0), 0)
+                    const validPayments = getValidPayments(sale)
+                    const totalPaid = validPayments.reduce((sum, p) => sum + (p.amount_paid || 0), 0)
                     const totalInstallments = sale.installments.length
                     const paidInstallments = sale.installments.filter(i => i.status === 'Paid').length
 
@@ -591,7 +609,7 @@ export function SaleManagement() {
                     <div>
                       <Label className="text-muted-foreground">المدفوع</Label>
                       <p className="font-bold text-green-600">
-                        {formatCurrency(selectedSale.payments.reduce((sum, p) => sum + (p.amount_paid || 0), 0))}
+                        {formatCurrency(getValidPayments(selectedSale).reduce((sum, p) => sum + (p.amount_paid || 0), 0))}
                       </p>
                     </div>
                     {(selectedSale as any).contract_editor && (
@@ -673,37 +691,49 @@ export function SaleManagement() {
               )}
 
               {/* Payments */}
-              {selectedSale.payments.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">المدفوعات ({selectedSale.payments.length})</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {selectedSale.payments.map((payment) => (
-                        <div key={payment.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                          <div>
-                            <span className="font-medium">{formatCurrency(payment.amount_paid)}</span>
-                            <span className="text-sm text-muted-foreground mr-2">
-                              ({formatDate(payment.payment_date)})
-                            </span>
+              {(() => {
+                // Filter out payments for reset sales - reset sales shouldn't show payments
+                const validPayments = getValidPayments(selectedSale)
+                
+                if (validPayments.length === 0) return null
+                
+                return (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">المدفوعات ({validPayments.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {validPayments.map((payment) => (
+                          <div key={payment.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                            <div>
+                              <span className="font-medium">{formatCurrency(payment.amount_paid)}</span>
+                              <span className="text-sm text-muted-foreground mr-2">
+                                ({formatDate(payment.payment_date)})
+                              </span>
+                            </div>
+                            <Badge variant="secondary" className="text-xs">
+                              {payment.payment_type}
+                            </Badge>
                           </div>
-                          <Badge variant="secondary" className="text-xs">
-                            {payment.payment_type}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })()}
             </div>
           )}
           <DialogFooter>
             {selectedSale && (() => {
               const hasBigAdvance = (selectedSale.big_advance_amount || 0) > 0
               const hasCompanyFee = (selectedSale.company_fee_amount || 0) > 0
-              const canReset = hasBigAdvance || hasCompanyFee
+              const validPayments = getValidPayments(selectedSale)
+              const hasPayments = validPayments && validPayments.length > 0
+              const isCompleted = selectedSale.status === 'Completed'
+              // Show reset button if sale has been confirmed (has advance, fee, payments, or is completed)
+              // But don't show for sales that are already reset
+              const canReset = !isSaleReset(selectedSale) && (hasBigAdvance || hasCompanyFee || hasPayments || isCompleted)
               
               return (
                 <>
@@ -711,7 +741,7 @@ export function SaleManagement() {
                     <Button
                       variant="outline"
                       onClick={async () => {
-                        if (!confirm('هل أنت متأكد من إرجاع هذا البيع إلى صفحة التأكيد؟ سيتم حذف دفعات التسبقة والعمولة، ولكن سيتم الاحتفاظ بالعربون.')) {
+                        if (!confirm('هل أنت متأكد من إرجاع هذا البيع إلى صفحة التأكيد؟ سيتم حذف جميع المدفوعات (بما في ذلك العربون) وإزالة البيع من صفحة المالية.')) {
                           return
                         }
                         
@@ -719,36 +749,33 @@ export function SaleManagement() {
                         try {
                           const saleId = selectedSale.id
                           
-                          // 1. Delete ALL payment records EXCEPT SmallAdvance (reservation)
-                          // First, get all payments for this sale to identify what needs to be deleted
-                          const { data: allPayments, error: fetchPaymentsError } = await supabase
+                          // 1. Delete ALL payment records to completely remove from finance page
+                          // This includes SmallAdvance payments to ensure sale is fully removed from finance
+                          const { error: deleteAllPaymentsError } = await supabase
                             .from('payments')
-                            .select('id, payment_type')
+                            .delete()
                             .eq('sale_id', saleId)
                           
-                          if (fetchPaymentsError) {
-                            console.warn('Error fetching payments:', fetchPaymentsError)
-                          } else if (allPayments && allPayments.length > 0) {
-                            // Filter out SmallAdvance payments (keep those)
-                            const paymentsToDelete = allPayments.filter(p => 
-                              p.payment_type !== 'SmallAdvance' && p.payment_type !== 'Refund'
-                            )
+                          if (deleteAllPaymentsError) {
+                            console.warn('Error deleting payments:', deleteAllPaymentsError)
+                            // Try to delete in batches if single delete fails
+                            const { data: allPayments, error: fetchPaymentsError } = await supabase
+                              .from('payments')
+                              .select('id')
+                              .eq('sale_id', saleId)
                             
-                            if (paymentsToDelete.length > 0) {
-                              // Delete all non-SmallAdvance payments by ID
-                              const paymentIdsToDelete = paymentsToDelete.map(p => p.id)
-                              
-                              // Delete in batches to avoid query size limits
+                            if (!fetchPaymentsError && allPayments && allPayments.length > 0) {
+                              const paymentIds = allPayments.map(p => p.id)
                               const batchSize = 100
-                              for (let i = 0; i < paymentIdsToDelete.length; i += batchSize) {
-                                const batch = paymentIdsToDelete.slice(i, i + batchSize)
-                                const { error: deleteError } = await supabase
+                              for (let i = 0; i < paymentIds.length; i += batchSize) {
+                                const batch = paymentIds.slice(i, i + batchSize)
+                                const { error: batchError } = await supabase
                                   .from('payments')
                                   .delete()
                                   .in('id', batch)
                                 
-                                if (deleteError) {
-                                  console.warn(`Error deleting payment batch ${i}-${i + batch.length}:`, deleteError)
+                                if (batchError) {
+                                  console.warn(`Error deleting payment batch:`, batchError)
                                   // Try individual deletes as fallback
                                   for (const paymentId of batch) {
                                     const { error: individualError } = await supabase
@@ -774,12 +801,13 @@ export function SaleManagement() {
                           if (installmentError) throw installmentError
                           
                           // 3. Reset sale fields - clean all confirmation traces
-                          // IMPORTANT: Keep small_advance_amount (العربون) - this is the reservation
-                          // Reset all confirmation-related fields but keep the sale and client intact
+                          // Reset ALL financial fields including small_advance_amount to completely remove from finance page
+                          // This ensures the sale is fully removed from finance and goes back to confirmation
                           const { error: saleError } = await supabase
                             .from('sales')
                             .update({
                               big_advance_amount: 0,
+                              small_advance_amount: 0, // Reset small advance to remove from finance page
                               company_fee_amount: null,
                               company_fee_percentage: null,
                               company_fee_note: null,
@@ -796,7 +824,6 @@ export function SaleManagement() {
                               // Reset PromiseOfSale fields if applicable
                               promise_completed: false,
                               promise_initial_payment: null,
-                              // Keep small_advance_amount - DO NOT RESET
                               // Keep client_id, land_piece_ids, total_selling_price, etc.
                               updated_at: new Date().toISOString(),
                             })
@@ -829,12 +856,38 @@ export function SaleManagement() {
                           }
                           
                           // 4. Wait a bit for database to commit
-                          await new Promise(resolve => setTimeout(resolve, 500))
+                          await new Promise(resolve => setTimeout(resolve, 1000))
                           
-                          // 5. Verify the reset was successful
+                          // 5. Verify payments were deleted
+                          const { data: remainingPayments, error: checkPaymentsError } = await supabase
+                            .from('payments')
+                            .select('id')
+                            .eq('sale_id', saleId)
+                          
+                          if (checkPaymentsError) {
+                            console.warn('Error checking remaining payments:', checkPaymentsError)
+                          } else if (remainingPayments && remainingPayments.length > 0) {
+                            // Payments still exist - try to delete them again
+                            console.warn(`Found ${remainingPayments.length} remaining payments, attempting to delete again`)
+                            const paymentIds = remainingPayments.map(p => p.id)
+                            for (const paymentId of paymentIds) {
+                              const { error: retryError } = await supabase
+                                .from('payments')
+                                .delete()
+                                .eq('id', paymentId)
+                              
+                              if (retryError) {
+                                console.warn(`Error deleting payment ${paymentId}:`, retryError)
+                              }
+                            }
+                            // Wait again after retry
+                            await new Promise(resolve => setTimeout(resolve, 500))
+                          }
+                          
+                          // 6. Verify the reset was successful
                           const { data: verifySale, error: verifyError } = await supabase
                             .from('sales')
-                            .select('id, status, big_advance_amount, company_fee_amount, company_fee_percentage')
+                            .select('id, status, big_advance_amount, company_fee_amount, company_fee_percentage, small_advance_amount')
                             .eq('id', saleId)
                             .single()
                           
@@ -844,16 +897,17 @@ export function SaleManagement() {
                             // Check if reset was successful
                             const isReset = verifySale.status === 'Pending' &&
                                            (verifySale.big_advance_amount === 0 || verifySale.big_advance_amount === null) &&
-                                           (verifySale.company_fee_amount === null || verifySale.company_fee_amount === 0)
+                                           (verifySale.company_fee_amount === null || verifySale.company_fee_amount === 0) &&
+                                           (!verifySale.small_advance_amount || verifySale.small_advance_amount === 0)
                             
                             if (!isReset) {
                               console.warn('Sale reset verification failed - some fields may not have been reset')
                             }
                           }
                           
-                          // 6. Refresh data
-                          await fetchSales()
+                          // 7. Refresh data - close dialog first to avoid showing stale data
                           setDetailsDialogOpen(false)
+                          await fetchSales()
                           showNotification('تم إرجاع البيع إلى صفحة التأكيد بنجاح - تم حذف جميع البيانات المرتبطة', 'success')
                         } catch (error: any) {
                           console.error('Error resetting sale:', error)
