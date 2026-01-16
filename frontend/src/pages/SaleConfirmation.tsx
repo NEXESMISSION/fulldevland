@@ -2264,7 +2264,6 @@ export function SaleConfirmation() {
           is_confirmed: true,
           big_advance_confirmed: true,
           contract_editor_id: selectedContractEditorId || null,
-          sale_date: new Date().toISOString().split('T')[0], // Use confirmation date, not original sale date
         }
 
         if (confirmationType === 'full') {

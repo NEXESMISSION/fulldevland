@@ -4,6 +4,7 @@ import { LanguageProvider } from '@/contexts/LanguageContext'
 import { MainLayout } from '@/components/layout/MainLayout'
 import { Login } from '@/pages/Login'
 import { LandManagement } from '@/pages/LandManagement'
+import { Homes } from '@/pages/Homes'
 import { Clients } from '@/pages/Clients'
 import { SalesNew as Sales } from '@/pages/SalesNew'
 import { SaleConfirmation } from '@/pages/SaleConfirmation'
@@ -167,6 +168,14 @@ function AppRoutes() {
           element={
             <PermissionProtectedRoute permission="view_land" pageId="land">
               <LandManagement />
+            </PermissionProtectedRoute>
+          } 
+        />
+        <Route 
+          path="homes" 
+          element={
+            <PermissionProtectedRoute permission="view_land" pageId="homes">
+              <Homes />
             </PermissionProtectedRoute>
           } 
         />

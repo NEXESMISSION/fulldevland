@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Map,
   MapPin,
+  Home as HomeIcon,
   Users,
   ShoppingCart,
   CreditCard,
@@ -35,6 +36,7 @@ import { Select } from '@/components/ui/select'
 const getNavItems = (t: (key: string) => string) => [
   { to: '/', icon: LayoutDashboard, label: t('nav.home'), permission: null, pageId: 'home' },
   { to: '/land', icon: Map, label: t('nav.land'), permission: 'view_land', pageId: 'land' },
+  { to: '/homes', icon: HomeIcon, label: t('nav.homes'), permission: 'view_land', pageId: 'homes' },
   { to: '/clients', icon: Users, label: t('nav.clients'), permission: 'view_clients', pageId: 'clients' },
   { to: '/sales', icon: ShoppingCart, label: t('nav.sales'), permission: 'view_sales', pageId: 'sales' },
   { to: '/sale-confirmation', icon: CheckCircle2, label: t('nav.confirmSales'), permission: 'edit_sales', pageId: 'confirm-sales' },

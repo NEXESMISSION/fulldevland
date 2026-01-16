@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { 
   Map, 
+  Home as HomeIcon,
   TrendingDown, 
   Building2, 
   Users, 
@@ -47,6 +48,14 @@ export function Home() {
       route: '/land',
       permission: 'view_land',
       pageId: 'land',
+    },
+    {
+      title: t('nav.homes'),
+      icon: HomeIcon,
+      color: 'bg-cyan-500',
+      route: '/homes',
+      permission: 'view_land',
+      pageId: 'homes',
     },
     {
       title: t('nav.clients'),

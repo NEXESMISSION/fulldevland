@@ -85,6 +85,24 @@ export interface LandPiece {
   payment_offers?: PaymentOffer[]
 }
 
+export interface House {
+  id: string
+  name: string
+  place: string
+  surface: number | null
+  price_full: number
+  price_installment: number
+  company_fee_percentage: number | null
+  status: LandStatus
+  reserved_until: string | null
+  reservation_client_id: string | null
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  payment_offers?: PaymentOffer[]
+}
+
 export interface PaymentOffer {
   id: string
   land_batch_id: string | null
