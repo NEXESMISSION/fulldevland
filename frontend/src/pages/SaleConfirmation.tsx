@@ -1810,7 +1810,13 @@ export function SaleConfirmation() {
         // Single piece - update the sale directly
         const offerToUse = selectedOffer || ((selectedSale as any).selected_offer as PaymentOffer | null)
         const { feePercentage } = calculatePieceValues(selectedSale, selectedPiece, offerToUse)
+        // Use current confirmation time for sale_date (ensures finance page uses confirmation time)
+        const confirmationDate = new Date().toISOString().split('T')[0]
+        const confirmationDateTime = new Date().toISOString()
+        
         const updates: any = {
+          sale_date: confirmationDate, // Update sale_date to confirmation date for finance calculations
+          updated_at: confirmationDateTime, // Update timestamp to confirmation time
           // Always set company_fee_percentage and company_fee_amount (even if 0) to mark sale as confirmed
           // This allows the system to know the sale was confirmed, even if commission is 0
           company_fee_percentage: feePercentage !== null && feePercentage !== undefined ? feePercentage : null,
@@ -2170,14 +2176,17 @@ export function SaleConfirmation() {
             paymentType = hasInitialPayment ? 'Full' : 'Partial'
           }
           
+          // Use current confirmation time for payment date (ensures finance page uses confirmation time)
+          const confirmationDate = new Date().toISOString().split('T')[0]
+          const confirmationDateTime = new Date().toISOString()
+          
           // Check if payment already exists to prevent duplicates
-          const today = new Date().toISOString().split('T')[0]
           const { data: existingPayments, error: checkError } = await supabase
             .from('payments')
             .select('id')
             .eq('sale_id', selectedSale.id)
             .eq('payment_type', paymentType)
-            .eq('payment_date', today)
+            .eq('payment_date', confirmationDate)
             .eq('amount_paid', received)
             .limit(1)
           
@@ -2193,11 +2202,25 @@ export function SaleConfirmation() {
               sale_id: selectedSale.id,
               amount_paid: received,
               payment_type: paymentType,
-              payment_date: today,
+              payment_date: confirmationDate, // Use confirmation date for finance calculations
               notes: confirmationNotes || null,
               recorded_by: user?.id || null,
             }] as any)
             if (paymentError) throw paymentError
+            
+            // Update sale_date to confirmation date so finance page uses confirmation time
+            const { error: saleDateUpdateError } = await supabase
+              .from('sales')
+              .update({ 
+                sale_date: confirmationDate,
+                updated_at: confirmationDateTime
+              } as any)
+              .eq('id', selectedSale.id)
+            
+            if (saleDateUpdateError) {
+              console.warn('Could not update sale_date to confirmation date:', saleDateUpdateError)
+              // Don't throw - this is not critical, but helps with finance calculations
+            }
           } else {
             console.warn('Payment already exists for this sale, skipping duplicate creation')
           }
@@ -2234,13 +2257,14 @@ export function SaleConfirmation() {
           number_of_installments: null,
           monthly_installment_amount: null,
           status: 'Pending', // Will be set correctly below based on payment type
-          sale_date: selectedSale.sale_date,
+          sale_date: new Date().toISOString().split('T')[0], // Use confirmation date, not original sale date
           notes: `تأكيد قطعة من البيع #${selectedSale.id.slice(0, 8)}`,
           created_by: selectedSale.created_by || user?.id || null, // Keep original creator
           confirmed_by: user?.id || null,
           is_confirmed: true,
           big_advance_confirmed: true,
           contract_editor_id: selectedContractEditorId || null,
+          sale_date: new Date().toISOString().split('T')[0], // Use confirmation date, not original sale date
         }
 
         if (confirmationType === 'full') {
@@ -2413,14 +2437,17 @@ export function SaleConfirmation() {
             paymentType = hasInitialPayment ? 'Full' : 'Partial'
           }
           
+          // Use current confirmation time for payment date (ensures finance page uses confirmation time)
+          const confirmationDate = new Date().toISOString().split('T')[0]
+          const confirmationDateTime = new Date().toISOString()
+          
           // Check if payment already exists to prevent duplicates
-          const today = new Date().toISOString().split('T')[0]
           const { data: existingPayments, error: checkError } = await supabase
             .from('payments')
             .select('id')
             .eq('sale_id', newSale.id)
             .eq('payment_type', paymentType)
-            .eq('payment_date', today)
+            .eq('payment_date', confirmationDate)
             .eq('amount_paid', received)
             .limit(1)
           
@@ -2436,12 +2463,26 @@ export function SaleConfirmation() {
               sale_id: newSale.id,
               amount_paid: received,
               payment_type: paymentType,
-              payment_date: today,
+              payment_date: confirmationDate, // Use confirmation date for finance calculations
               notes: confirmationNotes || null,
               recorded_by: user?.id || null,
             }] as any)
             
             if (paymentError) throw paymentError
+            
+            // Update sale_date to confirmation date so finance page uses confirmation time
+            const { error: saleDateUpdateError } = await supabase
+              .from('sales')
+              .update({ 
+                sale_date: confirmationDate,
+                updated_at: confirmationDateTime
+              } as any)
+              .eq('id', newSale.id)
+            
+            if (saleDateUpdateError) {
+              console.warn('Could not update sale_date to confirmation date:', saleDateUpdateError)
+              // Don't throw - this is not critical, but helps with finance calculations
+            }
           } else {
             console.warn('Payment already exists for this sale, skipping duplicate creation')
           }
